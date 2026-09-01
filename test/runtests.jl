@@ -86,6 +86,74 @@ end
     @show size(wdot)
     @show wdot[1:3]
 
+    mean_MW = 1.0 / dot(Y0, 1 ./ gas.MW)
+    density = P / R / T0 * mean_MW
+    X = Y2X(gas, Y0, mean_MW)
+    C = Y2C(gas, Y0, density)
+    h_mole = get_H(gas, T0, Y0, X)
+    S0 = get_S(gas, T0, P, X)
+    thermo_buffer = zeros(ns)
+    @test cal_h_RT!(thermo_buffer, gas, T0, P, X) ≈ cal_h_RT(gas, T0, P, X)
+    @test cal_s0_R!(thermo_buffer, gas, T0, P, X) ≈ cal_s0_R(gas, T0, P, X)
+    @test cal_cp_R!(thermo_buffer, gas, T0, P, X) ≈ cal_cp_R(gas, T0, P, X)
+    kinetics_workspace = KineticsWorkspace(gas.reaction)
+    wdot_buffer = zeros(ns)
+    @test wdot!(
+        wdot_buffer, gas.reaction, T0, C, S0, h_mole, kinetics_workspace,
+    ) ≈ wdot
+    baseline_qdot = copy(wdot!(
+        wdot_buffer,
+        gas.reaction,
+        T0,
+        C,
+        S0,
+        h_mole,
+        kinetics_workspace;
+        get_qdot=true,
+    ))
+    rate_multipliers = ones(gas.n_reactions)
+    rate_multipliers[1] = 2.0
+    perturbed_qdot = wdot!(
+        wdot_buffer,
+        gas.reaction,
+        T0,
+        C,
+        S0,
+        h_mole,
+        kinetics_workspace;
+        get_qdot=true,
+        rate_multipliers=rate_multipliers,
+    )
+    @test perturbed_qdot[1] ≈ 2.0 * baseline_qdot[1]
+    @test_throws DimensionMismatch wdot!(
+        wdot_buffer,
+        gas.reaction,
+        T0,
+        C,
+        S0,
+        h_mole,
+        kinetics_workspace;
+        rate_multipliers=ones(gas.n_reactions - 1),
+    )
+    function first_rate_of_progress(multiplier)
+        multipliers = ones(typeof(multiplier), gas.n_reactions)
+        multipliers[1] = multiplier
+        return wdot_func(
+            gas.reaction,
+            T0,
+            C,
+            S0,
+            h_mole;
+            get_qdot=true,
+            rate_multipliers=multipliers,
+        )[1]
+    end
+    @test ForwardDiff.derivative(first_rate_of_progress, 1.0) ≈ baseline_qdot[1]
+
+    X_buffer = similar(Y0)
+    Y2X!(X_buffer, gas, Y0)
+    @test @allocated(Y2X!(X_buffer, gas, Y0)) == 0
+
     u0 = vcat(Y0, T0)
     function f(u)
         T = u[end]
