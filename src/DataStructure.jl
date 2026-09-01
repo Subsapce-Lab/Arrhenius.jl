@@ -1,3 +1,12 @@
+"Flattened pressure groups and Arrhenius expressions for PLOG reactions."
+struct PlogData
+    reaction_indices::Vector{Int64}
+    group_offsets::Vector{Int64}
+    pressures::Vector{Float64}
+    rate_offsets::Vector{Int64}
+    Arrhenius_coeffs::Matrix{Float64}
+end
+
 struct Reaction
     product_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
     reactant_stoich_coeffs::SparseMatrixCSC{Float64,Int64}
@@ -15,6 +24,7 @@ struct Reaction
     n_reactions::Int64
     vk::SparseMatrixCSC{Float64,Int64}
     vk_sum::Array{Float64,1}
+    plog::PlogData
 end
 
 abstract type Thermo end

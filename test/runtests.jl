@@ -1,7 +1,77 @@
 using Arrhenius
 using ForwardDiff
 using LinearAlgebra
+using SHA
 using Test
+
+@testset "sidecar provenance" begin
+    mechanism, stream = mktemp()
+    write(stream, "mechanism fixture\n")
+    close(stream)
+    digest = bytes2hex(SHA.sha256(read(mechanism)))
+    metadata = Dict(
+        "sidecar_format_utf8" => collect(codeunits("arrhenius-sidecar-v2")),
+        "source_sha256_utf8" => collect(codeunits(digest)),
+    )
+    @test Arrhenius._validate_sidecar_metadata(metadata, mechanism) === nothing
+
+    stale = copy(metadata)
+    stale["source_sha256_utf8"] = collect(codeunits(repeat("0", 64)))
+    @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(stale, mechanism)
+
+    unknown = copy(metadata)
+    unknown["sidecar_format_utf8"] = collect(codeunits("arrhenius-sidecar-v99"))
+    @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(unknown, mechanism)
+end
+
+@testset "single-region NASA7" begin
+    yaml = Dict(
+        "phases" => [Dict(
+            "species" => ["A", "B"],
+            "elements" => ["X"],
+        )],
+        "reactions" => Any[],
+        "species" => [
+            Dict(
+                "name" => "A",
+                "composition" => Dict("X" => 1),
+                "thermo" => Dict(
+                    "temperature-ranges" => [200.0, 3000.0],
+                    "data" => [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]],
+                ),
+            ),
+            Dict(
+                "name" => "B",
+                "composition" => Dict("X" => 1),
+                "thermo" => Dict(
+                    "temperature-ranges" => [200.0, 800.0, 3000.0],
+                    "data" => [
+                        [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0],
+                        [15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0],
+                    ],
+                ),
+            ),
+        ],
+    )
+    thermo = Arrhenius.IdealGasThermo(yaml)
+    @test thermo.nasa_low[1, :] == thermo.nasa_high[1, :]
+    @test thermo.Trange[1, :] == [200.0, 1000.0, 3000.0]
+    @test thermo.Trange[2, :] == [200.0, 800.0, 3000.0]
+end
+
+@testset "PLOG interpolation and duplicate rates" begin
+    plog = Arrhenius.PlogData(
+        [7],
+        [1, 3],
+        [1.0e5, 1.0e6],
+        [1, 3, 4],
+        [2.0 0.0 0.0; 3.0 0.0 0.0; 20.0 0.0 0.0],
+    )
+    T = 1000.0
+    @test Arrhenius._plog_rate(plog, 1, T, 1.0e4, log(T)) ≈ 5.0
+    @test Arrhenius._plog_rate(plog, 1, T, sqrt(1.0e11), log(T)) ≈ 10.0
+    @test Arrhenius._plog_rate(plog, 1, T, 1.0e7, log(T)) ≈ 20.0
+end
 
 @testset "jl" begin
     # Write your tests here.

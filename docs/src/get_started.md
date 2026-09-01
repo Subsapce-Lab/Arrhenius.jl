@@ -59,12 +59,18 @@ w_dot = wdot_func(gas.reaction, T, C, S0, h_mole)
 
 Similar to Chemkin and Canetra, all calculations in Arrhenius.jl require an input file to describe the properties of the relevant phase(s) of mixture. We adopt the `YAML` format maintained in the Cantera community.
 
-> Currently, the package relies on [`Cantera`](https://github.com/Cantera/cantera) and [`ReacTorch`](https://github.com/DENG-MIT/reactorch) for interpreting the reaction mechanism. The kinetic info in the mechanism files are inpreprested and saved into a `.npz` file with the same name as the `.yaml` file. If you want to have a try, you don't need to install Cantera and ReacTorch, since there are already some pre-compiled reaction mechanisms under the folder of `mechanism`. 
+Arrhenius uses [`Cantera`](https://github.com/Cantera/cantera) 3.2 to
+preprocess kinetic data into an `.npz` file with the same name as the YAML
+file. The repository already includes sidecars for its example mechanisms.
 
-> Otherwise, you can install [`Cantera`](https://github.com/Cantera/cantera) and [`ReacTorch`](https://github.com/DENG-MIT/reactorch) to compile it using the python script `interpreter.py` under the folder of `mechanism`.
+For another mechanism, install Cantera 3.2 and NumPy, then run:
 
-> You can also ask for help in the discussion forum and our developers can compile the model for you.
+```bash
+python mechanism/export_sidecar.py path/to/mechanism.yaml
+```
 
-With Cantera and ReacTorch installed, you can use the following python command in your terminal to generate the `.npz` file.
-
-`python interpreter.py -i gri30.yaml`
+The exporter supports elementary and three-body Arrhenius reactions,
+Lindemann and Troe falloff reactions, pressure-dependent Arrhenius (PLOG)
+reactions, one- and two-region NASA7 thermochemistry, and explicit reaction
+orders. It rejects unsupported rate models instead of silently substituting a
+different rate expression.

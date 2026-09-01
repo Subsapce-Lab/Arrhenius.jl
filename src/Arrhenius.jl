@@ -1,6 +1,7 @@
 module Arrhenius
     using YAML
     using NPZ
+    using SHA
     using LinearAlgebra
     using SparseArrays
 
