@@ -126,6 +126,9 @@ function wdot!(
     end
 
     if !isnothing(rate_multipliers)
+        length(rate_multipliers) == length(kf) || throw(DimensionMismatch(
+            "rate_multipliers must contain one value per reaction",
+        ))
         @inbounds for i in eachindex(kf)
             kf[i] *= rate_multipliers[i]
         end
@@ -172,7 +175,14 @@ function wdot_func(
     get_qdot=false,
     rate_multipliers=nothing,
 )
-    workspace_type = promote_type(typeof(T), eltype(C), eltype(S0), eltype(h_mole))
+    multiplier_type = isnothing(rate_multipliers) ? Float64 : eltype(rate_multipliers)
+    workspace_type = promote_type(
+        typeof(T),
+        eltype(C),
+        eltype(S0),
+        eltype(h_mole),
+        multiplier_type,
+    )
     workspace = KineticsWorkspace(reaction, workspace_type)
     wdot = zeros(workspace_type, size(reaction.vk, 1))
     return wdot!(

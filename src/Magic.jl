@@ -13,7 +13,11 @@ function Y2X!(X, gas, Y, mean_MW)
 end
 
 function Y2X!(X, gas, Y)
-    mean_MW = 1.0 / dot(Y, 1.0 ./ gas.MW)
+    inverse_mean_MW = zero(eltype(Y))
+    @inbounds for i in eachindex(Y)
+        inverse_mean_MW += Y[i] / gas.MW[i]
+    end
+    mean_MW = 1.0 / inverse_mean_MW
     return Y2X!(X, gas, Y, mean_MW)
 end
 export Y2X!

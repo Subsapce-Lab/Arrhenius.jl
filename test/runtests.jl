@@ -125,6 +125,34 @@ end
         rate_multipliers=rate_multipliers,
     )
     @test perturbed_qdot[1] ≈ 2.0 * baseline_qdot[1]
+    @test_throws DimensionMismatch wdot!(
+        wdot_buffer,
+        gas.reaction,
+        T0,
+        C,
+        S0,
+        h_mole,
+        kinetics_workspace;
+        rate_multipliers=ones(gas.n_reactions - 1),
+    )
+    function first_rate_of_progress(multiplier)
+        multipliers = ones(typeof(multiplier), gas.n_reactions)
+        multipliers[1] = multiplier
+        return wdot_func(
+            gas.reaction,
+            T0,
+            C,
+            S0,
+            h_mole;
+            get_qdot=true,
+            rate_multipliers=multipliers,
+        )[1]
+    end
+    @test ForwardDiff.derivative(first_rate_of_progress, 1.0) ≈ baseline_qdot[1]
+
+    X_buffer = similar(Y0)
+    Y2X!(X_buffer, gas, Y0)
+    @test @allocated(Y2X!(X_buffer, gas, Y0)) == 0
 
     u0 = vcat(Y0, T0)
     function f(u)
