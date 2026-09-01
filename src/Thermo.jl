@@ -82,18 +82,7 @@ end
 
 "get specific of heat capacity"
 function get_cp(gas, T, X, mean_MW)
-    cp_T = [1.0, T, T^2, T^3, T^4]
-    if T <= 1000.0
-        cp = @view(gas.thermo.nasa_low[:, 1:5]) * cp_T
-    else
-        cp = @view(gas.thermo.nasa_high[:, 1:5]) * cp_T
-    end
-    # TODO: not sure if inplace operation will be an issue for AD
-    if !gas.thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < gas.thermo.Trange[:, 2])
-        cp[ind_correction] .=
-            @view(gas.thermo.nasa_low[ind_correction, 1:5]) * cp_T
-    end
+    cp = cal_cp_R(gas, T, one_atm, X)
     cp_mole = dot(cp, X) * R
     cp_mass = cp_mole / mean_MW
     return cp_mole, cp_mass
@@ -112,19 +101,7 @@ export get_cv
 
 "get enthaphy (H) per mole"
 function get_H(gas, T, Y, X)
-    H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
-    if T <= 1000.0
-        h_mole = @view(gas.thermo.nasa_low[:, 1:6]) * H_T * R * T
-    else
-        h_mole = @view(gas.thermo.nasa_high[:, 1:6]) * H_T * R * T
-    end
-    if !gas.thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < gas.thermo.Trange[:, 2])
-        h_mole[ind_correction] .=
-            @view(gas.thermo.nasa_low[ind_correction, 1:6]) * H_T * R * T
-    end
-    # H_mole = dot(h_mole, X)
-    return h_mole
+    return cal_h_RT(gas, T, one_atm, X) * R * T
 end
 export get_H
 
@@ -153,22 +130,7 @@ export U_mass_func
 
 "get entropy (S)"
 function get_S(gas, T, P, X)
-    S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
-    if T <= 1000.0
-        S0 = @view(gas.thermo.nasa_low[:, [1, 2, 3, 4, 5, 7]]) * S_T * R
-    else
-        S0 = @view(gas.thermo.nasa_high[:, [1, 2, 3, 4, 5, 7]]) * S_T * R
-    end
-    if !gas.thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < gas.thermo.Trange[:, 2])
-        S0[ind_correction] .=
-            @view(gas.thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
-            S_T * R
-    end
-    # _X = @. S0 - R * log(clamp(X, 1.e-30, Inf))
-    # s_mole = _X .- R * (P / one_atm)
-    # S_mole = dot(s_mole, X)
-    return S0
+    return cal_s0_R(gas, T, P, X) * R
 end
 export get_S
 

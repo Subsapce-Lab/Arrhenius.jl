@@ -6,6 +6,20 @@ We are in an early-development. Expect some adventures and rough edges.
 
 > pkg> add https://github.com/DENG-MIT/Arrhenius.jl
 
+## Mechanism preprocessing
+
+`CreateSolution` reads a Cantera YAML file and a same-name `.yaml.npz`
+sidecar. Generate a sidecar using Cantera 3.2 and NumPy:
+
+```bash
+python mechanism/export_sidecar.py path/to/mechanism.yaml
+```
+
+The exporter supports elementary and three-body Arrhenius reactions,
+Lindemann and Troe falloff reactions, pressure-dependent Arrhenius (PLOG)
+reactions, one- and two-region NASA7 thermochemistry, and explicit reaction
+orders. Unsupported Cantera rate models are rejected during preprocessing.
+
 
 ## Publication
 

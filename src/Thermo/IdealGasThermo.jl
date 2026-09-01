@@ -34,9 +34,27 @@ function IdealGasThermo(yaml::AbstractDict)
 
     for (i, species) in enumerate(species_names)
         spec = yaml["species"][findfirst(x -> x == species, _species_names)]
-        nasa_low[i, :] = spec["thermo"]["data"][1]
-        nasa_high[i, :] = spec["thermo"]["data"][2]
-        Trange[i, :] .= spec["thermo"]["temperature-ranges"]
+        thermo = spec["thermo"]
+        data = thermo["data"]
+        ranges = Float64.(thermo["temperature-ranges"])
+        if length(data) == 1 && length(ranges) == 2
+            # A single NASA7 region is valid Cantera YAML. Duplicating the
+            # polynomial preserves its value on both sides of an arbitrary
+            # internal split while retaining the existing two-region layout.
+            nasa_low[i, :] = data[1]
+            nasa_high[i, :] = data[1]
+            midpoint = clamp(1000.0, ranges[1], ranges[2])
+            Trange[i, :] .= (ranges[1], midpoint, ranges[2])
+        elseif length(data) == 2 && length(ranges) == 3
+            nasa_low[i, :] = data[1]
+            nasa_high[i, :] = data[2]
+            Trange[i, :] .= ranges
+        else
+            throw(ArgumentError(
+                "species $species must define one or two NASA7 regions; " *
+                "found $(length(data)) data regions and $(length(ranges)) bounds",
+            ))
+        end
 
         for j = 1:n_elements
             if haskey(spec["composition"], elements[j])
@@ -54,15 +72,14 @@ calculates the dimensionless mole based enthalpy (h) for each species
 """
 function cal_h_RT(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     H_T = [1.0, T / 2.0, T^2 / 3.0, T^3 / 4.0, T^4 / 5.0, 1.0 / T]
-    if T <= 1000.0
+    if thermo.isTcommon && T <= thermo.Trange[1, 2]
         h_mole = @view(thermo.nasa_low[:, 1:6]) * H_T 
-    else
+    elseif thermo.isTcommon
         h_mole = @view(thermo.nasa_high[:, 1:6]) * H_T 
-    end
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        h_mole[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, 1:6]) * H_T 
+    else
+        h_mole = @view(thermo.nasa_high[:, 1:6]) * H_T
+        use_low = T .<= @view(thermo.Trange[:, 2])
+        h_mole[use_low] .= @view(thermo.nasa_low[use_low, 1:6]) * H_T
     end
     # H_mole = dot(h_mole, X)
     return h_mole
@@ -75,16 +92,15 @@ calculates the dimensionless mole based reference state entropy (s0) for each sp
 """
 function cal_s0_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     S_T = [log(T), T, T^2 / 2.0, T^3 / 3.0, T^4 / 4.0, 1.0]
-    if T <= 1000.0
+    if thermo.isTcommon && T <= thermo.Trange[1, 2]
         S0 = @view(thermo.nasa_low[:, [1, 2, 3, 4, 5, 7]]) * S_T 
-    else
+    elseif thermo.isTcommon
         S0 = @view(thermo.nasa_high[:, [1, 2, 3, 4, 5, 7]]) * S_T 
-    end
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        S0[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, [1, 2, 3, 4, 5, 7]]) *
-            S_T 
+    else
+        S0 = @view(thermo.nasa_high[:, [1, 2, 3, 4, 5, 7]]) * S_T
+        use_low = T .<= @view(thermo.Trange[:, 2])
+        S0[use_low] .=
+            @view(thermo.nasa_low[use_low, [1, 2, 3, 4, 5, 7]]) * S_T
     end
     return S0 
 end
@@ -134,16 +150,14 @@ at constant pressure (cp) for each species
 """
 function cal_cp_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
     cp_T = [1.0, T, T^2, T^3, T^4]
-    if T <= 1000.0
+    if thermo.isTcommon && T <= thermo.Trange[1, 2]
         cp = @view(thermo.nasa_low[:, 1:5]) * cp_T
+    elseif thermo.isTcommon
+        cp = @view(thermo.nasa_high[:, 1:5]) * cp_T
     else
         cp = @view(thermo.nasa_high[:, 1:5]) * cp_T
-    end
-    # TODO: not sure if inplace operation will be an issue for AD
-    if !thermo.isTcommon
-        ind_correction = @. (T > 1000.0) & (T < thermo.Trange[:, 2])
-        cp[ind_correction] .=
-            @view(thermo.nasa_low[ind_correction, 1:5]) * cp_T
+        use_low = T .<= @view(thermo.Trange[:, 2])
+        cp[use_low] .= @view(thermo.nasa_low[use_low, 1:5]) * cp_T
     end
     return cp
 end
