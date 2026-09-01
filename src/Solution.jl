@@ -29,9 +29,10 @@ end
 function _validate_sidecar_metadata(npz, mechanism)
     if haskey(npz, "sidecar_format_utf8")
         format = _sidecar_string(npz, "sidecar_format_utf8")
-        format == "arrhenius-sidecar-v2" || throw(ArgumentError(
-            "unsupported Arrhenius sidecar format: $format",
-        ))
+        format in ("arrhenius-sidecar-v2", "arrhenius-sidecar-v3") ||
+            throw(ArgumentError(
+                "unsupported Arrhenius sidecar format: $format",
+            ))
     end
     if haskey(npz, "source_sha256_utf8")
         expected = _sidecar_string(npz, "source_sha256_utf8")
@@ -107,8 +108,17 @@ function CreateSolution(mech)
         for reaction in yaml["reactions"]
     )
     if haskey(npz, "Plog_reaction_indices")
+        plog_reaction_indices = vec(Int64.(npz["Plog_reaction_indices"]))
+        plog_collider_indices = haskey(npz, "Plog_collider_indices") ?
+            vec(Int64.(npz["Plog_collider_indices"])) :
+            zeros(Int64, length(plog_reaction_indices))
+        length(plog_collider_indices) == length(plog_reaction_indices) ||
+            throw(ArgumentError(
+                "Plog_collider_indices must contain one entry per PLOG reaction",
+            ))
         plog = PlogData(
-            vec(Int64.(npz["Plog_reaction_indices"])),
+            plog_reaction_indices,
+            plog_collider_indices,
             vec(Int64.(npz["Plog_group_offsets"])),
             vec(Float64.(npz["Plog_pressures"])),
             vec(Int64.(npz["Plog_rate_offsets"])),
@@ -121,7 +131,9 @@ function CreateSolution(mech)
             "Arrhenius sidecar exporter",
         ))
     else
-        plog = PlogData(Int64[], Int64[1], Float64[], Int64[1], zeros(0, 3))
+        plog = PlogData(
+            Int64[], Int64[], Int64[1], Float64[], Int64[1], zeros(0, 3),
+        )
     end
 
     if haskey(npz, "index_three_body")
