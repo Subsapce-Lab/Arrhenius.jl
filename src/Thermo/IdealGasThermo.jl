@@ -16,6 +16,56 @@ struct IdealGasThermo <: Thermo
     isTcommon::Bool
 
 end
+
+@inline function _nasa7_coefficients(thermo::IdealGasThermo, species, T)
+    return T <= thermo.Trange[species, 2] ? thermo.nasa_low : thermo.nasa_high
+end
+
+function cal_h_RT!(output, gas::Solution, thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
+    T2 = T * T
+    T3 = T2 * T
+    T4 = T3 * T
+    @inbounds for i in eachindex(output)
+        nasa = _nasa7_coefficients(thermo, i, T)
+        output[i] = nasa[i, 1] + nasa[i, 2] * T / 2 + nasa[i, 3] * T2 / 3 +
+            nasa[i, 4] * T3 / 4 + nasa[i, 5] * T4 / 5 + nasa[i, 6] / T
+    end
+    return output
+end
+cal_h_RT!(output, gas::Solution, T, p, X) =
+    cal_h_RT!(output, gas, gas.thermo, T, p, X)
+export cal_h_RT!
+
+function cal_s0_R!(output, gas::Solution, thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
+    logT = log(T)
+    T2 = T * T
+    T3 = T2 * T
+    T4 = T3 * T
+    @inbounds for i in eachindex(output)
+        nasa = _nasa7_coefficients(thermo, i, T)
+        output[i] = nasa[i, 1] * logT + nasa[i, 2] * T + nasa[i, 3] * T2 / 2 +
+            nasa[i, 4] * T3 / 3 + nasa[i, 5] * T4 / 4 + nasa[i, 7]
+    end
+    return output
+end
+cal_s0_R!(output, gas::Solution, T, p, X) =
+    cal_s0_R!(output, gas, gas.thermo, T, p, X)
+export cal_s0_R!
+
+function cal_cp_R!(output, gas::Solution, thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
+    T2 = T * T
+    T3 = T2 * T
+    T4 = T3 * T
+    @inbounds for i in eachindex(output)
+        nasa = _nasa7_coefficients(thermo, i, T)
+        output[i] = nasa[i, 1] + nasa[i, 2] * T + nasa[i, 3] * T2 +
+            nasa[i, 4] * T3 + nasa[i, 5] * T4
+    end
+    return output
+end
+cal_cp_R!(output, gas::Solution, T, p, X) =
+    cal_cp_R!(output, gas, gas.thermo, T, p, X)
+export cal_cp_R!
 """
 Constructor for the idealGasThermo:
 
