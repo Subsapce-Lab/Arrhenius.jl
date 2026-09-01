@@ -21,6 +21,28 @@ function read_species_basics(yaml)
 
     return n_species, n_reactions, species_names, elements, n_elements, ele_matrix
 end
+
+function _sidecar_string(npz, key)
+    return String(vec(UInt8.(npz[key])))
+end
+
+function _validate_sidecar_metadata(npz, mechanism)
+    if haskey(npz, "sidecar_format_utf8")
+        format = _sidecar_string(npz, "sidecar_format_utf8")
+        format == "arrhenius-sidecar-v2" || throw(ArgumentError(
+            "unsupported Arrhenius sidecar format: $format",
+        ))
+    end
+    if haskey(npz, "source_sha256_utf8")
+        expected = _sidecar_string(npz, "source_sha256_utf8")
+        actual = bytes2hex(SHA.sha256(read(mechanism)))
+        expected == actual || throw(ArgumentError(
+            "the Arrhenius sidecar does not match $mechanism; regenerate " *
+            "$(mechanism).npz from the current YAML mechanism",
+        ))
+    end
+    return nothing
+end
 """
     CreateSolution(mech)
     
@@ -48,6 +70,7 @@ function CreateSolution(mech)
     #### Kinetic data
 
     npz = npzread("$mech.npz")
+    _validate_sidecar_metadata(npz, mech)
     MW = npz["molecular_weights"]
     efficiencies_coeffs_full = npz["efficiencies_coeffs"]
     product_stoich_coeffs = sparse(npz["product_stoich_coeffs"])

@@ -1,7 +1,28 @@
 using Arrhenius
 using ForwardDiff
 using LinearAlgebra
+using SHA
 using Test
+
+@testset "sidecar provenance" begin
+    mechanism, stream = mktemp()
+    write(stream, "mechanism fixture\n")
+    close(stream)
+    digest = bytes2hex(SHA.sha256(read(mechanism)))
+    metadata = Dict(
+        "sidecar_format_utf8" => collect(codeunits("arrhenius-sidecar-v2")),
+        "source_sha256_utf8" => collect(codeunits(digest)),
+    )
+    @test Arrhenius._validate_sidecar_metadata(metadata, mechanism) === nothing
+
+    stale = copy(metadata)
+    stale["source_sha256_utf8"] = collect(codeunits(repeat("0", 64)))
+    @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(stale, mechanism)
+
+    unknown = copy(metadata)
+    unknown["sidecar_format_utf8"] = collect(codeunits("arrhenius-sidecar-v99"))
+    @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(unknown, mechanism)
+end
 
 @testset "single-region NASA7" begin
     yaml = Dict(
