@@ -1,10 +1,22 @@
 "Flattened pressure groups and Arrhenius expressions for PLOG reactions."
 struct PlogData
     reaction_indices::Vector{Int64}
+    collider_indices::Vector{Int64}
     group_offsets::Vector{Int64}
     pressures::Vector{Float64}
     rate_offsets::Vector{Int64}
     Arrhenius_coeffs::Matrix{Float64}
+end
+
+function PlogData(reaction_indices, group_offsets, pressures, rate_offsets, coefficients)
+    return PlogData(
+        reaction_indices,
+        zeros(Int64, length(reaction_indices)),
+        group_offsets,
+        pressures,
+        rate_offsets,
+        coefficients,
+    )
 end
 
 struct Reaction

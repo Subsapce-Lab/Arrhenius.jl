@@ -35,6 +35,19 @@ end
                fraction * (log(upper_rate + tiny) - log(lower_rate + tiny)))
 end
 
+@inline function _plog_rate_with_collider(
+    plog::PlogData,
+    plog_index,
+    T,
+    P,
+    logT,
+    C,
+)
+    rate = _plog_rate(plog, plog_index, T, P, logT)
+    @inbounds collider_index = plog.collider_indices[plog_index]
+    return collider_index > 0 ? rate * C[collider_index] : rate
+end
+
 "compute reaction source term `dC/dt`"
 function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
 
@@ -48,7 +61,14 @@ function wdot_func(reaction, T, C, S0, h_mole; get_qdot=false)
         P = sum(C) * R * T
         for (plog_index, reaction_index) in enumerate(reaction.plog.reaction_indices)
             @inbounds _kf[reaction_index] =
-                _plog_rate(reaction.plog, plog_index, T, P, logT)
+                _plog_rate_with_collider(
+                    reaction.plog,
+                    plog_index,
+                    T,
+                    P,
+                    logT,
+                    C,
+                )
         end
     end
 

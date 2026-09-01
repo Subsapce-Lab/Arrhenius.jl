@@ -14,6 +14,9 @@ using Test
         "source_sha256_utf8" => collect(codeunits(digest)),
     )
     @test Arrhenius._validate_sidecar_metadata(metadata, mechanism) === nothing
+    metadata_v3 = copy(metadata)
+    metadata_v3["sidecar_format_utf8"] = collect(codeunits("arrhenius-sidecar-v3"))
+    @test Arrhenius._validate_sidecar_metadata(metadata_v3, mechanism) === nothing
 
     stale = copy(metadata)
     stale["source_sha256_utf8"] = collect(codeunits(repeat("0", 64)))
@@ -62,6 +65,7 @@ end
 @testset "PLOG interpolation and duplicate rates" begin
     plog = Arrhenius.PlogData(
         [7],
+        [2],
         [1, 3],
         [1.0e5, 1.0e6],
         [1, 3, 4],
@@ -71,6 +75,15 @@ end
     @test Arrhenius._plog_rate(plog, 1, T, 1.0e4, log(T)) ≈ 5.0
     @test Arrhenius._plog_rate(plog, 1, T, sqrt(1.0e11), log(T)) ≈ 10.0
     @test Arrhenius._plog_rate(plog, 1, T, 1.0e7, log(T)) ≈ 20.0
+    concentrations = [3.0, 0.25]
+    @test Arrhenius._plog_rate_with_collider(
+        plog, 1, T, 1.0e4, log(T), concentrations,
+    ) ≈ 1.25
+    legacy_plog = Arrhenius.PlogData(
+        [7], [1, 3], [1.0e5, 1.0e6], [1, 3, 4],
+        [2.0 0.0 0.0; 3.0 0.0 0.0; 20.0 0.0 0.0],
+    )
+    @test legacy_plog.collider_indices == [0]
 end
 
 @testset "jl" begin
