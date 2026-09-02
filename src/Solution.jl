@@ -72,13 +72,13 @@ function CreateSolution(mech)
 
     npz = npzread("$mech.npz")
     _validate_sidecar_metadata(npz, mech)
-    MW = npz["molecular_weights"]
-    efficiencies_coeffs_full = npz["efficiencies_coeffs"]
-    product_stoich_coeffs = sparse(npz["product_stoich_coeffs"])
-    reactant_stoich_coeffs = sparse(npz["reactant_stoich_coeffs"])
-    reactant_orders = sparse(npz["reactant_orders"])
-    is_reversible = npz["is_reversible"]
-    Arrhenius_coeffs = npz["Arrhenius_coeffs"]
+    MW = vec(Float64.(npz["molecular_weights"]))
+    efficiencies_coeffs_full = Matrix{Float64}(npz["efficiencies_coeffs"])
+    product_stoich_coeffs = sparse(Float64.(npz["product_stoich_coeffs"]))
+    reactant_stoich_coeffs = sparse(Float64.(npz["reactant_stoich_coeffs"]))
+    reactant_orders = sparse(Float64.(npz["reactant_orders"]))
+    is_reversible = Vector{Bool}(vec(Bool.(npz["is_reversible"])))
+    Arrhenius_coeffs = Matrix{Float64}(npz["Arrhenius_coeffs"])
     if haskey(npz, "Arrhenius_A0")
         Arrhenius_A0 = npz["Arrhenius_A0"]
         Arrhenius_b0 = npz["Arrhenius_b0"]
@@ -100,8 +100,10 @@ function CreateSolution(mech)
         Troe_T2 = []
         Troe_T3 = []
     end
-    Arrhenius_0 = hcat(Arrhenius_A0, Arrhenius_b0, Arrhenius_Ea0)
-    Troe_ = hcat(Troe_A, Troe_T1, Troe_T2, Troe_T3)
+    Arrhenius_0 = Matrix{Float64}(
+        hcat(Arrhenius_A0, Arrhenius_b0, Arrhenius_Ea0),
+    )
+    Troe_ = Matrix{Float64}(hcat(Troe_A, Troe_T1, Troe_T2, Troe_T3))
 
     has_plog = any(
         get(reaction, "type", "") == "pressure-dependent-Arrhenius"
@@ -166,15 +168,15 @@ function CreateSolution(mech)
         end
     end
 
-    i_reactant = []
-    i_product = []
+    i_reactant = Vector{Vector{Int64}}()
+    i_product = Vector{Vector{Int64}}()
     for i = 1:n_reactions
         push!(i_reactant, findall(!iszero, reactant_orders[:, i]))
         push!(i_product, findall(product_stoich_coeffs[:, i] .> 0.01))
     end
 
     vk = sparse(product_stoich_coeffs - reactant_stoich_coeffs)
-    vk_sum = sum(vk, dims=1)[1, :]
+    vk_sum = vec(Float64.(sum(vk, dims=1)))
 
     for i in 1:n_reactions
         if !((i in index_three_body) | (i in index_falloff))
@@ -207,9 +209,12 @@ function CreateSolution(mech)
     #### Transport data
 
     if haskey(npz, "species_viscosities_poly")
-        species_viscosities_poly = npz["species_viscosities_poly"]
-        thermal_conductivity_poly = npz["thermal_conductivity_poly"]
-        binary_diff_coeffs_poly = npz["binary_diff_coeffs_poly"]
+        species_viscosities_poly =
+            Matrix{Float64}(npz["species_viscosities_poly"])
+        thermal_conductivity_poly =
+            Matrix{Float64}(npz["thermal_conductivity_poly"])
+        binary_diff_coeffs_poly =
+            Matrix{Float64}(npz["binary_diff_coeffs_poly"])
         poly_order = size(species_viscosities_poly)[1]
     else
         species_viscosities_poly = zeros(2, 2)

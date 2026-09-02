@@ -12,4 +12,5 @@ module Arrhenius
     include("Thermo.jl")
     include("Kinetics.jl")
     include("Transport.jl")
+    include("Precision.jl")
 end
