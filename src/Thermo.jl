@@ -14,10 +14,10 @@ for (phi, doc_name) in property_names
     # decide if dimless factor is R or RT
     if phi in (:cv, :cp, :s, :s0)
         dimmless = Symbol(:_R)
-        RRT =:(R)
+        RRT = :(oftype(T, R))
     else
         dimmless = Symbol(:_RT)
-        RRT =:(R*T)
+        RRT = :(oftype(T, R) * T)
     end
     #define the 5 functions for each quantity
     cal_phi_dimless = Symbol(:cal_,phi,dimmless)
@@ -83,7 +83,7 @@ end
 "get specific of heat capacity"
 function get_cp(gas, T, X, mean_MW)
     cp = cal_cp_R(gas, T, one_atm, X)
-    cp_mole = dot(cp, X) * R
+    cp_mole = dot(cp, X) * oftype(T, R)
     cp_mass = cp_mole / mean_MW
     return cp_mole, cp_mass
 end
@@ -92,7 +92,7 @@ export get_cp
 
 "get specific of heat capacity"
 function get_cv(cp_mole, cp_mass, mean_MW)
-    cv_mole = cp_mole - R
+    cv_mole = cp_mole - oftype(cp_mole, R)
     cv_mass = cv_mole / mean_MW
     return cv_mole, cv_mass
 end
@@ -101,7 +101,7 @@ export get_cv
 
 "get enthaphy (H) per mole"
 function get_H(gas, T, Y, X)
-    return cal_h_RT(gas, T, one_atm, X) * R * T
+    return cal_h_RT(gas, T, one_atm, X) * oftype(T, R) * T
 end
 export get_H
 
@@ -115,7 +115,7 @@ export H_mass_func
 
 "get enthaphy (U) per mole"
 function get_U(h_mole, T)
-    u_mole = h_mole .- (R * T)
+    u_mole = h_mole .- (oftype(T, R) * T)
     return u_mole
 end
 export get_U
@@ -130,7 +130,7 @@ export U_mass_func
 
 "get entropy (S)"
 function get_S(gas, T, P, X)
-    return cal_s0_R(gas, T, P, X) * R
+    return cal_s0_R(gas, T, P, X) * oftype(T, R)
 end
 export get_S
 

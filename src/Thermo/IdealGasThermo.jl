@@ -9,10 +9,10 @@ Trange: Array with temperature ranges for each species
 isTcommon: bool which indicates if both polynoms share same T at intersection
 
 """
-struct IdealGasThermo <: Thermo 
-    nasa_low::Array{Float64,2}
-    nasa_high::Array{Float64,2}
-    Trange::Array{Float64,2}
+struct IdealGasThermo{T<:AbstractFloat} <: Thermo
+    nasa_low::Array{T,2}
+    nasa_high::Array{T,2}
+    Trange::Array{T,2}
     isTcommon::Bool
 
 end
@@ -162,7 +162,9 @@ export cal_s0_R
 calculates the dimensionless mole based entropy (s) for each species
 """
 function cal_s_R(gas::Solution,thermo::IdealGasThermo, T::Real, p::Real, X::AbstractArray)
-   return cal_s0_R(gas,thermo, T,p,X) - log.(max.(X,1e-30)) .- log(p/one_atm)
+   tiny = oftype(T, 1.0e-30)
+   return cal_s0_R(gas,thermo, T,p,X) - log.(max.(X, tiny)) .-
+       log(p / oftype(T, one_atm))
 end
 
 """

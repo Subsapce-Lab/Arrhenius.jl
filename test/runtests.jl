@@ -84,6 +84,29 @@ end
         [2.0 0.0 0.0; 3.0 0.0 0.0; 20.0 0.0 0.0],
     )
     @test legacy_plog.collider_indices == [0]
+    plog32 = Arrhenius.PlogData(
+        [7], [2], [1, 3], Float32[1.0e5, 1.0e6], [1, 3, 4],
+        Float32[2.0 0.0 0.0; 3.0 0.0 0.0; 20.0 0.0 0.0],
+    )
+    T32 = 1000.0f0
+    @test eltype(plog32.Arrhenius_coeffs) == Float32
+    @test Arrhenius._plog_rate(plog32, 1, T32, 1.0f4, log(T32)) ≈ 5.0f0
+    log_rates = LogRateData(
+        Float32[], Float32[], Float32[],
+        Float32[], Float32[], Float32[],
+        Float32.(log.([2.0, 3.0, 20.0])),
+        zeros(Float32, 3),
+        zeros(Float32, 3),
+    )
+    @test Arrhenius._plog_rate(
+        log_rates,
+        plog,
+        1,
+        T,
+        sqrt(1.0e11),
+        log(T32),
+        Float32(4184.0 / R) / T32,
+    ) ≈ 10.0 rtol=1.0e-5
 end
 
 @testset "jl" begin
@@ -114,6 +137,7 @@ end
     @test wdot!(
         wdot_buffer, gas.reaction, T0, C, S0, h_mole, kinetics_workspace,
     ) ≈ wdot
+    @test_throws ArgumentError convert_precision(gas, Float32)
     baseline_qdot = copy(wdot!(
         wdot_buffer,
         gas.reaction,
@@ -124,6 +148,21 @@ end
         kinetics_workspace;
         get_qdot=true,
     ))
+    log_rate_data = LogRateData(gas.reaction, Float32)
+    mixed_qdot = copy(wdot!(
+        wdot_buffer,
+        gas.reaction,
+        T0,
+        C,
+        S0,
+        h_mole,
+        kinetics_workspace;
+        get_qdot=true,
+        log_rate_data=log_rate_data,
+    ))
+    mixed_wdot = gas.reaction.vk * mixed_qdot
+    @test all(isfinite, mixed_wdot)
+    @test norm(mixed_wdot - wdot, Inf) / norm(wdot, Inf) < 1.0e-3
     rate_multipliers = ones(gas.n_reactions)
     rate_multipliers[1] = 2.0
     perturbed_qdot = wdot!(
