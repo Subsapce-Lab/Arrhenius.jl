@@ -109,10 +109,181 @@ end
     ) ≈ 10.0 rtol=1.0e-5
 end
 
+@testset "backend-neutral ensemble API" begin
+    mechanism = MechanismIR(
+        species_names=["fuel", "product"],
+        molecular_weights=[17.0, 18.0],
+        n_reactions=3,
+        packed=(reaction_ids=collect(1:3),),
+        metadata=(name="synthetic",),
+    )
+    @test mechanism.n_species == 2
+    @test MechanismIR(mechanism) === mechanism
+    @test_throws DimensionMismatch MechanismIR(
+        species_names=["fuel"],
+        molecular_weights=[17.0, 18.0],
+        n_reactions=1,
+        packed=(;),
+    )
+
+    perturbation = SparseLogAPerturbations([2], [log(3.0)])
+    multipliers = materialize_rate_multipliers(perturbation, 3, Float32)
+    @test eltype(multipliers) == Float32
+    @test multipliers ≈ Float32[1.0, 3.0, 1.0]
+    @test_throws ArgumentError SparseLogAPerturbations([1, 1], [0.0, 1.0])
+
+    samples = [
+        EnsembleSample(
+            20,
+            (forcing=2.0,);
+            perturbations=perturbation,
+            metadata=(group=:low,),
+        ),
+        EnsembleSample(
+            10,
+            (forcing=4.0,);
+            perturbations=SparseLogAPerturbations([2], [log(2.0)]),
+            metadata=(group=:high,),
+        ),
+    ]
+    qoi = QoISchema(
+        (response=(payload, sample) -> payload.base + sample.id / 100,);
+        units=(response=:dimensionless,),
+    )
+    manifest = EnsembleManifest(
+        samples;
+        qoi=qoi,
+        metadata=(campaign="unit-test",),
+    )
+    reactor = (kind=:synthetic, gain=2.0)
+    precision = PrecisionPolicy(rates=Float32, qoi=Float64)
+    sample_solver = function (ir, reactor, sample, policies)
+        local_multipliers = materialize_rate_multipliers(
+            sample.perturbations,
+            ir.n_reactions,
+            policies.precision.rates,
+        )
+        return (
+            base=reactor.gain * sample.state.forcing * local_multipliers[2],
+        )
+    end
+    prepared = prepare_ensemble(
+        mechanism,
+        reactor;
+        precision_policy=precision,
+        jacobian=FiniteDifferenceJacobian(1.0e-6),
+        linear_solver=SparseLinearSolver(ordering=:natural),
+        sample_solver=sample_solver,
+    )
+    @test prepared isa PreparedEnsemble
+    @test backend_status(prepared.backend) == :available
+    result_type = typeof(QoIResult(0, (response=0.0,)))
+    results = Vector{result_type}(undef, length(samples))
+    @test solve_ensemble!(
+        results,
+        prepared,
+        manifest;
+        batch_policy=1,
+    ) === results
+    @test getfield.(results, :sample_id) == [20, 10]
+    @test results[1].values.response ≈ 12.2
+    @test results[2].values.response ≈ 16.1
+
+    threaded = prepare_ensemble(
+        mechanism,
+        reactor;
+        backend=CPUBackend(threaded=true),
+        precision_policy=precision,
+        sample_solver=sample_solver,
+    )
+    threaded_results = similar(results)
+    solve_ensemble!(threaded_results, threaded, manifest; batch_policy=:auto)
+    @test threaded_results == results
+
+    profile = profile_ensemble(
+        prepared,
+        manifest;
+        repetitions=2,
+        warmup=false,
+        batch_policy=1,
+    )
+    @test profile.sample_count == 2
+    @test profile.repetitions == 2
+    @test profile.batch_policy == 1
+    @test profile.effective_batch_size == 1
+    @test length(profile.elapsed_seconds) == 2
+    @test profile.median_seconds >= 0.0
+    @test profile.samples_per_second > 0.0
+    @test profile.results == results
+
+    raw_manifest = EnsembleManifest(samples)
+    raw_prepared = prepare_ensemble(
+        mechanism,
+        reactor;
+        sample_solver=(ir, reactor, sample, policies) ->
+            (raw=reactor.gain * sample.id,),
+    )
+    raw_results = Vector{typeof(QoIResult(0, (raw=0.0,)))}(undef, 2)
+    solve_ensemble!(raw_results, raw_prepared, raw_manifest)
+    @test raw_results[1].values == (raw=40.0,)
+
+    out_of_range = EnsembleManifest([
+        EnsembleSample(
+            1,
+            (forcing=1.0,);
+            perturbations=SparseLogAPerturbations([4], [0.1]),
+        ),
+    ])
+    out_of_range_results = Vector{Any}(undef, 1)
+    @test_throws ArgumentError solve_ensemble!(
+        out_of_range_results,
+        prepared,
+        out_of_range,
+    )
+    @test_throws ArgumentError solve_ensemble!(
+        results,
+        prepared,
+        manifest;
+        batch_policy=0,
+    )
+    @test_throws ArgumentError solve_ensemble!(
+        results,
+        prepared,
+        manifest;
+        batch_policy=:fixed,
+    )
+    @test_throws ArgumentError solve_ensemble!(
+        results,
+        prepared,
+        manifest;
+        batch_policy=true,
+    )
+    @test_throws ArgumentError prepare_ensemble(mechanism, reactor)
+
+    @test backend_status(CUDABackend()) == :extension_not_loaded
+    @test backend_status(MetalBackend()) == :extension_not_loaded
+    @test_throws BackendUnavailableError prepare_ensemble(
+        mechanism,
+        reactor;
+        backend=CUDABackend(),
+        sample_solver=sample_solver,
+    )
+    @test_throws BackendUnavailableError prepare_ensemble(
+        mechanism,
+        reactor;
+        backend=MetalBackend(),
+        sample_solver=sample_solver,
+    )
+end
+
 @testset "jl" begin
     # Write your tests here.
 
-    gas = CreateSolution("../mechanism/gri30.yaml")
+    mechanism_path = joinpath(@__DIR__, "..", "mechanism", "gri30.yaml")
+    gas = CreateSolution(mechanism_path)
+    gas_ir = MechanismIR(gas)
+    @test gas_ir.n_species == gas.n_species
+    @test gas_ir.packed.reaction === gas.reaction
     ns = gas.n_species
 
     Y0 = ones(ns) ./ ns

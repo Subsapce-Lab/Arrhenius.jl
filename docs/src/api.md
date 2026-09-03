@@ -24,6 +24,70 @@ Docstrings for Arrhenius.jl interface members can be [accessed through Julia's b
 :species_index
 :wdot_func
 ```
+
+```@docs
+Arrhenius.PlogData
+LogRateData
+KineticsWorkspace
+convert_precision
+wdot!
+```
+
+## Ensemble API
+
+```@docs
+MechanismIR
+SparseLogAPerturbations
+materialize_rate_multipliers
+EnsembleSample
+EnsembleManifest
+QoISchema
+QoIResult
+PrecisionPolicy
+FiniteDifferenceJacobian
+ProvidedJacobian
+DenseLinearSolver
+SparseLinearSolver
+ProvidedLinearSolver
+EnsemblePolicies
+CPUBackend
+CUDABackend
+MetalBackend
+BackendUnavailableError
+PreparedEnsemble
+backend_status
+prepare_ensemble
+solve_ensemble!
+EnsembleProfile
+profile_ensemble
+```
+
+Preparation is independent of a particular sample manifest, so one prepared
+mechanism/reactor pair can be reused across several ensembles:
+
+```julia
+reactor = (gain=2.0,)
+sample_solver = (ir, reactor, sample, policies) ->
+    (response=reactor.gain * sample.state.input,)
+
+prepared = prepare_ensemble(
+    mechanism,
+    reactor;
+    precision_policy=PrecisionPolicy(rates=Float32),
+    sample_solver=sample_solver,
+)
+samples = [EnsembleSample(i, (input=Float64(i),)) for i in 1:1024]
+qoi = QoISchema(response=(payload, sample) -> payload.response)
+manifest = EnsembleManifest(samples; qoi=qoi)
+output = Vector{Any}(undef, length(samples))
+
+solve_ensemble!(output, prepared, manifest; batch_policy=:auto)
+profile = profile_ensemble(prepared, manifest)
+```
+
+For the CPU backend, a positive integer `batch_policy` partitions the host
+iteration into chunks. It does not imply GPU-style kernel batching.
+
 ## Thermo Interface API
 
 The thermo functions can be called with the following functions.
