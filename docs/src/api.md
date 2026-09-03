@@ -29,9 +29,22 @@ Docstrings for Arrhenius.jl interface members can be [accessed through Julia's b
 Arrhenius.PlogData
 LogRateData
 KineticsWorkspace
+KineticsDerivativeWorkspace
+supports_exact_rate_partials
+reaction_rate_partials!
+ConstantVolumeJacobianWorkspace
+constant_volume_jacobian!
 convert_precision
 wdot!
 ```
+
+`constant_volume_jacobian!` evaluates the complete mass-fraction/temperature
+RHS and its exact dense Jacobian for an adiabatic, closed, constant-volume
+ideal-gas reactor. The current formula path covers elementary, third-body,
+Lindemann, and Troe rates. It rejects mechanisms containing PLOG rates until
+their pressure-interpolation derivative is implemented. Call
+`supports_exact_rate_partials` before preparing a backend that requires this
+Jacobian.
 
 ## Ensemble API
 
