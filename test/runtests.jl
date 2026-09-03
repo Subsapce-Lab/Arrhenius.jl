@@ -27,6 +27,18 @@ using Test
     @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(unknown, mechanism)
 end
 
+@testset "optional sidecar reaction-family indices" begin
+    @test Arrhenius._sidecar_reaction_family_indices(Dict()) === nothing
+    indices = Arrhenius._sidecar_reaction_family_indices(Dict(
+        "index_falloff" => [4, 9],
+        "index_falloff_Troe" => [1, -1],
+    ))
+    @test indices == (Int64[], Int64[4, 9], Int64[1, -1])
+    @test_throws ArgumentError Arrhenius._sidecar_reaction_family_indices(Dict(
+        "index_falloff" => [4],
+    ))
+end
+
 @testset "single-region NASA7" begin
     yaml = Dict(
         "phases" => [Dict(

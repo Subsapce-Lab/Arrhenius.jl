@@ -44,6 +44,22 @@ function _validate_sidecar_metadata(npz, mechanism)
     end
     return nothing
 end
+
+function _sidecar_reaction_family_indices(npz)
+    keys = ("index_three_body", "index_falloff", "index_falloff_Troe")
+    any(haskey(npz, key) for key in keys) || return nothing
+    index_three_body = haskey(npz, keys[1]) ?
+        vec(Int64.(npz[keys[1]])) : Int64[]
+    index_falloff = haskey(npz, keys[2]) ?
+        vec(Int64.(npz[keys[2]])) : Int64[]
+    index_falloff_Troe = haskey(npz, keys[3]) ?
+        vec(Int64.(npz[keys[3]])) : Int64[]
+    length(index_falloff_Troe) == length(index_falloff) ||
+        throw(ArgumentError(
+            "index_falloff_Troe must contain one entry per falloff reaction",
+        ))
+    return index_three_body, index_falloff, index_falloff_Troe
+end
 """
     CreateSolution(mech)
     
@@ -138,12 +154,11 @@ function CreateSolution(mech)
         )
     end
 
-    if haskey(npz, "index_three_body")
+    sidecar_indices = _sidecar_reaction_family_indices(npz)
+    if sidecar_indices !== nothing
         # The Cantera API also identifies implicit or explicit colliders whose
         # YAML reaction lacks a `type: three-body` field.
-        index_three_body = vec(Int64.(npz["index_three_body"]))
-        index_falloff = vec(Int64.(npz["index_falloff"]))
-        index_falloff_Troe = vec(Int64.(npz["index_falloff_Troe"]))
+        index_three_body, index_falloff, index_falloff_Troe = sidecar_indices
     else
         index_three_body = Int64[]
         index_falloff = Int64[]
