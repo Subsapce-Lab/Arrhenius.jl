@@ -106,6 +106,43 @@ MechanismIR(ir::MechanismIR; metadata::NamedTuple=ir.metadata) =
         metadata=metadata,
     )
 
+abstract type AbstractReactorModel end
+
+"""Homogeneous, adiabatic, closed ideal-gas reactor contract.
+
+The thermodynamic constraint is explicit so CPU and accelerator paths cannot
+silently compare constant-pressure and constant-volume equations. The current
+ensemble contract uses mass fractions plus temperature as state variables.
+"""
+struct HomogeneousIdealGasReactor <: AbstractReactorModel
+    constraint::Symbol
+    state_variables::Tuple{Symbol,Symbol}
+end
+
+function HomogeneousIdealGasReactor(;
+    constraint::Symbol=:constant_volume,
+    state_variables::Tuple{Symbol,Symbol}=(:mass_fractions, :temperature_K),
+)
+    constraint in (:constant_volume, :constant_pressure) ||
+        throw(ArgumentError(
+            "constraint must be :constant_volume or :constant_pressure",
+        ))
+    state_variables == (:mass_fractions, :temperature_K) ||
+        throw(ArgumentError(
+            "state_variables must be (:mass_fractions, :temperature_K)",
+        ))
+    return HomogeneousIdealGasReactor(constraint, state_variables)
+end
+
+function reactor_contract(reactor::HomogeneousIdealGasReactor)
+    suffix = reactor.constraint === :constant_volume ?
+        "constant-volume" : "constant-pressure"
+    return (
+        model=Symbol("adiabatic-closed-$suffix-ideal-gas"),
+        state_variables=reactor.state_variables,
+    )
+end
+
 """Sparse, one-based perturbations to reaction pre-exponential factors.
 
 For reaction `i`, `delta_logA[j]` represents a natural-log perturbation and is
@@ -657,6 +694,7 @@ function profile_ensemble(
 end
 
 export MechanismIR
+export AbstractReactorModel, HomogeneousIdealGasReactor, reactor_contract
 export SparseLogAPerturbations, materialize_rate_multipliers
 export EnsembleSample, EnsembleManifest, QoISchema, QoIResult
 export PrecisionPolicy, FiniteDifferenceJacobian, ProvidedJacobian

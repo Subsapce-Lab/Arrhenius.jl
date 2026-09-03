@@ -137,6 +137,18 @@ end
         n_reactions=1,
         packed=(;),
     )
+    constant_volume = HomogeneousIdealGasReactor()
+    @test reactor_contract(constant_volume) == (
+        model=Symbol("adiabatic-closed-constant-volume-ideal-gas"),
+        state_variables=(:mass_fractions, :temperature_K),
+    )
+    @test reactor_contract(HomogeneousIdealGasReactor(
+        constraint=:constant_pressure,
+    )).model == Symbol("adiabatic-closed-constant-pressure-ideal-gas")
+    @test_throws ArgumentError HomogeneousIdealGasReactor(constraint=:isobaric)
+    @test_throws ArgumentError HomogeneousIdealGasReactor(
+        state_variables=(:mole_fractions, :temperature_K),
+    )
 
     perturbation = SparseLogAPerturbations([2], [log(3.0)])
     multipliers = materialize_rate_multipliers(perturbation, 3, Float32)
