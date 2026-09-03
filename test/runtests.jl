@@ -382,6 +382,143 @@ end
         kinetics_workspace;
         rate_multipliers=ones(gas.n_reactions - 1),
     )
+
+    @testset "exact reaction-rate partials" begin
+        @test supports_exact_rate_partials(gas.reaction)
+        derivative_workspace = KineticsDerivativeWorkspace(gas.reaction)
+        qdot = zeros(gas.n_reactions)
+        dqdot_dC = zeros(gas.n_reactions, gas.n_species)
+        dqdot_dT = zeros(gas.n_reactions)
+        reaction_rate_partials!(
+            qdot,
+            dqdot_dC,
+            dqdot_dT,
+            gas.reaction,
+            T0,
+            C,
+            S0,
+            h_mole,
+            derivative_workspace,
+        )
+        function progress_from_state(state)
+            temperature = state[end]
+            concentrations = state[1:end-1]
+            dual_output = similar(concentrations)
+            dual_X = similar(concentrations)
+            total_concentration = sum(concentrations)
+            dual_X .= concentrations ./ total_concentration
+            dual_h = similar(concentrations)
+            dual_s = similar(concentrations)
+            cal_h_RT!(dual_h, gas, temperature, P, dual_X)
+            cal_s0_R!(dual_s, gas, temperature, P, dual_X)
+            dual_h .*= R * temperature
+            dual_s .*= R
+            return wdot_func(
+                gas.reaction,
+                temperature,
+                concentrations,
+                dual_s,
+                dual_h;
+                get_qdot=true,
+            )
+        end
+        positive_concentrations = max.(C, 1.0e-12)
+        positive_state = vcat(positive_concentrations, T0)
+        exact = hcat(dqdot_dC, dqdot_dT)
+        reference = ForwardDiff.jacobian(progress_from_state, positive_state)
+        reaction_rate_partials!(
+            qdot,
+            dqdot_dC,
+            dqdot_dT,
+            gas.reaction,
+            T0,
+            positive_concentrations,
+            S0,
+            h_mole,
+            derivative_workspace,
+        )
+        exact = hcat(dqdot_dC, dqdot_dT)
+        @test norm(qdot - progress_from_state(positive_state), Inf) /
+            max(norm(qdot, Inf), eps()) < 1.0e-12
+        @test norm(exact - reference, Inf) /
+            max(norm(reference, Inf), eps()) < 2.0e-10
+
+        positive_Y = max.(Y0, 1.0e-12)
+        positive_Y ./= sum(positive_Y)
+        constant_volume_state = vcat(positive_Y, T0)
+        constant_volume_workspace = ConstantVolumeJacobianWorkspace(gas)
+        constant_volume_rhs = similar(constant_volume_state)
+        constant_volume_jacobian = zeros(
+            length(constant_volume_state),
+            length(constant_volume_state),
+        )
+        constant_volume_jacobian!(
+            constant_volume_jacobian,
+            constant_volume_rhs,
+            gas,
+            density,
+            constant_volume_state,
+            constant_volume_workspace,
+        )
+        function constant_volume_rhs_reference(state)
+            temperature = state[end]
+            mass_fractions = state[1:end-1]
+            mean_molecular_weight = inv(dot(mass_fractions, 1 ./ gas.MW))
+            concentrations = density .* mass_fractions ./ gas.MW
+            mole_fractions =
+                mass_fractions .* mean_molecular_weight ./ gas.MW
+            pressure = density * R * temperature / mean_molecular_weight
+            cp_R = cal_cp_R(
+                gas,
+                temperature,
+                pressure,
+                mole_fractions,
+            )
+            enthalpies = R * temperature .* cal_h_RT(
+                gas,
+                temperature,
+                pressure,
+                mole_fractions,
+            )
+            entropies = R .* cal_s0_R(
+                gas,
+                temperature,
+                pressure,
+                mole_fractions,
+            )
+            source = wdot_func(
+                gas.reaction,
+                temperature,
+                concentrations,
+                entropies,
+                enthalpies,
+            )
+            cv_mass = R * dot(
+                mass_fractions ./ gas.MW,
+                cp_R .- one(temperature),
+            )
+            internal_energy_source = dot(
+                enthalpies .- R * temperature,
+                source,
+            )
+            return vcat(
+                gas.MW .* source ./ density,
+                -internal_energy_source / (density * cv_mass),
+            )
+        end
+        constant_volume_reference =
+            constant_volume_rhs_reference(constant_volume_state)
+        constant_volume_ad_jacobian = ForwardDiff.jacobian(
+            constant_volume_rhs_reference,
+            constant_volume_state,
+        )
+        @test norm(constant_volume_rhs - constant_volume_reference, Inf) /
+            max(norm(constant_volume_reference, Inf), eps()) < 1.0e-12
+        @test norm(
+            constant_volume_jacobian - constant_volume_ad_jacobian,
+            Inf,
+        ) / max(norm(constant_volume_ad_jacobian, Inf), eps()) < 2.0e-10
+    end
     function first_rate_of_progress(multiplier)
         multipliers = ones(typeof(multiplier), gas.n_reactions)
         multipliers[1] = multiplier
