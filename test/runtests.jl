@@ -4,6 +4,8 @@ using LinearAlgebra
 using SHA
 using Test
 
+include("zero_collider.jl")
+
 @testset "sidecar provenance" begin
     mechanism, stream = mktemp()
     write(stream, "mechanism fixture\n")
