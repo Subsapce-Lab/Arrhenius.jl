@@ -5,6 +5,7 @@ using SHA
 using Test
 
 include("zero_collider.jl")
+include("zero_collider_partials.jl")
 
 @testset "sidecar provenance" begin
     mechanism, stream = mktemp()

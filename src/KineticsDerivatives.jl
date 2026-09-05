@@ -4,6 +4,8 @@ The first implementation covers elementary, third-body, Lindemann, and Troe
 rates. PLOG is rejected explicitly until its pressure interpolation derivative
 is implemented. The derivatives are with respect to species concentrations at
 fixed temperature and temperature at fixed concentrations.
+At zero effective collider concentration, collider derivatives use the finite
+right-hand limit from nonnegative concentrations.
 """
 mutable struct KineticsDerivativeWorkspace{T<:AbstractFloat}
     effective_rates::Vector{T}
@@ -240,6 +242,7 @@ function reaction_rate_partials!(
             temperature,
         )
         dlog_rate_dlogM = zero(T)
+        zero_collider_slope = zero(T)
         collider = zero(T)
         falloff_index = workspace.falloff_map[reaction_index]
         if falloff_index > 0 || workspace.three_body[reaction_index]
@@ -248,6 +251,17 @@ function reaction_rate_partials!(
                     concentrations[efficiency_rows[pointer]]
             end
             if collider <= zero(T)
+                if iszero(collider)
+                    zero_collider_slope = effective_rate
+                    if falloff_index > 0
+                        low_rate, _ = _arrhenius_rate_and_log_derivative(
+                            reaction.Arrhenius_0, falloff_index, temperature,
+                        )
+                        zero_collider_slope = _zero_pressure_falloff(
+                            low_rate, one(T), temperature, reaction, falloff_index,
+                        )
+                    end
+                end
                 effective_rate = zero(T)
                 dlog_rate_dT = zero(T)
                 dlog_rate_dlogM = zero(T)
@@ -288,6 +302,7 @@ function reaction_rate_partials!(
                     "rate multipliers must be finite and positive",
                 ))
             effective_rate *= multiplier
+            zero_collider_slope *= multiplier
         end
         workspace.effective_rates[reaction_index] = effective_rate
         workspace.dlog_rate_dT[reaction_index] = dlog_rate_dT
@@ -353,8 +368,12 @@ function reaction_rate_partials!(
                     )
             end
         end
-        if !iszero(dlog_rate_dlogM)
-            common = qdot[reaction_index] * dlog_rate_dlogM / collider
+        if !iszero(zero_collider_slope) || !iszero(dlog_rate_dlogM)
+            # The log derivative is singular at zero; use the finite right limit
+            # of dk/d[M] before multiplying by the net mass-action factor.
+            common = iszero(collider) ?
+                zero_collider_slope * (forward_mass_action - reverse_scale * reverse_mass_action) :
+                qdot[reaction_index] * dlog_rate_dlogM / collider
             for pointer in nzrange(reaction.efficiencies_coeffs, reaction_index)
                 species = efficiency_rows[pointer]
                 dqdot_dC[reaction_index, species] +=
