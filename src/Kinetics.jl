@@ -250,6 +250,19 @@ function KineticsWorkspace(reaction::Reaction, ::Type{T}=Float64) where {T}
 end
 export KineticsWorkspace
 
+# Elementary mass-action factors are usually first or second order. Retain
+# general power for other orders (and for differentiated order parameters).
+@inline _concentration_power(concentration, order) = concentration^order
+@inline function _concentration_power(concentration, order::AbstractFloat)
+    if order == one(order)
+        return convert(promote_type(typeof(concentration), typeof(order)), concentration)
+    elseif order == oftype(order, 2)
+        value = convert(promote_type(typeof(concentration), typeof(order)), concentration)
+        return value * value
+    end
+    return concentration^order
+end
+
 "Compute reaction source terms into preallocated storage."
 function wdot!(
     wdot,
@@ -400,11 +413,11 @@ function wdot!(
 
     @inbounds for i = 1:reaction.n_reactions
         for j in reaction.i_reactant[i]
-            kf[i] *= C[j]^reaction.reactant_orders[j, i]
+            kf[i] *= _concentration_power(C[j], reaction.reactant_orders[j, i])
         end
         if reaction.is_reversible[i]
             for j in reaction.i_product[i]
-                kr[i] *= C[j]^reaction.product_stoich_coeffs[j, i]
+                kr[i] *= _concentration_power(C[j], reaction.product_stoich_coeffs[j, i])
             end
         end
         workspace.rates_of_progress[i] = kf[i] - kr[i]
