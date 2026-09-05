@@ -250,6 +250,61 @@ function KineticsWorkspace(reaction::Reaction, ::Type{T}=Float64) where {T}
 end
 export KineticsWorkspace
 
+# The generic path also supports differentiated temperatures, mixed scalar
+# types, dense stoichiometry, and caller-owned workspace implementations.
+function _equilibrium_rates!(workspace, vk, vk_sum, is_reversible, T, S0, h_mole)
+    gas_constant = oftype(T, R)
+    one_atmosphere = oftype(T, one_atm)
+    mul!(workspace.delta_s, transpose(vk), S0)
+    mul!(workspace.delta_h, transpose(vk), h_mole)
+    @inbounds for i in eachindex(workspace.kf)
+        workspace.equilibrium_constants[i] = exp(
+            workspace.delta_s[i] / gas_constant -
+            workspace.delta_h[i] / (gas_constant * T) +
+            log(one_atmosphere / gas_constant / T) * vk_sum[i],
+        )
+        workspace.kr[i] = is_reversible[i] ?
+            workspace.kf[i] / workspace.equilibrium_constants[i] : zero(T)
+    end
+    return nothing
+end
+
+# Read each stoichiometric column once for both thermodynamic reductions and
+# immediately consume the results. Keep their accumulation order and formula;
+# no Gibbs cache, extra workspace fields, or fast-math approximation is needed.
+function _equilibrium_rates!(
+    workspace::KineticsWorkspace{S}, vk::SparseMatrixCSC{S}, vk_sum,
+    is_reversible, T::S, S0::Vector{S}, h_mole::Vector{S},
+) where {S<:Union{Float32,Float64}}
+    ns, nr = size(vk)
+    length(S0) == ns && length(h_mole) == ns ||
+        throw(DimensionMismatch("species thermodynamic arrays must match stoichiometry"))
+    length(workspace.delta_s) == nr && length(workspace.delta_h) == nr ||
+        throw(DimensionMismatch("reaction thermodynamic arrays must match stoichiometry"))
+    gas_constant = oftype(T, R)
+    rt = gas_constant * T
+    log_standard_concentration = log(oftype(T, one_atm) / gas_constant / T)
+    rows = rowvals(vk)
+    values = nonzeros(vk)
+    @inbounds for i in eachindex(workspace.kf)
+        delta_s = zero(S)
+        delta_h = zero(S)
+        for k in nzrange(vk, i)
+            species = rows[k]
+            coefficient = values[k]
+            delta_s += coefficient * S0[species]
+            delta_h += coefficient * h_mole[species]
+        end
+        workspace.delta_s[i] = delta_s
+        workspace.delta_h[i] = delta_h
+        equilibrium = exp(delta_s / gas_constant - delta_h / rt +
+            log_standard_concentration * vk_sum[i])
+        workspace.equilibrium_constants[i] = equilibrium
+        workspace.kr[i] = is_reversible[i] ? workspace.kf[i] / equilibrium : zero(T)
+    end
+    return nothing
+end
+
 # Elementary mass-action factors are usually first or second order. Retain
 # general power for other orders (and for differentiated order parameters).
 @inline _concentration_power(concentration, order) = concentration^order
@@ -279,8 +334,6 @@ function wdot!(
     kf = workspace.kf
     kr = workspace.kr
     logT = log(T)
-    gas_constant = oftype(T, R)
-    one_atmosphere = oftype(T, one_atm)
     activation_scale = oftype(T, 4184.0 / R) / T
     if !isnothing(log_rate_data)
         length(log_rate_data.base_log_a) == length(kf) ||
@@ -399,17 +452,8 @@ function wdot!(
         end
     end
 
-    mul!(workspace.delta_s, transpose(reaction.vk), S0)
-    mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
-    @inbounds for i in eachindex(kf)
-        workspace.equilibrium_constants[i] = exp(
-            workspace.delta_s[i] / gas_constant -
-            workspace.delta_h[i] / (gas_constant * T) +
-            log(one_atmosphere / gas_constant / T) * reaction.vk_sum[i],
-        )
-        kr[i] = reaction.is_reversible[i] ?
-            kf[i] / workspace.equilibrium_constants[i] : zero(T)
-    end
+    _equilibrium_rates!(workspace, reaction.vk, reaction.vk_sum,
+        reaction.is_reversible, T, S0, h_mole)
 
     @inbounds for i = 1:reaction.n_reactions
         for j in reaction.i_reactant[i]

@@ -5,6 +5,7 @@ using SHA
 using Test
 
 include("concentration_powers.jl")
+include("equilibrium_rates.jl")
 include("zero_collider.jl")
 include("zero_collider_partials.jl")
 include("plog_partials.jl")
