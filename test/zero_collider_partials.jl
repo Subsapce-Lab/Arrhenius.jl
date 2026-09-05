@@ -18,7 +18,7 @@ using SparseArrays
         )
         workspace = KineticsDerivativeWorkspace(reaction)
         qdot, dC, dT = zeros(1), zeros(1, 2), zeros(1)
-        for multiplier in (1.0, 2.5), collider in (0.0, 1e-6, 1.0)
+        for multiplier in (1.0, 2.5), collider in (-1e-8, 0.0, 1e-6, 1.0)
             concentrations = [2.0, collider]
             function rate(state)
                 return wdot_func(reaction, state[end], state[1:2], zeros(2),
@@ -28,9 +28,13 @@ using SparseArrays
             reference = ForwardDiff.jacobian(rate, state)
             reaction_rate_partials!(qdot, dC, dT, reaction, 1000.0,
                 concentrations, zeros(2), zeros(2), workspace;
-                rate_multipliers=[multiplier])
+                rate_multipliers=[multiplier], allow_signed_concentrations=true)
             @test qdot ≈ rate(state) rtol=1e-12 atol=1e-14
             @test hcat(dC, dT) ≈ reference rtol=1e-10 atol=1e-12
+            if collider < 0
+                @test_throws DomainError reaction_rate_partials!(qdot, dC, dT,
+                    reaction, 1000.0, concentrations, zeros(2), zeros(2), workspace)
+            end
         end
     end
 end

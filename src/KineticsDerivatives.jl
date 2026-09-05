@@ -1,8 +1,7 @@
 """Reusable storage for exact reaction-rate partial derivatives.
 
-The first implementation covers elementary, third-body, Lindemann, and Troe
-rates. PLOG is rejected explicitly until its pressure interpolation derivative
-is implemented. The derivatives are with respect to species concentrations at
+The implementation covers elementary, third-body, Lindemann, Troe, and PLOG
+rates. The derivatives are with respect to species concentrations at
 fixed temperature and temperature at fixed concentrations.
 At zero effective collider concentration, collider derivatives use the finite
 right-hand limit from nonnegative concentrations.
@@ -19,6 +18,7 @@ mutable struct KineticsDerivativeWorkspace{T<:AbstractFloat}
     collider_concentrations::Vector{T}
     falloff_map::Vector{Int32}
     three_body::BitVector
+    plog_map::Vector{Int32}
 end
 
 function KineticsDerivativeWorkspace(
@@ -32,6 +32,10 @@ function KineticsDerivativeWorkspace(
     end
     three_body = falses(n)
     three_body[reaction.index_three_body] .= true
+    plog_map = zeros(Int32, n)
+    for (plog_index, reaction_index) in enumerate(reaction.plog.reaction_indices)
+        plog_map[reaction_index] = Int32(plog_index)
+    end
     return KineticsDerivativeWorkspace{T}(
         zeros(T, n),
         zeros(T, n),
@@ -44,16 +48,59 @@ function KineticsDerivativeWorkspace(
         zeros(T, n),
         falloff_map,
         three_body,
+        plog_map,
     )
 end
 
 export KineticsDerivativeWorkspace
 
 "Return whether the exact rate-partial implementation covers every reaction."
-supports_exact_rate_partials(reaction::Reaction) =
-    isempty(reaction.plog.reaction_indices)
+supports_exact_rate_partials(::Reaction) = true
 
 export supports_exact_rate_partials
+
+@inline function _plog_group_rate_and_derivative(plog, group, temperature)
+    rate = zero(temperature)
+    derivative = zero(temperature)
+    for row in plog.rate_offsets[group]:(plog.rate_offsets[group + 1] - 1)
+        term, dlogterm = _arrhenius_rate_and_log_derivative(
+            plog.Arrhenius_coeffs, row, temperature,
+        )
+        rate += term
+        derivative += term * dlogterm
+    end
+    return rate, derivative
+end
+
+"PLOG k, dk/dT at fixed pressure, and dk/dP at fixed temperature."
+function _plog_rate_and_derivatives(plog, index, temperature, pressure)
+    first_group = plog.group_offsets[index]
+    last_group = plog.group_offsets[index + 1] - 1
+    if pressure <= plog.pressures[first_group]
+        rate, derivative = _plog_group_rate_and_derivative(plog, first_group, temperature)
+        return rate, derivative, zero(rate)
+    elseif pressure >= plog.pressures[last_group]
+        rate, derivative = _plog_group_rate_and_derivative(plog, last_group, temperature)
+        return rate, derivative, zero(rate)
+    end
+    lower = first_group
+    while pressure > plog.pressures[lower + 1]
+        lower += 1
+    end
+    low_rate, low_dT = _plog_group_rate_and_derivative(plog, lower, temperature)
+    high_rate, high_dT = _plog_group_rate_and_derivative(plog, lower + 1, temperature)
+    # Match the rate implementation's duplicate summation and positivity floor.
+    low_rate += _positive_floor(low_rate)
+    high_rate += _positive_floor(high_rate)
+    log_span = log(plog.pressures[lower + 1] / plog.pressures[lower])
+    fraction = log(pressure / plog.pressures[lower]) / log_span
+    log_ratio = log(high_rate) - log(low_rate)
+    rate = exp(log(low_rate) + fraction * log_ratio)
+    dT = rate * ((one(fraction) - fraction) * low_dT / low_rate +
+        fraction * high_dT / high_rate)
+    dP = rate * log_ratio / (pressure * log_span)
+    return rate, dT, dP
+end
 
 @inline function _arrhenius_rate_and_log_derivative(coefficients, row, T)
     @inbounds A = coefficients[row, 1]
@@ -173,7 +220,8 @@ end
 
 """
     reaction_rate_partials!(qdot, dqdot_dC, dqdot_dT, reaction, T, C,
-                            S0, h_mole, workspace; rate_multipliers=nothing)
+                            S0, h_mole, workspace; rate_multipliers=nothing,
+                            allow_signed_concentrations=false)
 
 Evaluate net rates of progress and their exact partial derivatives. `dqdot_dC`
 is ordered reaction by species, and `dqdot_dT` differentiates at fixed
@@ -182,6 +230,9 @@ enthalpy arrays used by `wdot!`.
 
 The method preserves the complete mechanism. It performs no QSSA, mechanism
 reduction, tabulation, or rate approximation.
+`allow_signed_concentrations=true` follows the RHS extension at signed solver
+iterates (integer mass-action powers, signed third bodies, and zero falloff for
+negative effective collider). It does not regularize singular reaction orders.
 """
 function reaction_rate_partials!(
     qdot::AbstractVector{T},
@@ -194,9 +245,10 @@ function reaction_rate_partials!(
     enthalpies::AbstractVector{T},
     workspace::KineticsDerivativeWorkspace{T};
     rate_multipliers=nothing,
+    allow_signed_concentrations=false,
 ) where {T<:AbstractFloat}
     supports_exact_rate_partials(reaction) || throw(ArgumentError(
-        "exact rate partials do not yet support PLOG reactions",
+        "reaction family is not supported by exact rate partials",
     ))
     _validate_rate_partial_storage(
         qdot,
@@ -222,7 +274,7 @@ function reaction_rate_partials!(
         temperature,
         "temperature must be positive",
     ))
-    all(>=(zero(T)), concentrations) || throw(DomainError(
+    (allow_signed_concentrations || all(>=(zero(T)), concentrations)) || throw(DomainError(
         minimum(concentrations),
         "concentrations must be nonnegative",
     ))
@@ -234,6 +286,7 @@ function reaction_rate_partials!(
     efficiency_values = nonzeros(reaction.efficiencies_coeffs)
     gas_constant = oftype(temperature, R)
     one_atmosphere = oftype(temperature, one_atm)
+    pressure = sum(concentrations) * gas_constant * temperature
 
     @inbounds for reaction_index in 1:reaction.n_reactions
         effective_rate, dlog_rate_dT = _arrhenius_rate_and_log_derivative(
@@ -243,6 +296,26 @@ function reaction_rate_partials!(
         )
         dlog_rate_dlogM = zero(T)
         zero_collider_slope = zero(T)
+        plog_index = workspace.plog_map[reaction_index]
+        plog_dT = zero(T)
+        plog_dC = zero(T)
+        named_collider_slope = zero(T)
+        named_collider = 0
+        if plog_index > 0
+            effective_rate, plog_dT, dP = _plog_rate_and_derivatives(
+                reaction.plog, plog_index, temperature, pressure,
+            )
+            plog_dT += dP * pressure / temperature
+            plog_dC = dP * gas_constant * temperature
+            named_collider = reaction.plog.collider_indices[plog_index]
+            if named_collider > 0
+                named_collider_slope = effective_rate
+                effective_rate *= concentrations[named_collider]
+                plog_dT *= concentrations[named_collider]
+                plog_dC *= concentrations[named_collider]
+            end
+            dlog_rate_dT = zero(T)
+        end
         collider = zero(T)
         falloff_index = workspace.falloff_map[reaction_index]
         if falloff_index > 0 || workspace.three_body[reaction_index]
@@ -250,7 +323,7 @@ function reaction_rate_partials!(
                 collider += efficiency_values[pointer] *
                     concentrations[efficiency_rows[pointer]]
             end
-            if collider <= zero(T)
+            if iszero(collider) || (falloff_index > 0 && collider < zero(T))
                 if iszero(collider)
                     zero_collider_slope = effective_rate
                     if falloff_index > 0
@@ -303,6 +376,9 @@ function reaction_rate_partials!(
                 ))
             effective_rate *= multiplier
             zero_collider_slope *= multiplier
+            plog_dT *= multiplier
+            plog_dC *= multiplier
+            named_collider_slope *= multiplier
         end
         workspace.effective_rates[reaction_index] = effective_rate
         workspace.dlog_rate_dT[reaction_index] = dlog_rate_dT
@@ -345,6 +421,17 @@ function reaction_rate_partials!(
         dqdot_dT[reaction_index] =
             qdot[reaction_index] * dlog_rate_dT +
             reverse_progress * dlog_equilibrium_dT
+        net_mass_action = forward_mass_action - reverse_scale * reverse_mass_action
+        if plog_index > 0
+            dqdot_dT[reaction_index] += plog_dT * net_mass_action
+            for species in eachindex(concentrations)
+                dqdot_dC[reaction_index, species] += plog_dC * net_mass_action
+            end
+            if named_collider > 0
+                dqdot_dC[reaction_index, named_collider] +=
+                    named_collider_slope * net_mass_action
+            end
+        end
 
         for species in reaction.i_reactant[reaction_index]
             dqdot_dC[reaction_index, species] += effective_rate *

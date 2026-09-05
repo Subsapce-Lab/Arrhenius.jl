@@ -6,6 +6,8 @@ using Test
 
 include("zero_collider.jl")
 include("zero_collider_partials.jl")
+include("plog_partials.jl")
+include("constant_pressure_jacobian.jl")
 
 @testset "sidecar provenance" begin
     mechanism, stream = mktemp()
