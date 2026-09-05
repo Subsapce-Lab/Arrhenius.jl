@@ -1,3 +1,26 @@
+import ForwardDiff
+
+# Branch on the physical value, not on the infinitesimal AD seed. ForwardDiff
+# 1.x deliberately includes partials when comparing two equal primal values.
+@inline _falloff_value(value) = value
+@inline _falloff_value(value::ForwardDiff.Dual) = _falloff_value(ForwardDiff.value(value))
+
+@inline function _zero_pressure_falloff(k0, collider, T, reaction, falloff_index)
+    rate = k0 * collider
+    troe_index = reaction.index_falloff_Troe[falloff_index]
+    if troe_index > 0
+        @inbounds F_cent =
+            (one(T) - reaction.Troe_[troe_index, 1]) * exp(-T / reaction.Troe_[troe_index, 4]) +
+            reaction.Troe_[troe_index, 1] * exp(-T / reaction.Troe_[troe_index, 2]) +
+            exp(-reaction.Troe_[troe_index, 3] / T)
+        # As log10(Pr) -> -Inf, the Troe ratio approaches -1 / 0.14.
+        # Retaining collider (including its AD seed) preserves dk/d[M] at zero.
+        exponent = inv(one(T) + inv(oftype(T, 0.14))^2)
+        rate *= exp(log(F_cent) * exponent)
+    end
+    return rate
+end
+
 @inline function _plog_group_rate(plog::PlogData, group, T, logT)
     rate = zero(T)
     activation_scale = oftype(T, 4184.0 / R) / T
@@ -227,6 +250,19 @@ function KineticsWorkspace(reaction::Reaction, ::Type{T}=Float64) where {T}
 end
 export KineticsWorkspace
 
+# Elementary mass-action factors are usually first or second order. Retain
+# general power for other orders (and for differentiated order parameters).
+@inline _concentration_power(concentration, order) = concentration^order
+@inline function _concentration_power(concentration, order::AbstractFloat)
+    if order == one(order)
+        return convert(promote_type(typeof(concentration), typeof(order)), concentration)
+    elseif order == oftype(order, 2)
+        value = convert(promote_type(typeof(concentration), typeof(order)), concentration)
+        return value * value
+    end
+    return concentration^order
+end
+
 "Compute reaction source terms into preallocated storage."
 function wdot!(
     wdot,
@@ -322,13 +358,16 @@ function wdot!(
             )
         end
         @inbounds collider = dot(@view(reaction.efficiencies_coeffs[:, i]), C)
-        if collider <= zero(collider)
+        if _falloff_value(collider) < zero(_falloff_value(collider))
             kf[i] = zero(collider)
+            continue
+        elseif iszero(_falloff_value(collider))
+            kf[i] = _zero_pressure_falloff(k0, collider, T, reaction, j)
             continue
         end
         @inbounds Pr = k0 * collider / kf[i]
-        if Pr <= zero(Pr)
-            kf[i] = zero(Pr)
+        if _falloff_value(Pr) <= zero(_falloff_value(Pr))
+            kf[i] = _zero_pressure_falloff(k0, collider, T, reaction, j)
             continue
         end
         lPr = log10(Pr)
@@ -374,11 +413,11 @@ function wdot!(
 
     @inbounds for i = 1:reaction.n_reactions
         for j in reaction.i_reactant[i]
-            kf[i] *= C[j]^reaction.reactant_orders[j, i]
+            kf[i] *= _concentration_power(C[j], reaction.reactant_orders[j, i])
         end
         if reaction.is_reversible[i]
             for j in reaction.i_product[i]
-                kr[i] *= C[j]^reaction.product_stoich_coeffs[j, i]
+                kr[i] *= _concentration_power(C[j], reaction.product_stoich_coeffs[j, i])
             end
         end
         workspace.rates_of_progress[i] = kf[i] - kr[i]
