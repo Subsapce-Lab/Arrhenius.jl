@@ -11,8 +11,18 @@ SHA = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
+[weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Metal = "dde4c033-4e86-420c-a63e-0dd931031962"
+
+[extensions]
+ArrheniusCUDAExt = "CUDA"
+ArrheniusMetalExt = "Metal"
+
 [compat]
+CUDA = "5"
 ForwardDiff = "0.10, 1"
+Metal = "1"
 NPZ = "0.4"
 YAML = "0.4"
 julia = "1"

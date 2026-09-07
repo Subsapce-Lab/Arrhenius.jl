@@ -11,6 +11,9 @@ module Arrhenius
     include("Magic.jl")
     include("Thermo.jl")
     include("Kinetics.jl")
+    include("KineticsDerivatives.jl")
+    include("ConstantPressureJacobian.jl")
     include("Transport.jl")
     include("Precision.jl")
+    include("Ensembles.jl")
 end

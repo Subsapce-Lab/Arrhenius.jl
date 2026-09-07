@@ -20,6 +20,21 @@ Lindemann and Troe falloff reactions, pressure-dependent Arrhenius (PLOG)
 reactions, one- and two-region NASA7 thermochemistry, and explicit reaction
 orders. Unsupported Cantera rate models are rejected during preprocessing.
 
+## Exact homogeneous-reactor Jacobians
+
+`constant_volume_jacobian!` and `constant_pressure_jacobian!` evaluate the
+complete adiabatic ideal-gas reactor RHS and its exact derivative with respect
+to independent mass fractions and temperature. The formula path covers
+elementary, third-body, Lindemann, Troe, and PLOG reactions, and accepts
+per-reaction rate multipliers. Reusable workspace types are provided for both
+reactors. The implementation preserves every reaction.
+
+Concentrations must normally be nonnegative. The constant-pressure API's
+explicit `allow_signed_state=true` option matches the existing RHS extension
+for signed Newton iterates; it does not clamp concentrations or regularize
+singular reaction orders. PLOG derivatives follow the same piecewise interval
+selection as rate evaluation.
+
 
 ## Publication
 
