@@ -1,5 +1,5 @@
 # Usage: julia --project=SOLVER_ENV real_gas_jacobians.jl REFERENCE_DIR
-# Prepare data with real_gas_reactor_cases.py. Requires ForwardDiff and NPZ.
+# Prepare data with real_gas_reactor_cases.py. Requires ForwardDiff.
 # Both mechanisms include nonzero third-body/falloff rates; h2-plog also checks
 # derivatives of true EOS pressure in PLOG. These are numerical test states.
 using Arrhenius, ForwardDiff, LinearAlgebra, Test
@@ -29,6 +29,15 @@ directory=only(ARGS)
         shocktube_ad_jacobian(reactor)(J,u,nothing,0.)
         error=maximum(abs.(J-full)./max.(maximum(abs.(full),dims=2),1e-20))
         @test error<2e-12
+        # Newton iterations can use slightly negative trial species. The
+        # Jacobian must differentiate the same clipped-concentration branch
+        # as the RHS, rather than inserting a positive-species derivative.
+        negative=copy(u)
+        negative[2:3:end-1].=-1e-20
+        negative_full=ForwardDiff.jacobian(x -> uncached_reactor_derivative(reactor,x),negative)
+        negative_J=similar(J)
+        shocktube_ad_jacobian(reactor)(negative_J,negative,nothing,0.)
+        @test maximum(abs.(negative_J-negative_full)./max.(maximum(abs.(negative_full),dims=2),1e-20))<2e-12
         direction=sin.(collect(1.:length(u))).*max.(abs.(u),1e-6)
         rhs=reactor_rhs(reactor)
         plus,minus=zero(u),zero(u)

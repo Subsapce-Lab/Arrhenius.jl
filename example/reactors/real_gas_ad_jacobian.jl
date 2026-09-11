@@ -8,8 +8,9 @@ ideal-gas or Redlich-Kwong reactor. The solver environment needs ForwardDiff.
 
 Composition derivatives reuse temperature-only rate factors while differentiating
 EOS pressure, fugacity activities, colliders and falloff. The temperature column
-uses full automatic differentiation. At zero or roundoff-negative species, the
-Jacobian uses the limit from positive composition; the ODE state is unchanged.
+uses full automatic differentiation. At zero species the Jacobian uses the limit
+from positive composition. Negative trial species follow the RHS's clipped
+concentration branch; the ODE state is unchanged.
 At a thermo-polynomial split, the derivative follows the selected coefficient
 region. Blowers-Masel rates are outside this helper's validated scope.
 
@@ -43,7 +44,7 @@ function _shocktube_ad_jacobian(reactor,::Val{N}) where N
             T=current_temperature[]
             total=zero(eltype(Y))
             @inbounds for k in 1:n
-                work.X[k]=Y[k]/gas.MW[k]
+                work.X[k]=max(Y[k],zero(Y[k]))/gas.MW[k]
                 total+=work.X[k]
             end
             work.X ./= total
@@ -67,7 +68,7 @@ function _shocktube_ad_jacobian(reactor,::Val{N}) where N
         composition_rhs = function (du,Y)
             T=current_temperature[]
             @inbounds for k in 1:n
-                work.C[k]=Y[k]*reactor.density/gas.MW[k]
+                work.C[k]=max(Y[k],zero(Y[k]))*reactor.density/gas.MW[k]
             end
             wdot!(work.wdot,gas.reaction,T,work.C,floats.entropy,floats.h_mole,work.kinetics;
                 temperature_cache=cache,rate_multipliers=reactor.rate_multipliers)
@@ -97,7 +98,7 @@ function _shocktube_ad_jacobian(reactor,::Val{N}) where N
         copyto!(state,u)
         @inbounds for k in 1:n
             # Right-sided physical derivative at an absent species.
-            state[k]<=0 && (state[k]=1e-100)
+            state[k]==0 && (state[k]=1e-100)
         end
         copyto!(x,view(state,1:n))
         T=state[end]
