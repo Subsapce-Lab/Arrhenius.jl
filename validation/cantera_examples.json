@@ -671,11 +671,21 @@
         "report": "validation/results/cantera4_wsl_equations_of_state.json",
         "additional_report": "validation/results/cantera4_m4_equations_of_state.json",
         "case": "thermo/equations_of_state",
-        "scope": "Complete 1,000-pressure, three-EOS CO2 calculation on WSL and M4, with all 15,000 source properties, 3,000 densities, gas/liquid phase and native identity/replay checks. Performance remains unmeasured."
+        "scope": "Complete 1,000-pressure, three-EOS CO2 calculation on WSL and M4, with all 15,000 source properties, 3,000 densities, gas/liquid phase and native identity/replay checks."
       },
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_equations_of_state_timing.json",
+        "case": "thermo/equations_of_state",
+        "speed_ratio": 19.728821265957045,
+        "scope": "Complete warm 1,000-pressure, three-EOS sweep on prepared models; nine normalized batches, every repeated output checked. Imports, model loading, pristine state restore, plotting and checks excluded."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_equations_of_state_timing.json",
+        "case": "thermo/equations_of_state",
+        "speed_ratio": 26.07568816609372,
+        "scope": "Complete warm 1,000-pressure, three-EOS sweep on prepared models; nine normalized batches, every repeated output checked. Imports, model loading, pristine state restore, plotting and checks excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/equivalenceRatio",
