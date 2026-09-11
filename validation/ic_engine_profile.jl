@@ -65,6 +65,8 @@ end
 function engine_profile_main(args)
     length(args)==2 || error("supply MECHANISM.yaml OUTPUT_PREFIX")
     mechanism,prefix = args
+    realpath(pathof(Arrhenius))==realpath(joinpath(@__DIR__,"..","src","Arrhenius.jl")) ||
+        error("the profiler and Arrhenius package must use the same checkout")
     thread_checks = Dict("before_first"=>benchmark_julia_thread_settings())
     cold = @timed profiled_engine_calculation(mechanism)
     engine_require_checks(cold.value,"cold profiling invocation")

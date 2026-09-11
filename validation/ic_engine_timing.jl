@@ -57,6 +57,8 @@ function engine_timing_main(args)
     repetitions>=9 || error("at least nine warm repetitions required")
     qualification in ("informational","controlled","validate-only") || error("invalid qualification")
     root = normpath(joinpath(@__DIR__,".."))
+    realpath(pathof(Arrhenius))==realpath(joinpath(root,"src","Arrhenius.jl")) ||
+        error("the benchmark and Arrhenius package must use the same checkout")
     source_hashes = engine_source_hashes(root)
     thread_keys = Sys.isapple() ? ("JULIA_NUM_THREADS","OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS") :
                                  ("JULIA_NUM_THREADS","OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS")

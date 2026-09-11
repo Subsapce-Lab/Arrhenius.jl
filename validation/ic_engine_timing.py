@@ -358,8 +358,10 @@ def main():
     code_matches=all((root/path).is_file() and sha(root/path)==digest for path,digest in source_hashes.items())
     native_thread_helper_matches=meta.get("thread_helper_sha256")==sha(root/"validation"/"numerical_threads.jl")
     expected_native_checks={"before_first","before_warm","after_all"}|{f"after_warm_{i+1}" for i in range(len(native_samples))}
+    required_native_getters={"julia_threads","blas_threads"}|({"accelerate_threading_mode"} if native_host["system"]=="Darwin" else set())
     native_actual_threads_valid=(set(native_thread_checks)==expected_native_checks and
-        all(values and all(value==1 for value in values.values()) for values in native_thread_checks.values()))
+        all(required_native_getters<=values.keys() and all(value==1 for value in values.values())
+            for values in native_thread_checks.values()))
     all_repetitions_checked=(len(samples)==len(matches)==len(checks)>=MIN_REPETITIONS and
         len(native_samples)==len(native_matches)==len(native_checks)>=MIN_REPETITIONS and
         all(matches) and all(checks) and all(native_matches) and all(native_checks))
