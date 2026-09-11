@@ -282,6 +282,9 @@ function wdot!(
     rate_multipliers=nothing,
     log_rate_data=nothing,
     temperature_cache=nothing,
+    pressure=nothing,
+    activity_concentrations=nothing,
+    get_rate_constants=false,
 )
     kf = workspace.kf
     kr = workspace.kr
@@ -289,7 +292,8 @@ function wdot!(
     gas_constant = oftype(T, R)
     one_atmosphere = oftype(T, one_atm)
     activation_scale = oftype(T, 4184.0 / R) / T
-    cached = temperature_cache !== nothing && log_rate_data === nothing && T isa Float64
+    cached = temperature_cache !== nothing && log_rate_data === nothing && T isa Float64 &&
+        isempty(reaction.blowers_masel.reaction_indices)
     refresh_temperature = !cached || temperature_cache.temperature != T
     if !isnothing(log_rate_data)
         length(log_rate_data.base_log_a) == length(kf) ||
@@ -337,7 +341,7 @@ function wdot!(
     end
 
     if !isempty(reaction.plog.reaction_indices)
-        P = sum(C) * R * T
+        P = isnothing(pressure) ? sum(C) * R * T : pressure
         for (plog_index, reaction_index) in enumerate(reaction.plog.reaction_indices)
             @inbounds kf[reaction_index] = if isnothing(log_rate_data)
                 _plog_rate_with_collider(
@@ -361,6 +365,13 @@ function wdot!(
                 )
             end
         end
+    end
+
+    for (j,i) in enumerate(reaction.blowers_masel.reaction_indices)
+        delta_h = dot(@view(reaction.vk[:,i]),h_mole)
+        p = reaction.blowers_masel.coefficients
+        barrier = _blowers_masel_barrier(p[j,3],p[j,4],delta_h)
+        kf[i] = p[j,1]*exp(p[j,2]*logT-barrier/(R*T))
     end
 
     for i in reaction.index_three_body
@@ -450,7 +461,8 @@ function wdot!(
             kf[i] / workspace.equilibrium_constants[i] : zero(T)
     end
 
-    _mass_action!(workspace,reaction,C)
+    get_rate_constants && return (;forward=kf,reverse=kr,equilibrium=workspace.equilibrium_constants)
+    _mass_action!(workspace,reaction,isnothing(activity_concentrations) ? C : activity_concentrations)
 
     if get_qdot
         return workspace.rates_of_progress
@@ -459,6 +471,18 @@ function wdot!(
     return wdot
 end
 export wdot!
+
+"Forward, reverse and concentration-equilibrium constants at an ideal-gas state."
+function reaction_rate_constants(gas::Solution;T,P=one_atm,X)
+    isfinite(T) && T > 0 && isfinite(P) && P > 0 || throw(ArgumentError("positive finite temperature and pressure required"))
+    x = mole_fractions(gas,X)
+    c = P/(R*T).*x
+    h = cal_h_RT(gas,T,P,x).*(R*T)
+    s = cal_s0_R(gas,T,P,x).*R
+    workspace = KineticsWorkspace(gas.reaction,promote_type(typeof(T),eltype(c)))
+    return wdot!(similar(c),gas.reaction,T,c,s,h,workspace;get_rate_constants=true)
+end
+export reaction_rate_constants
 
 "compute reaction source term `dC/dt`"
 function wdot_func(

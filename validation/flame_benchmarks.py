@@ -19,7 +19,7 @@ translational shift; burner profiles are compared on the physical coordinate.
 All errors are reported regardless of gate outcomes.
 
 Performance gate: Cantera median / Julia median >= 0.95, enforced only for a
-formal pass (--formal, which requires verified Apple M4 hardware); otherwise
+formal pass (--formal, which verifies --target, default WSL); otherwise
 the ratio is reported as informational. Comparisons require Cantera 4.0.x.
 If the Cantera build does not expose its source commit, an explicit
 --cantera-commit SHA override is required and recorded as provided provenance.
@@ -37,6 +37,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from benchmark_environment import host_metadata, matches_target, cantera_library_hashes
 
 for _thread_variable in ("OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[_thread_variable] = "1"
@@ -75,17 +76,6 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def cpu_brand() -> str:
-    if platform.system() == "Darwin":
-        try:
-            return subprocess.run(
-                ["sysctl", "-n", "machdep.cpu.brand_string"],
-                capture_output=True, text=True, check=True).stdout.strip()
-        except Exception:
-            return platform.processor() or "unknown"
-    return platform.processor() or "unknown"
 
 
 def run_cantera_case(ct, gas, case: dict, reps: int) -> dict:
@@ -207,8 +197,9 @@ def main() -> int:
                         help="verified Cantera source SHA when the build does "
                              "not report one (recorded as provided provenance)")
     parser.add_argument("--formal", action="store_true",
-                        help="formal M4 performance pass: enforce hardware and "
+                        help="formal performance pass: enforce target host and "
                              "the >=0.95 Cantera/Julia median speed ratio")
+    parser.add_argument("--target", choices=("wsl", "apple-m4"), default="wsl")
     args = parser.parse_args()
     if args.reps < 5:
         parser.error("--reps must be at least 5")
@@ -222,8 +213,7 @@ def main() -> int:
                            "profile_abs_floor": PROFILE_FLOOR,
                            "element_abs_tol": ELEMENT_TOL,
                            "min_speed_ratio": MIN_SPEED_RATIO},
-              "hardware": {"platform": platform.platform(),
-                           "machine": platform.machine(), "cpu": cpu_brand()},
+              "hardware": host_metadata(), "benchmark_target": args.target,
               "threads": {"julia_blas": 1, "julia": 1, "omp": 1}}
 
     if not ct.__version__.startswith("4.0"):
@@ -240,12 +230,14 @@ def main() -> int:
                           "cantera_commit_provenance": provenance,
                           "numpy": np.__version__, "python": platform.python_version()}
 
-    if args.formal and "M4" not in report["hardware"]["cpu"]:
-        parser.error("a formal performance pass requires Apple M4 hardware; "
-                     f"detected: {report['hardware']['cpu']}")
-    elif "M4" not in report["hardware"]["cpu"]:
-        report["note"] = ("non-M4 hardware: correctness gates enforced, speed "
-                          "ratio informational only")
+    if args.formal and not matches_target(report["hardware"],args.target):
+        parser.error(f"a formal performance pass requires {args.target}; "
+                     f"detected: {report['hardware']}")
+    if not args.formal:
+        report["note"] = "correctness gates enforced; speed ratio informational only"
+    import cantera._cantera as compiled
+    report["versions"]["cantera_extension_sha256"] = sha256(Path(compiled.__file__))
+    report["versions"]["cantera_shared_libraries_sha256"] = cantera_library_hashes(ct.__file__)
 
     try:
         source_commit = subprocess.run(
@@ -299,6 +291,11 @@ def main() -> int:
         jl_raw = None
     else:
         jl_raw = np.load(julia_npz, allow_pickle=False)
+        report["julia_host"] = {key: bytes(jl_raw[key+"_utf8"]).decode()
+                                for key in ("system","kernel_release","cpu")}
+        if args.formal and (not matches_target(report["julia_host"],args.target)
+                           or report["julia_host"]["kernel_release"] != report["hardware"]["kernel_release"]):
+            errors.append("Julia and Cantera must both run on the selected target host")
         report["versions"]["julia"] = subprocess.run(
             [args.julia, "--version"], capture_output=True, text=True
         ).stdout.strip()
@@ -391,7 +388,7 @@ def main() -> int:
             line += "julia results unavailable"
         print(line)
     print(f"overall: {'PASS' if report['passed'] else 'FAIL'} "
-          f"({'formal M4' if args.formal else 'correctness, ratio informational'})")
+          f"({'formal '+args.target if args.formal else 'correctness, ratio informational'})")
     print(f"report: {report_path}")
     return 0 if report["passed"] else 1
 

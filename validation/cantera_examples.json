@@ -11,7 +11,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/custom_reactions",
@@ -19,7 +21,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/diamond_cvd",
@@ -27,7 +31,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/extract_submechanism",
@@ -35,7 +41,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/interactive_path_diagram",
@@ -43,7 +51,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/jet_stirred_reactor",
@@ -51,7 +61,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/lithium_ion_battery",
@@ -59,7 +71,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/mechanism_reduction",
@@ -67,7 +81,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/reaction_path",
@@ -75,7 +91,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/shock_tube",
@@ -83,7 +101,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "kinetics/sofc",
@@ -91,7 +111,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/adiabatic_flame",
@@ -99,7 +121,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/burner_flame",
@@ -107,7 +131,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/catalytic_combustion",
@@ -115,7 +141,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/diffusion_flame",
@@ -123,7 +151,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/diffusion_flame_batch",
@@ -131,7 +161,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/diffusion_flame_continuation",
@@ -139,7 +171,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/diffusion_flame_extinction",
@@ -147,7 +181,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flame_fixed_T",
@@ -155,7 +191,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flame_initial_guess",
@@ -163,7 +201,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flame_solver_timestep_controls",
@@ -171,7 +211,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flame_speed",
@@ -179,7 +221,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flame_speed_convergence_analysis",
@@ -187,7 +231,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/flamespeed_sensitivity",
@@ -195,7 +241,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/ion_burner_flame",
@@ -203,7 +251,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/ion_free_flame",
@@ -211,7 +261,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/premixed_counterflow_flame",
@@ -219,7 +271,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/premixed_counterflow_twin_flame",
@@ -227,7 +281,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/stagnation_flame",
@@ -235,7 +291,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/1D_packed_bed",
@@ -243,7 +301,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/1D_pfr_surfchem",
@@ -251,7 +311,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/combustor",
@@ -259,7 +321,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/continuous_reactor",
@@ -267,7 +331,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/custom",
@@ -275,7 +341,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/custom2",
@@ -283,7 +351,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/fuel_injection",
@@ -291,7 +361,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/ic_engine",
@@ -299,7 +371,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/mix1",
@@ -307,7 +381,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/nanosecond_pulse_discharge",
@@ -315,7 +391,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/non_ideal_shock_tube",
@@ -323,7 +401,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/periodic_cstr",
@@ -331,7 +411,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/pfr",
@@ -339,7 +421,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/piston",
@@ -347,7 +431,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/plasma",
@@ -355,7 +441,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/porous_media_burner",
@@ -363,7 +451,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/preconditioned_integration",
@@ -371,7 +461,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/preconditioned_network",
@@ -379,7 +471,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/reactor1",
@@ -387,7 +481,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/reactor2",
@@ -395,7 +491,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/sensitivity1",
@@ -403,7 +501,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/surf_pfr",
@@ -411,7 +511,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/surf_pfr_chain",
@@ -419,7 +521,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/adiabatic",
@@ -427,7 +531,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/coverage_dependent_surf",
@@ -435,7 +541,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/critical_properties",
@@ -443,7 +551,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/equations_of_state",
@@ -451,7 +561,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/equivalenceRatio",
@@ -459,7 +571,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/isentropic",
@@ -467,7 +581,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/isentropic_units",
@@ -475,7 +591,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/mixing",
@@ -483,7 +601,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/plasma-eedf",
@@ -491,7 +611,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/plasma_equilibrium",
@@ -499,7 +621,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/rankine",
@@ -516,7 +640,9 @@
         "case": "rankine",
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
-      }
+      },
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/rankine_units",
@@ -533,7 +659,9 @@
         "case": "rankine_units",
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
-      }
+      },
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/sound_speed",
@@ -541,7 +669,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/sound_speed_units",
@@ -549,7 +679,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "thermo/vapordome",
@@ -566,7 +698,9 @@
         "case": "vapordome",
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
-      }
+      },
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "transport/dusty_gas",
@@ -574,7 +708,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "transport/high_pressure_transport",
@@ -582,7 +718,9 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     },
     {
       "id": "transport/multiprocessing_viscosity",
@@ -590,7 +728,14 @@
       "status": "not_validated",
       "julia_example": null,
       "correctness_evidence": null,
-      "m4_timing_evidence": null
+      "m4_timing_evidence": null,
+      "wsl_timing_evidence": null,
+      "performance_status": "not_validated"
     }
-  ]
+  ],
+  "performance_target": "WSL",
+  "status_legend": {
+    "not_validated": "Complete per-example calculation validation remains outstanding.",
+    "calculation_validated": "Source calculation outputs validated; performance tracked separately for the target host."
+  }
 }

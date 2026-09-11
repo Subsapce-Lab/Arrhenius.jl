@@ -206,6 +206,16 @@ function CreateSolution(mech)
     end
     efficiencies_coeffs = sparse(efficiencies_coeffs_full)
 
+    bm_indices = vec(Int64.(get(npz,"BlowersMasel_reaction_indices",Int64[])))
+    bm_coefficients = Matrix{Float64}(get(npz,"BlowersMasel_coefficients",zeros(0,4)))
+    size(bm_coefficients) == (length(bm_indices),4) &&
+        all(i -> 1 <= i <= n_reactions,bm_indices) || throw(ArgumentError("invalid Blowers–Masel sidecar dimensions"))
+    for row in eachrow(bm_coefficients)
+        BlowersMaselRate(row...)
+    end
+    if isempty(bm_indices) && any(get(r,"type","") == "Blowers-Masel" for r in get(yaml,"reactions",Any[]))
+        throw(ArgumentError("regenerate the sidecar to include Blowers–Masel parameters"))
+    end
     reaction = Reaction(
         product_stoich_coeffs,
         reactant_stoich_coeffs,
@@ -224,6 +234,7 @@ function CreateSolution(mech)
         vk,
         vk_sum,
         plog,
+        BlowersMaselData(bm_indices,bm_coefficients),
     )
 
 

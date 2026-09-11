@@ -1,7 +1,7 @@
 # Usage: julia --project=. validation/pure_water_timing.jl OUTPUT.npz
 #        [REPETITIONS=9] [informational|controlled|validate-only]
 # Run the paired Python harness afterward. A controlled result requires an
-# otherwise idle M4 machine; first-call compilation is recorded separately.
+# otherwise idle target machine; first-call compilation is recorded separately.
 import_seconds = @elapsed @eval using Arrhenius, NPZ, SHA, Dates
 if !isdefined(Arrhenius,:PureWater)
     import_seconds += @elapsed Base.include(Arrhenius,joinpath(@__DIR__,"..","src","PureWater.jl"))
@@ -44,9 +44,17 @@ function vapordome_calculation()
 end
 
 utf8(value) = collect(codeunits(string(value)))
-cpu = Sys.isapple() ? readchomp(`sysctl -n machdep.cpu.brand_string`) : Sys.CPU_NAME
+cpu = if Sys.isapple()
+    readchomp(`sysctl -n machdep.cpu.brand_string`)
+elseif Sys.islinux()
+    strip(split(first(filter(l -> startswith(l,"model name"),readlines("/proc/cpuinfo"))),':';limit=2)[2])
+else
+    Sys.CPU_NAME
+end
 data = Dict{String,Any}(
     "cpu_utf8"=>utf8(cpu),"platform_utf8"=>utf8(Sys.MACHINE),"julia_version_utf8"=>utf8(VERSION),
+    "system_utf8"=>utf8(Sys.isapple() ? "Darwin" : Sys.islinux() ? "Linux" : string(Sys.KERNEL)),
+    "kernel_release_utf8"=>utf8(Sys.isunix() ? readchomp(`uname -r`) : "unknown"),
     "qualification_utf8"=>utf8(qualification),"timestamp_utc_utf8"=>utf8(Dates.now(Dates.UTC)),
     "source_sha256_utf8"=>utf8(bytes2hex(sha256(read(joinpath(@__DIR__,"..","src","PureWater.jl"))))),
     "harness_sha256_utf8"=>utf8(bytes2hex(sha256(read(@__FILE__)))),

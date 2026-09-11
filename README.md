@@ -17,7 +17,7 @@ python mechanism/export_sidecar.py path/to/mechanism.yaml
 
 The exporter supports elementary and three-body Arrhenius reactions,
 Lindemann and Troe falloff reactions, pressure-dependent Arrhenius (PLOG)
-reactions and explicit reaction orders. Unsupported Cantera rate models are
+reactions, Blowers–Masel rates and explicit reaction orders. Unsupported Cantera rate models are
 rejected during preprocessing. Native ideal-gas thermochemistry supports
 NASA7, multi-region NASA9, Shomate and constant-cp species models.
 
@@ -26,7 +26,8 @@ NASA7, multi-region NASA9, Shomate and constant-cp species models.
 The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV;
 closed constant-pressure and constant-volume reactors; connected stirred
 reactors with flow devices and heat-transfer walls; planar premixed free flames
-and burner-stabilized flames; and axisymmetric counterflow diffusion flames.
+and burner-stabilized flames; counterflow diffusion, opposed premixed and twin
+premixed flames; and premixed impinging jets with an inert wall.
 Flame calculations support adaptive
 grids, mixture-averaged and multicomponent diffusion, Soret diffusion, and
 prescribed burner temperature profiles. Counterflow diffusion flames also
@@ -34,6 +35,8 @@ support optically thin CO₂/H₂O radiation. A native pure-water model provides
 liquid/vapor states, saturation properties and Rankine-cycle calculations.
 Redlich–Kwong mixtures support gas and liquid cubic roots, caloric properties,
 fugacity coefficients and partial molar properties.
+Ideal-surface chemistry supports elementary and sticking reactions, coverage
+dependencies, fixed-stoichiometry solids and isothermal catalytic reactors.
 Chemistry, thermodynamics, transport
 evaluation and equation solves run in Julia. Cantera is used to preprocess
 mechanisms and generate independent validation data.
@@ -64,9 +67,22 @@ solve!(flame; slope=.02, curve=.04)
 See [premixed flames](example/flames/adiabatic_flame.jl),
 [burner flames](example/flames/burner_flame.jl),
 [counterflow diffusion flames](example/flames/counterflow_diffusion.jl),
+[opposed premixed flames](example/flames/counterflow_premixed.jl),
+[twin flames](example/flames/counterflow_twin.jl),
+[inert-wall flames](example/flames/counterflow_stagnation.jl),
 [closed reactors](example/reactors), and
 [thermodynamics](example/thermodynamics) for runnable calculations.
 Reactor examples use a caller-supplied Julia ODE integrator.
+
+For catalytic calculations, prepare an ideal-surface parameter archive:
+
+```bash
+python mechanism/export_surface.py diamond.yaml diamond_100 --output diamond.surface.npz
+```
+
+The [diamond-growth example](example/reactors/diamond_cvd.jl) uses native
+surface rates and coverage integration. The [Blowers–Masel example](example/kinetics/blowers_masel.jl)
+evaluates reaction rates and activation energies as temperature and enthalpy change.
 
 
 ## Publication

@@ -37,6 +37,15 @@ struct Reaction{T<:AbstractFloat}
     vk::SparseMatrixCSC{T,Int64}
     vk_sum::Array{T,1}
     plog::PlogData{T}
+    blowers_masel::BlowersMaselData{T}
+end
+
+# Preserve the pre-Blowers–Masel constructor used by downstream mechanisms.
+function Reaction(product,reactant,orders,reversible,arrhenius,low,troe,third,falloff,
+        falloff_troe,efficiencies,reactant_indices,product_indices,n,vk,vk_sum,plog::PlogData{T}) where T
+    return Reaction(product,reactant,orders,reversible,arrhenius,low,troe,third,falloff,
+        falloff_troe,efficiencies,reactant_indices,product_indices,n,vk,vk_sum,plog,
+        BlowersMaselData(Int64[],zeros(T,0,4)))
 end
 
 abstract type Thermo end

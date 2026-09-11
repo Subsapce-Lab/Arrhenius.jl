@@ -19,6 +19,7 @@ import platform
 import statistics
 import subprocess
 import time
+from benchmark_environment import host_metadata, matches_target, cantera_library_hashes
 
 import_start = time.perf_counter()
 import numpy as np
@@ -31,6 +32,7 @@ parser.add_argument("--julia-result", type=Path, required=True)
 parser.add_argument("--output", type=Path, required=True)
 parser.add_argument("--repetitions", type=int, default=9)
 parser.add_argument("--qualification", choices=("informational","controlled"), default="informational")
+parser.add_argument("--target", choices=("wsl", "apple-m4"), default="wsl")
 parser.add_argument("--cantera-build-record", type=Path)
 parser.add_argument("--validate-only", action="store_true")
 args = parser.parse_args()
@@ -89,24 +91,21 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-try:
-    cpu = subprocess.check_output(["sysctl","-n","machdep.cpu.brand_string"],text=True).strip()
-except (OSError,subprocess.CalledProcessError):
-    cpu = platform.processor()
+hardware = host_metadata()
 
 native = np.load(args.julia_result)
 native_meta = {key[:-5]: bytes(native[key]).decode() for key in native.files if key.endswith("_utf8")}
 build_record = json.loads(args.cantera_build_record.read_text()) if args.cantera_build_record else None
 source_sha = build_record["source"]["commit"] if build_record else getattr(ct,"__git_commit__","unknown")
-prefix = Path(ct.__file__).resolve().parents[4]
-libraries = {path.name:sha(path) for path in (prefix/"lib").glob("libcantera_shared.*.dylib") if not path.is_symlink()}
+libraries = cantera_library_hashes(ct.__file__)
+native_host = {key: native_meta.get(key, "") for key in ("cpu", "system", "kernel_release")}
 report = {
     "cantera_version":ct.__version__, "cantera_source_sha":source_sha,
     "cantera_build_record_sha256":sha(args.cantera_build_record) if args.cantera_build_record else None,
     "cantera_shared_libraries_sha256":libraries,
     "cantera_extension_sha256":sha(compiled.__file__), "harness_sha256":sha(__file__),
-    "hardware":{"cpu":cpu,"platform":platform.platform(),"logical_cpus":os.cpu_count(),
-                "load_average_start":os.getloadavg()},
+    "hardware":dict(hardware, load_average_start=os.getloadavg()),
+    "benchmark_target": args.target,
     "julia_metadata":native_meta, "qualification": "validation_only" if args.validate_only else args.qualification,
     "import_seconds":import_seconds, "julia_import_seconds":float(native["import_seconds"][0]),
     "timer":"time.perf_counter / Julia time_ns; process import and first calls separate",
@@ -142,8 +141,10 @@ for name,run in (("rankine",rankine),("rankine_units",lambda:rankine((80.33-32)*
     ratio = statistics.median(samples)/statistics.median(native_samples) if samples and native_samples else None
     controlled = (args.qualification == "controlled" and native_meta.get("qualification") == "controlled"
                   and not args.validate_only and len(samples)>=7 and len(native_samples)>=7
-                  and "M4" in cpu and "M4" in native_meta.get("cpu","")
-                  and ct.__version__.startswith("4.")
+                  and matches_target(hardware,args.target) and matches_target(native_host,args.target)
+                  and hardware["cpu"] == native_host["cpu"]
+                  and hardware["kernel_release"] == native_host["kernel_release"]
+                  and ct.__version__.startswith("4.0")
                   and source_sha == "726522be4e2a13454d8415b7ef799d621f665cf3")
     report["cases"][name] = {
         "correctness_pass":matches,"max_absolute_error":float(np.max(np.abs(output-expected))),

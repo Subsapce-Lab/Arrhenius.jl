@@ -78,6 +78,9 @@ const CONSTRUCTORS = Dict(
 
 results = Dict{String,Any}(
     "species_names_utf8" => Vector{UInt8}(join(gas.species_names, "\n")),
+    "system_utf8" => collect(codeunits(Sys.isapple() ? "Darwin" : Sys.islinux() ? "Linux" : string(Sys.KERNEL))),
+    "kernel_release_utf8" => collect(codeunits(Sys.isunix() ? readchomp(`uname -r`) : "unknown")),
+    "cpu_utf8" => collect(codeunits(Sys.isapple() ? readchomp(`sysctl -n machdep.cpu.brand_string`) : Sys.CPU_NAME)),
 )
 println("mechanism=$mechanism reps=$reps cases=$(join(cases, ","))")
 

@@ -63,6 +63,8 @@ function _convert_precision(reaction::Reaction, ::Type{T}) where {T<:AbstractFlo
         _precision_sparse(reaction.vk, T, "net stoichiometry"),
         _precision_array(reaction.vk_sum, T, "net stoichiometric sums"),
         _convert_precision(reaction.plog, T),
+        BlowersMaselData(copy(reaction.blowers_masel.reaction_indices),
+            _precision_array(reaction.blowers_masel.coefficients,T,"Blowers–Masel coefficients")),
     )
 end
 

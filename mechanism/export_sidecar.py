@@ -17,6 +17,7 @@ SUPPORTED_RATE_TYPES = {
     "LindemannRate",
     "PlogRate",
     "TroeRate",
+    "BlowersMaselRate",
 }
 J_PER_KMOL_PER_CAL_PER_MOL = 4184.0
 
@@ -61,6 +62,8 @@ def export(mechanism: Path, output: Path) -> None:
     three_body_indices: list[int] = []
     falloff_indices: list[int] = []
     falloff_troe_indices: list[int] = []
+    blowers_indices = []
+    blowers_coefficients = []
 
     plog_reaction_indices: list[int] = []
     plog_group_offsets = [1]
@@ -80,7 +83,14 @@ def export(mechanism: Path, output: Path) -> None:
         rate = reaction.rate
         rate_type = type(rate).__name__
         rate_data = rate.input_data
-        if rate_type == "ArrheniusRate":
+        if rate_type == "BlowersMaselRate":
+            coefficients = rate_data["rate-constant"]
+            blowers_indices.append(reaction_index + 1)
+            blowers_coefficients.append([float(coefficients[key]) for key in ("A","b","Ea0","w")])
+            arrhenius[reaction_index,:] = (coefficients["A"],coefficients["b"],0.0)
+            if reaction.third_body is not None:
+                three_body_indices.append(reaction_index + 1)
+        elif rate_type == "ArrheniusRate":
             arrhenius[reaction_index, :] = arrhenius_row(rate_data["rate-constant"])
             if reaction.third_body is not None:
                 three_body_indices.append(reaction_index + 1)
@@ -153,6 +163,8 @@ def export(mechanism: Path, output: Path) -> None:
         index_three_body=np.asarray(three_body_indices, dtype=np.int64),
         index_falloff=np.asarray(falloff_indices, dtype=np.int64),
         index_falloff_Troe=np.asarray(falloff_troe_indices, dtype=np.int64),
+        BlowersMasel_reaction_indices=np.asarray(blowers_indices,dtype=np.int64),
+        BlowersMasel_coefficients=np.asarray(blowers_coefficients,dtype=float).reshape((-1,4)),
         Plog_reaction_indices=np.asarray(plog_reaction_indices, dtype=np.int64),
         Plog_group_offsets=np.asarray(plog_group_offsets, dtype=np.int64),
         Plog_pressures=np.asarray(plog_pressures, dtype=np.float64),

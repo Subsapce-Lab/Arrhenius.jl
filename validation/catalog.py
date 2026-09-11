@@ -46,10 +46,12 @@ def snapshot(html: bytes):
         "index_sha256": hashlib.sha256(html).hexdigest(),
         "minimum_speed_ratio": 0.95,
         "speed_ratio_definition": "Cantera elapsed / Arrhenius elapsed",
+        "performance_target": "WSL",
         "examples": [
             {"id": url.split("/examples/python/")[1][:-5], "url": url,
              "status": "not_validated", "julia_example": None,
-             "correctness_evidence": None, "m4_timing_evidence": None}
+             "correctness_evidence": None, "wsl_timing_evidence": None,
+             "performance_status": "not_validated"}
             for url in sorted(parser.links)
         ],
     }
