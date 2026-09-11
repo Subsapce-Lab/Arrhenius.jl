@@ -80,12 +80,25 @@ function equilibrium_sound_speeds(gas::Solution; T, P=one_atm, X, pressure_step=
     isfinite(pressure_step) && pressure_step > 0 || throw(ArgumentError("positive finite pressure step required"))
     p1 = P*(1+pressure_step)
     p1 > P && isfinite(p1) || throw(ArgumentError("pressure step must produce a distinct finite pressure"))
-    state = equilibrate(gas;T,P,X,mode=:TP,temperature_bounds)
+    gas.thermo isa IdealGasThermo || throw(ArgumentError("ideal-gas thermo required"))
+    isfinite(T) && T > 0 && isfinite(P) && P > 0 || throw(ArgumentError("positive finite T and P required"))
+    length(temperature_bounds) == 2 || throw(ArgumentError("provide lower and upper temperature bounds"))
+    lo,hi = Float64.(temperature_bounds)
+    isfinite(lo) && isfinite(hi) && 0 < lo < hi || throw(ArgumentError("temperature bounds must be finite, positive and ordered"))
+    system = _equilibrium_system(gas,mole_fractions(gas,X))
+    state = _equilibrium_at!(system,Float64(T),Float64(P))
     rho0 = P*dot(gas.MW,state.X)/(R*state.T)
     frozen = isentropic_state(gas;T=state.T,P,X=state.X,pressure=p1,temperature_bounds)
     rho_frozen = p1*dot(gas.MW,frozen.X)/(R*frozen.T)
     # A density increment of order 1e-4 amplifies temperature-search error.
-    perturbed_state = equilibrate(gas;T=frozen.T,P=p1,X=frozen.X,mode=:SP,temperature_bounds,property_rtol=1e-13)
+    # Rebase the conserved amounts to the actual unperturbed equilibrium state.
+    # Keeping the inlet amounts instead would amplify its tiny balance residual
+    # in the pressure derivative. Element potentials remain a valid warm start.
+    system.X .= frozen.X
+    mul!(system.b,system.A,view(system.X,system.species))
+    @. system.logb = log(system.b)
+    system.state[end] = 0.
+    perturbed_state = _equilibrate(system,frozen.X,frozen.T,p1,:SP,lo,hi,1e-13)
     rho_eq = p1*dot(gas.MW,perturbed_state.X)/(R*perturbed_state.T)
     rho_eq > rho0 && rho_frozen > rho0 || error("pressure perturbation did not resolve positive isentropic compressibility")
     return (equilibrium=sqrt((p1-P)/(rho_eq-rho0)),frozen=sqrt((p1-P)/(rho_frozen-rho0)),

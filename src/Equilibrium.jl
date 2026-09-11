@@ -191,30 +191,66 @@ function _equilibrium_system(gas, X)
     rankA = count(>(maximum(diagonal)*max(size(A)...)*eps(Float64)), diagonal)
     independent = factor.p[1:rankA]
     A = A[independent, :]
+    ne,ns = size(A)
     return (gas=gas, X=X, species=species, A=A, At=Matrix(transpose(A)),
             b=Float64.(b_all[elements[independent]]), state=zeros(rankA+1),
-            g=zeros(length(species)), initialized=Ref(false))
+            g=zeros(ns), initialized=Ref(false), logb=log.(b_all[elements[independent]]),
+            mole=zeros(ns), potentials=zeros(ns), abar=zeros(ne), residual=zeros(ne+1),
+            jacobian=zeros(ne+1,ne+1), factor=zeros(ne+1,ne+1),
+            trial=zeros(ne+1),step=zeros(ne+1))
 end
 
 function _equilibrium_evaluate(system, state, logpressure, constant_volume; jacobian=false)
     A, At, g, b = system.A, system.At, system.g, system.b
     ne = size(A,1)
-    v = At*view(state,1:ne) .- g .- logpressure
-    constant_volume && (v .-= state[end])
+    v,mole,abar,f = system.potentials,system.mole,system.abar,system.residual
+    mul!(v,At,view(state,1:ne))
+    offset = logpressure + (constant_volume ? state[end] : 0.)
+    @. v = v-g-offset
     vmax = maximum(v)
-    weights = exp.(v .- vmax)
-    logsum = vmax + log(sum(weights))
-    mole = weights / sum(weights)
-    abar = A*mole
-    f = [log.(abar) .+ state[end] .- log.(b); logsum]
+    @. mole = exp(v-vmax)
+    total = sum(mole)
+    logsum = vmax + log(total)
+    mole ./= total
+    mul!(abar,A,mole)
+    @inbounds for i in 1:ne
+        f[i] = log(abar[i])+state[end]-system.logb[i]
+    end
+    f[end] = logsum
     jacobian || return f, mole
-    covariance = (A .* transpose(mole))*At - abar*transpose(abar)
-    J = zeros(ne+1,ne+1)
-    J[1:ne,1:ne] = covariance ./ abar
-    J[1:ne,end] .= 1
-    J[end,1:ne] = abar
+    J = system.jacobian
+    @inbounds for j in 1:ne, i in 1:ne
+        moment = 0.
+        for k in eachindex(mole)
+            moment += A[i,k]*A[j,k]*mole[k]
+        end
+        J[i,j] = moment/abar[i]-abar[j]
+    end
+    @inbounds for i in 1:ne
+        J[i,end] = 1
+        J[end,i] = abar[i]
+    end
     J[end,end] = constant_volume ? -1 : 0
     return f, mole, J
+end
+
+function _equilibrium_step!(system,f,J)
+    # Most element systems are small and nonsingular. Use a pivoted solve;
+    # retain the rank-truncated SVD for cold, nearly degenerate equilibria.
+    factor = lu!(copyto!(system.factor,J);check=false)
+    largest,smallest = 0.,Inf
+    @inbounds for i in axes(J,1)
+        pivot = abs(factor.factors[i,i])
+        largest,smallest = max(largest,pivot),min(smallest,pivot)
+    end
+    step = system.step
+    if issuccess(factor) && smallest > 1e-12*largest
+        @. step = -f
+        ldiv!(factor,step)
+    else
+        mul!(step,pinv(J;rtol=1e-14),f,-1.,0.)
+    end
+    return step
 end
 
 function _equilibrium_newton!(system, logpressure, constant_volume)
@@ -222,24 +258,24 @@ function _equilibrium_newton!(system, logpressure, constant_volume)
     for iteration in 1:120
         f, _, J = _equilibrium_evaluate(system,state,logpressure,constant_volume; jacobian=true)
         all(isfinite,f) && all(isfinite,J) || return false
-        norm(f,Inf) < 2e-11 && return true
-        # Cold equilibria lose numerical rank as minor species disappear.
-        # A truncated solve follows the observable element-potential directions.
-        step = -(pinv(J; rtol=1e-14)*f)
+        residual_max,residual_norm = norm(f,Inf),norm(f)
+        residual_max < 2e-11 && return true
+        step = _equilibrium_step!(system,f,J)
         all(isfinite,step) || return false
         alpha = min(1.0,20/max(norm(step,Inf),1e-30))
         accepted = false
         for backtrack in 1:35
-            trial = state + alpha*step
+            trial = system.trial
+            @. trial = state + alpha*step
             ft, _ = _equilibrium_evaluate(system,trial,logpressure,constant_volume)
-            if all(isfinite,ft) && norm(ft) < norm(f)
+            if all(isfinite,ft) && norm(ft) < residual_norm
                 state .= trial
                 accepted = true
                 break
             end
             alpha /= 2
         end
-        accepted || return norm(f,Inf) < 1e-9
+        accepted || return residual_max < 1e-9
     end
     return false
 end
@@ -250,6 +286,27 @@ function _equilibrium_at!(system, T, P; constant_volume=false, initial_temperatu
     gtarget = Float64.((cal_h_RT(gas,T,P,X)-cal_s0_R(gas,T,P,X))[species])
     system.g .= gtarget
     converged = system.initialized[] && _equilibrium_newton!(system,logpressure,constant_volume)
+    if !converged && !system.initialized[]
+        # Previously equilibrated compositions provide element-potential
+        # information directly. Use resolved species only; fresh reactants or
+        # rank-deficient cold products retain the homotopy initialization.
+        resolved = findall(k -> X[species[k]] > 1e-20,eachindex(species))
+        ne = size(system.A,1)
+        if length(resolved) > ne
+            B = system.At[resolved,:]
+            factor = qr(B,ColumnNorm())
+            diagonal = abs.(diag(factor.R))
+            if minimum(diagonal) > 1e-12*maximum(diagonal)
+                rhs = gtarget[resolved] .+ log.(X[species[resolved]]) .+ logpressure
+                seed = factor\rhs
+                if norm(B*seed-rhs,Inf) < 5.
+                    system.state[1:ne] .= seed
+                    system.state[end] = 0.
+                    converged = _equilibrium_newton!(system,logpressure,constant_volume)
+                end
+            end
+        end
+    end
     if !converged
         # Homotopy in standard chemical potentials avoids cold-start collapse.
         # Clamp the starting temperature to the shared NASA validity interval.
@@ -260,12 +317,23 @@ function _equilibrium_at!(system, T, P; constant_volume=false, initial_temperatu
         xseed = max.(X[species],1e-8)
         system.state[1:end-1] .= system.At \ (gstart + log.(xseed) .+ logpressure)
         system.state[end] = 0
-        stages = max(2,ceil(Int,maximum(abs.(gtarget-gstart))/3)+1)
-        for fraction in range(0,1; length=stages)
-            system.g .= (1-fraction).*gstart .+ fraction.*gtarget
-            _equilibrium_newton!(system,logpressure,constant_volume) ||
-                error("ideal-gas equilibrium did not converge at $T K and $P Pa")
+        seed = copy(system.state)
+        # A larger chemical-potential increment avoids redundant Newton solves.
+        # Retain the original smaller increments as a convergence fallback.
+        for increment in (12.,3.)
+            system.state .= seed
+            stages = max(2,ceil(Int,maximum(abs.(gtarget-gstart))/increment)+1)
+            converged = true
+            for fraction in range(0,1; length=stages)
+                system.g .= (1-fraction).*gstart .+ fraction.*gtarget
+                if !_equilibrium_newton!(system,logpressure,constant_volume)
+                    converged = false
+                    break
+                end
+            end
+            converged && break
         end
+        converged || error("ideal-gas equilibrium did not converge at $T K and $P Pa")
     end
     system.initialized[] = true
     _, mole = _equilibrium_evaluate(system,system.state,logpressure,constant_volume)
@@ -311,14 +379,25 @@ function equilibrate(gas::Solution; T, P=one_atm, X, mode=:TP, temperature_bound
     isfinite(lo) && isfinite(hi) && 0 < lo < hi || throw(ArgumentError("temperature bounds must be finite, positive, and ordered"))
     initial = mole_fractions(gas,X)
     system = _equilibrium_system(gas,initial)
+    return _equilibrate(system,initial,Float64(T),Float64(P),mode,lo,hi,property_rtol)
+end
+
+# A caller following the same conserved elements may reuse the element
+# potentials across successive thermodynamic constraints. The target property
+# still comes from the explicitly supplied initial state.
+function _equilibrate(system,initial,T,P,mode,lo,hi,property_rtol)
+    gas = system.gas
     constant_volume = mode in (:TV,:UV,:SV)
     state(temperature) = _equilibrium_at!(system,temperature,Float64(P); constant_volume, initial_temperature=Float64(T))
     mode in (:TP,:TV) && return state(Float64(T))
     property = mode == :HP ? cal_hmass_mean : mode == :UV ? cal_umass_mean : cal_smass_mean
     target = property(gas,T,P,initial)
     scale = mode in (:SP,:SV) ? max(abs(target),1e3) : max(abs(target),1e6)
-    # Start near the inlet; expand only toward the missing side of the bracket.
-    trialT = clamp(Float64(T),lo,hi)
+    # Enthalpy/energy constraints can start from a hot equilibrium, where the
+    # element system is well conditioned; a cold inlet TP equilibrium is not
+    # needed to determine its adiabatic equilibrium temperature. Entropy
+    # constraints retain the nearby input state for pressure perturbations.
+    trialT = clamp(mode in (:HP,:UV) ? max(Float64(T),3500.) : Float64(T),lo,hi)
     trial = state(trialT)
     residual = property(gas,trial.T,trial.P,trial.X)-target
     abs(residual) < property_rtol*scale && return trial
