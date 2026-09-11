@@ -135,19 +135,21 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/adiabatic_flame.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_wsl_adiabatic_flame.json",
-        "additional_report": "validation/results/cantera4_m4_adiabatic_flame.json",
-        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/adiabatic_flame",
+        "scope": "Complete published transport sequence on both required hosts; all profiles and first/warm replays checked against retained independently refined Cantera references."
       },
       "m4_timing_evidence": {
-        "report": "validation/results/cantera4_m4_adiabatic_flame.json",
-        "speed_ratio": 0.7007710377106176,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/adiabatic_flame",
+        "speed_ratio": 0.7375800003476765,
+        "scope": "Five warm complete public calculation sequences, informational and unqualified; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_wsl_adiabatic_flame.json",
-        "speed_ratio": 0.7290298277724586,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/adiabatic_flame",
+        "speed_ratio": 0.7979648769202967,
+        "scope": "Five warm complete public calculation sequences, informational and unqualified; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "performance_status": "below_target"
     },
@@ -157,19 +159,21 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/burner_flame.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_wsl_burner_flame.json",
-        "additional_report": "validation/results/cantera4_m4_burner_flame.json",
-        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/burner_flame",
+        "scope": "Complete published transport sequence on both required hosts; all profiles and first/warm replays checked against retained independently refined Cantera references."
       },
       "m4_timing_evidence": {
-        "report": "validation/results/cantera4_m4_burner_flame.json",
-        "speed_ratio": 1.5144544784344043,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/burner_flame",
+        "speed_ratio": 1.878773105599785,
+        "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_wsl_burner_flame.json",
-        "speed_ratio": 1.8487399257535007,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/burner_flame",
+        "speed_ratio": 2.2743616599412944,
+        "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "performance_status": "validated"
     },
@@ -229,19 +233,21 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/flame_fixed_T.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_wsl_flame_fixed_T.json",
-        "additional_report": "validation/results/cantera4_m4_flame_fixed_T.json",
-        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/flame_fixed_T",
+        "scope": "Complete published transport sequence on both required hosts; all profiles and first/warm replays checked against retained independently refined Cantera references."
       },
       "m4_timing_evidence": {
-        "report": "validation/results/cantera4_m4_flame_fixed_T.json",
-        "speed_ratio": 0.09316376788404859,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/flame_fixed_T",
+        "speed_ratio": 0.10217149157524531,
+        "scope": "Five warm complete public calculation sequences, informational and unqualified; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_wsl_flame_fixed_T.json",
-        "speed_ratio": 0.08799935377460931,
-        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+        "report": "validation/results/cantera4_flames_8b7342d.json",
+        "case": "onedim/flame_fixed_T",
+        "speed_ratio": 0.08634049716670765,
+        "scope": "Five warm complete public calculation sequences, informational and unqualified; model preparation, snapshots and file output excluded; first measured call separate."
       },
       "performance_status": "below_target"
     },
