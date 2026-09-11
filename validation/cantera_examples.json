@@ -436,11 +436,22 @@
       "julia_example": "example/reactors/mix1.jl",
       "correctness_evidence": {
         "report": "validation/results/cantera4_wsl_mix1.json",
-        "scope": "Complete stationary reacting mixer with distinct air and GRI mechanisms, original initial state, bulk/species outputs and conservation; native WSL and Windows compared with independent Cantera source/refined references"
+        "scope": "Complete stationary reacting mixer with distinct air and GRI mechanisms, original initial state, bulk/species outputs and conservation; native WSL, Windows and Apple M4 checked against independent Cantera source/refined references",
+        "additional_report": "validation/results/cantera4_m4_mix1.json"
       },
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_reactor_mixing_timing.json",
+        "case": "reactors/mix1",
+        "speed_ratio": 13.658133199803256,
+        "scope": "Nine warm complete fresh-network construction and stationary solves on prepared models; mechanism loading, startup, output checks and diagram/report generation excluded."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_reactor_mixing_timing.json",
+        "case": "reactors/mix1",
+        "speed_ratio": 12.634617449203034,
+        "scope": "Nine warm complete fresh-network construction and stationary solves on prepared models; mechanism loading, startup, output checks and diagram/report generation excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "reactors/nanosecond_pulse_discharge",

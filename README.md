@@ -110,6 +110,26 @@ julia --project=. example/reactors/mix1.jl path/to/gri30.yaml path/to/air.yaml
 The callable `solve_mixing_network(gas, air)` is provided by
 [mixing_solver.jl](example/reactors/mixing_solver.jl).
 
+The complete stationary calculation is checked against Cantera 4.0 on
+[WSL](validation/results/cantera4_wsl_mix1.json), Windows, and
+[Apple M4](validation/results/cantera4_m4_mix1.json). To reproduce the comparison
+and [warm-call timings](validation/results/cantera4_m4_reactor_mixing_timing.json),
+set `CANTERA` to the absolute path of Cantera commit
+`726522be4e2a13454d8415b7ef799d621f665cf3` and use its Python runtime:
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+python validation/mixing_reference.py --cantera-source "$CANTERA" --output "$PWD/mixer-reference"
+julia --threads=1 --project=. validation/mixing_case.jl "$PWD/mixer-reference/inputs" "$PWD/mixer-native"
+python validation/mixing_compare.py --native "$PWD/mixer-native" --reference "$PWD/mixer-reference" --output "$PWD/mixer-comparison.json"
+julia --threads=1 --project=. validation/reactor_mixing_timing.jl "$PWD" "$PWD/mixer-reference/inputs" "$PWD/mixer-native" "$PWD/mixer-native-timing"
+python validation/reactor_mixing_timing.py --source-root "$PWD" --cantera-source "$CANTERA" --reference "$PWD/mixer-reference" --output "$PWD/mixer-reference-timing"
+```
+
+The timed calls include fresh network construction and the full steady solve;
+mechanism loading, startup, output validation and diagram/report generation
+are excluded. Use new output directories for each run.
+
 The [engine example](example/reactors/ic_engine.jl) computes eight revolutions
 of an n-dodecane engine with prescribed injection, valves and piston motion.
 It uses QNDF from OrdinaryDiffEqBDF, with SciMLBase and ForwardDiff in the
