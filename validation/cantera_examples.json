@@ -418,9 +418,12 @@
     {
       "id": "reactors/ic_engine",
       "url": "https://cantera.org/dev/examples/python/reactors/ic_engine.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/ic_engine.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_ic_engine.json",
+        "scope": "Complete pinned eight-revolution ideal-gas n-dodecane engine on WSL; all 25 switching intervals, species/thermal trajectories, conservation and converged heat/work/CO integrals"
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"
