@@ -562,12 +562,26 @@
     {
       "id": "thermo/critical_properties",
       "url": "https://cantera.org/dev/examples/python/thermo/critical_properties.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/critical_properties.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_critical_properties.json",
+        "case": "thermo/critical_properties",
+        "scope": "All40 critical temperature, pressure, density, molecular weight and calculated compressibility values for the complete eight-fluid source example; every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_critical_properties.json",
+        "case": "thermo/critical_properties",
+        "speed_ratio": 4.178983797171245,
+        "scope": "Complete warm eight-fluid property table on prepared models; nine normalized batches; imports/model construction, printing, plots and checks excluded."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_critical_properties.json",
+        "case": "thermo/critical_properties",
+        "speed_ratio": 4.876722875685724,
+        "scope": "Complete warm eight-fluid property table on prepared models; nine normalized batches; imports/model construction, printing, plots and checks excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/equations_of_state",

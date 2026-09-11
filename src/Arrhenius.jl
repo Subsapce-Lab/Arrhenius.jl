@@ -24,6 +24,7 @@ module Arrhenius
     include("SurfaceKinetics.jl")
     include("SurfaceFlowReactors.jl")
     include("PureWater.jl")
+    include("CriticalProperties.jl")
     include("RealGasThermo.jl")
     include("RealGasReactors.jl")
     include("Flames.jl")

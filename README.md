@@ -34,6 +34,8 @@ grids, mixture-averaged and multicomponent diffusion, Soret diffusion, and
 prescribed burner temperature profiles. Counterflow diffusion flames also
 support optically thin CO₂/H₂O radiation. A native pure-water model provides
 liquid/vapor states, saturation properties and Rankine-cycle calculations.
+`critical_properties` returns critical temperature, pressure, density and
+compressibility for eight TPX pure-fluid models.
 Redlich–Kwong mixtures support gas and liquid cubic roots, caloric properties,
 fugacity coefficients and partial molar properties.
 Native Redlich–Kwong reaction rates and constant-volume adiabatic reactors
