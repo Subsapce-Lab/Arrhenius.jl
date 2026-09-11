@@ -552,12 +552,26 @@
     {
       "id": "thermo/coverage_dependent_surf",
       "url": "https://cantera.org/dev/examples/python/thermo/coverage_dependent_surf.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/coverage_dependent_surf.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_coverage_thermo.json",
+        "case": "thermo/coverage_dependent_surf",
+        "scope": "All four 101-state standard enthalpy/entropy curves and the full5151-state triangular cross-interaction map, including occupied-site endpoints; every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_coverage_thermo.json",
+        "case": "thermo/coverage_dependent_surf",
+        "speed_ratio": 7.0129515863248635,
+        "scope": "Complete warm 5555-state surface coverage calculation on five prepared phases; nine normalized batches, all output replays checked; imports/model construction, plotting and checks excluded."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_coverage_thermo.json",
+        "case": "thermo/coverage_dependent_surf",
+        "speed_ratio": 8.748068585081622,
+        "scope": "Complete warm 5555-state surface coverage calculation on five prepared phases; nine normalized batches, all output replays checked; imports/model construction, plotting and checks excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/critical_properties",
