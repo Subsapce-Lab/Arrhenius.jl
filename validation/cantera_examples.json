@@ -968,9 +968,19 @@
         "case": "transport/multiprocessing_viscosity",
         "scope": "All four original 5,000-temperature multicomponent conductivity and viscosity sweeps; serial/parallel replay and independent Cantera 4.0 comparisons on both hosts. Four Julia tasks own separate phase and transport storage."
       },
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_parallel_transport_timing.json",
+        "case": "transport/multiprocessing_viscosity",
+        "speed_ratio": 1.080695327173588,
+        "scope": "Nine warm complete four-sweep calls including fresh phases/workspaces and pool lifecycle; controlled worker verification, with uninstrumented calls and the unchanged source script providing conservative timing caps."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_parallel_transport_timing.json",
+        "case": "transport/multiprocessing_viscosity",
+        "speed_ratio": 0.9850616257648896,
+        "scope": "Nine warm complete four-sweep calls including fresh phases/workspaces and pool lifecycle; controlled worker verification, with uninstrumented calls and the unchanged source script providing conservative timing caps."
+      },
+      "performance_status": "validated"
     }
   ],
   "performance_target": "WSL and Apple M4 Mac mini",
