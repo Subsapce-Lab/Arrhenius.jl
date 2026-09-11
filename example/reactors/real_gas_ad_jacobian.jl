@@ -93,7 +93,10 @@ function _shocktube_ad_jacobian(reactor,::Val{N}) where N
         dual_state[end]=temperature[1]
         temp_rhs(du,dual_state,nothing,0.)
     end
-    return function (J,u,p,t)
+    # Freeze the branch-selected callable in a fresh binding so it is stored
+    # with its concrete closure type rather than a captured Core.Box.
+    return let composition_rhs=composition_rhs
+      function (J,u,p,t)
         length(u)==n+1 && size(J)==(n+1,n+1) || throw(DimensionMismatch("Jacobian and state dimensions must match the reactor"))
         copyto!(state,u)
         @inbounds for k in 1:n
@@ -115,5 +118,6 @@ function _shocktube_ad_jacobian(reactor,::Val{N}) where N
         ForwardDiff.jacobian!(view(J,:,1:n),composition_rhs,out,x,cfg)
         ForwardDiff.jacobian!(view(J,:,n+1:n+1),temperature_rhs,out,temp,tcfg)
         nothing
+      end
     end
 end

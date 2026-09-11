@@ -26,6 +26,12 @@ function shocktube_ignition(reactor;end_time=.005,save_stride=20,jacobian=:ad)
     oh = findfirst(==("oh"),reactor.gas.species_names)
     isnothing(oh) && throw(ArgumentError("the source mechanism must contain species named oh"))
     integrator = shocktube_integrator(reactor;end_time,jacobian)
+    return _shocktube_collect(integrator,oh,reactor.density,end_time,save_stride)
+end
+
+# Initialization can choose distinct solver/Jacobian types. Dispatch once here
+# so the accepted-step loop specializes on the concrete integrator type.
+function _shocktube_collect(integrator,oh,density,end_time,save_stride)
     times,states = Float64[],Vector{Float64}[]
     counter = 0
     while integrator.t < end_time
@@ -41,7 +47,7 @@ function shocktube_ignition(reactor;end_time=.005,save_stride=20,jacobian=:ad)
     isempty(times) && error("too few accepted steps for the source sampling stride")
     delay = times[argmax([state[oh] for state in states])]
     return (;delay,times,states,steps=counter,
-        final_time=integrator.t,final_state=copy(integrator.u),density=reactor.density,
+        final_time=integrator.t,final_state=copy(integrator.u),density,
         rhs_evaluations=integrator.stats.nf,jacobian_evaluations=integrator.stats.njacs,
         accepted_steps=integrator.stats.naccept,rejected_steps=integrator.stats.nreject,
         linear_solves=integrator.stats.nsolve,matrix_updates=integrator.stats.nw,
