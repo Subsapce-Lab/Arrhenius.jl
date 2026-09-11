@@ -5,6 +5,7 @@ using SHA
 using Test
 
 include("equilibrium_native.jl")
+include("condensed_equilibrium_native.jl")
 include("ideal_gas_states.jl")
 include("ideal_gas_mixing_native.jl")
 include("species_thermo_native.jl")
@@ -22,6 +23,7 @@ include("critical_properties_native.jl")
 include("real_gas_native.jl")
 include("real_gas_reactors_native.jl")
 include("real_gas_ad_jacobian_native.jl")
+include("real_gas_trial_native.jl")
 include("flames_native.jl")
 include("conservative_flames_native.jl")
 include("flame_derivatives_native.jl")

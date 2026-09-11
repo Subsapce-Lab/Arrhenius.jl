@@ -25,3 +25,13 @@ function shocktube_integrator(reactor;end_time=.005,jacobian=:ad)
         isoutofdomain=_shocktube_outside_domain,save_everystep=false,save_start=false,
         save_end=false,dense=false,maxiters=1_000_000)
 end
+
+function _shocktube_initialize(::Val{:sdirk},reactor,end_time,jacobian,trial_policy)
+    trial_policy isa ClippedShockTubeTrials ||
+        throw(ArgumentError("the existing SDIRK route requires ClippedShockTubeTrials"))
+    shocktube_integrator(reactor;end_time,jacobian),nothing
+end
+function _shocktube_initialize(::Val{S},reactor,end_time,jacobian,trial_policy) where S
+    S===:qndf && throw(ArgumentError("include real_gas_qndf_solver.jl to enable the optional QNDF adapter"))
+    throw(ArgumentError("solver must be :sdirk or :qndf"))
+end

@@ -1,8 +1,9 @@
 # Full calculation from Cantera's non_ideal_shock_tube.py, without plots or I/O.
 # Usage: julia --project=SOLVER_ENV real_gas_timing.jl MECHANISM_DIR OUTPUT.npz
-#        [REPETITIONS=7] [informational|controlled|validate-only] [--smoke] [--finite-difference]
+#        [REPETITIONS=7] [informational|controlled|validate-only] [--smoke] [--finite-difference] [--qndf]
 # SOLVER_ENV needs SciMLBase, OrdinaryDiffEqSDIRK and ForwardDiff; prepare MECHANISM_DIR with
-# real_gas_reactor_cases.py. Run real_gas_timing.py afterward for comparison.
+# real_gas_reactor_cases.py. --qndf additionally needs OrdinaryDiffEqBDF.
+# Run real_gas_timing.py afterward for comparison.
 for name in ("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS")
     ENV[name] = "1"
 end
@@ -11,6 +12,7 @@ const SHOCKTUBE_AD_PATH = joinpath(@__DIR__,"..","example","reactors","real_gas_
 import_seconds = @elapsed begin
     @eval using Arrhenius, NPZ, SHA, Dates, TOML, LinearAlgebra, Libdl
     include(SHOCKTUBE_EXAMPLE_PATH)
+    "--qndf" in ARGS && include(joinpath(dirname(SHOCKTUBE_EXAMPLE_PATH),"real_gas_qndf_solver.jl"))
 end
 
 function shocktube_thread_settings(;enforce=true)
@@ -50,24 +52,44 @@ function shocktube_require_replay(actual,expected,repetition)
     return true
 end
 
+function shocktube_source_hashes(root)
+    paths=[joinpath(folder,file) for (folder,_,files) in walkdir(joinpath(root,"src")) for file in files]
+    append!(paths,[joinpath(root,"example","reactors",file) for file in
+        ("non_ideal_shock_tube.jl","real_gas_ode_solver.jl","real_gas_ad_jacobian.jl",
+         "real_gas_trial_states.jl","real_gas_qndf_solver.jl")])
+    push!(paths,joinpath(root,"validation","real_gas_timing.jl"))
+    Dict(replace(relpath(path,root),'\\'=>'/')=>bytes2hex(sha256(read(path))) for path in paths)
+end
+
+shocktube_mechanism_hashes(directory)=Dict(file=>bytes2hex(sha256(read(joinpath(directory,file))))
+    for file in ("dodecane_RK.yaml","dodecane_IG.yaml","dodecane_IG.yaml.npz"))
+
 function shocktube_timing_main(args)
-    length(args)>=2 || error("supply MECHANISM_DIR OUTPUT.npz [REPETITIONS] [QUALIFICATION] [--smoke] [--finite-difference]")
+    length(args)>=2 || error("supply MECHANISM_DIR OUTPUT.npz [REPETITIONS] [QUALIFICATION] [--smoke] [--finite-difference] [--qndf]")
     directory,output = args[1:2]
-    positional = filter(x -> x ∉ ("--smoke","--ad","--finite-difference"),args[3:end])
+    positional = filter(x -> x ∉ ("--smoke","--ad","--finite-difference","--qndf"),args[3:end])
     repetitions = length(positional)>=1 ? parse(Int,positional[1]) : 7
     qualification = length(positional)>=2 ? positional[2] : "informational"
     qualification in ("informational","controlled","validate-only") || error("invalid qualification")
     repetitions>=7 || error("at least seven warm repetitions required")
     smoke = "--smoke" in args
     ad = !("--finite-difference" in args)
+    qndf = "--qndf" in args
+    qndf && !ad && error("--qndf requires the AD Jacobian")
+    qndf && !isdefined(@__MODULE__,:shocktube_qndf_integrator) &&
+        error("include real_gas_qndf_solver.jl before calling this driver with --qndf")
+    solver = qndf ? :qndf : :sdirk
     root = normpath(joinpath(@__DIR__,".."))
     realpath(pathof(Arrhenius))==realpath(joinpath(root,"src","Arrhenius.jl")) ||
         error("the benchmark and Arrhenius package must use the same checkout")
+    hashes_before=shocktube_source_hashes(root)
+    mechanisms_before=shocktube_mechanism_hashes(directory)
     gas = CreateSolution(joinpath(directory,"dodecane_IG.yaml"))
     model = RedlichKwongThermo(joinpath(directory,"dodecane_RK.yaml"))
+    trial_policy = qndf ? SignedIntegerShockTubeTrials(gas,joinpath(directory,"dodecane_IG.yaml")) : ClippedShockTubeTrials()
     thread_checks = Dict("before_first"=>shocktube_thread_settings())
     started = time_ns()
-    first_result = shocktube_calculations(gas,model;smoke,jacobian=ad ? :ad : :finite_difference)
+    first_result = shocktube_calculations(gas,model;smoke,jacobian=ad ? :ad : :finite_difference,solver,trial_policy)
     first_seconds = (time_ns()-started)/1e9
     # Check any backend loaded lazily during the first/JIT invocation.
     thread_checks["before_warm"] = shocktube_thread_settings()
@@ -79,7 +101,7 @@ function shocktube_timing_main(args)
         GC.gc()
         for repetition in 1:repetitions
             started = time_ns()
-            result = shocktube_calculations(gas,model;smoke,jacobian=ad ? :ad : :finite_difference)
+            result = shocktube_calculations(gas,model;smoke,jacobian=ad ? :ad : :finite_difference,solver,trial_policy)
             push!(warm_seconds,(time_ns()-started)/1e9)
             thread_checks["after_warm_"*string(repetition)] = shocktube_thread_settings(;enforce=false)
             push!(warm_delays,[r.delay for r in result])
@@ -98,15 +120,10 @@ function shocktube_timing_main(args)
     else
         Sys.CPU_NAME
     end
-    hashes = Dict(relpath(path,root)=>bytes2hex(sha256(read(path)))
-        for (folder,_,files) in walkdir(joinpath(root,"src")) for file in files
-        if endswith(file,".jl") for path in [joinpath(folder,file)])
-    for file in ("non_ideal_shock_tube.jl","real_gas_ode_solver.jl","real_gas_ad_jacobian.jl")
-        path = joinpath(root,"example","reactors",file)
-        hashes[relpath(path,root)] = bytes2hex(sha256(read(path)))
-    end
-    mechanism_hashes = Dict(file=>bytes2hex(sha256(read(joinpath(directory,file))))
-        for file in ("dodecane_RK.yaml","dodecane_IG.yaml","dodecane_IG.yaml.npz"))
+    hashes_after=shocktube_source_hashes(root)
+    mechanisms_after=shocktube_mechanism_hashes(directory)
+    hashes_before==hashes_after || error("native source inventory or bytes changed during calculations")
+    mechanisms_before==mechanisms_after || error("native mechanism bytes changed during calculations")
     toml_string(value) = sprint(io -> TOML.print(io,value))
     manifest = joinpath(dirname(Base.active_project()),"Manifest.toml")
     data = Dict{String,Any}(
@@ -115,8 +132,10 @@ function shocktube_timing_main(args)
         "kernel_release_utf8"=>utf8(Sys.isunix() ? readchomp(`uname -r`) : "unknown"),
         "platform_utf8"=>utf8(Sys.MACHINE),"qualification_utf8"=>utf8(qualification),
         "timestamp_utc_utf8"=>utf8(Dates.now(Dates.UTC)),"scope_utf8"=>utf8(smoke ? "1000_K_pair" : "full_34_trajectories"),
-        "source_hashes_toml_utf8"=>utf8(toml_string(hashes)),
-        "mechanism_hashes_toml_utf8"=>utf8(toml_string(mechanism_hashes)),
+        "source_hashes_toml_utf8"=>utf8(toml_string(hashes_before)),
+        "source_hashes_after_toml_utf8"=>utf8(toml_string(hashes_after)),
+        "mechanism_hashes_toml_utf8"=>utf8(toml_string(mechanisms_before)),
+        "mechanism_hashes_after_toml_utf8"=>utf8(toml_string(mechanisms_after)),
         "manifest_toml_utf8"=>utf8(read(manifest,String)),
         "thread_environment_toml_utf8"=>utf8(toml_string(Dict(name=>get(ENV,name,"")
             for name in ("JULIA_NUM_THREADS","OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS")))),
@@ -130,8 +149,14 @@ function shocktube_timing_main(args)
         "first_seconds"=>[first_seconds],"warm_seconds"=>warm_seconds,
         "warm_matches_first"=>UInt8.(warm_matches_first),
         "warm_delays"=>isempty(warm_delays) ? zeros(length(first_result),0) : reduce(hcat,warm_delays),
-        "native_rtol"=>[1e-13],"native_atol"=>[1e-26],
-        "solver_utf8"=>utf8("OrdinaryDiffEqSDIRK.KenCarp4 with "*(ad ? "cached composition AD" : "finite-difference Jacobian")),
+        "native_rtol"=>[qndf ? 1e-9 : 1e-13],"native_atol"=>[qndf ? 1e-19 : 1e-26],
+        "native_temperature_atol_K"=>[qndf ? 1e-6 : 1e-26],
+        "absolute_tolerance_formula_utf8"=>utf8(qndf ?
+            "C atol = 1e-19 kmol/m^3; T atol = 1e-6 K; z = [C; T/1000 K], so z_T atol = 1e-9" :
+            "scalar 1e-26 tolerance for every physical [Y; T] state component"),
+        "trial_policy_utf8"=>utf8(qndf ? "mechanism-bound signed C1/C2/C3" : "clipped concentrations"),
+        "solver_utf8"=>utf8(qndf ? "OrdinaryDiffEqBDF.QNDF with scaled concentrations, cached composition AD and nonlinear coefficient 0.01" :
+            "OrdinaryDiffEqSDIRK.KenCarp4 with "*(ad ? "cached composition AD" : "finite-difference Jacobian")),
         "case_order_utf8"=>utf8(join([r.phase*"_"*string(r.temperature) for r in first_result],",")),
     )
     for r in first_result

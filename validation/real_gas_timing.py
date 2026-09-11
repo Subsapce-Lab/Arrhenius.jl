@@ -28,7 +28,7 @@ import time
 import tomllib
 from collections.abc import Mapping
 from numbers import Real
-from benchmark_environment import host_metadata, matches_target, cantera_library_hashes, verify_numerical_threads
+from benchmark_environment import host_metadata, matches_target, loaded_library_paths, verify_numerical_threads
 
 THREAD_VARIABLES = ("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS")
 for name in THREAD_VARIABLES:
@@ -43,6 +43,9 @@ SOURCE_COMMIT = "726522be4e2a13454d8415b7ef799d621f665cf3"
 SOURCE_EXAMPLE_SHA256 = "88f73fd9a1acf122ba1f71789d974d221b133f82c18381615c8099ff84b2f1de"
 SOURCE_MECHANISM_SHA256 = "3d3b59ed91dec0d0bcbac2fa2ef2cba13fbd565bfff8f266ca847ed6aa92f7f1"
 TEMPERATURES = [1250,1170,1120,1080,1040,1010,990,970,950,930,910,880,850,820,790,760]
+EXAMPLE_HELPERS = ("non_ideal_shock_tube.jl","real_gas_ode_solver.jl","real_gas_ad_jacobian.jl",
+                   "real_gas_trial_states.jl","real_gas_qndf_solver.jl")
+NATIVE_MECHANISMS = ("dodecane_RK.yaml","dodecane_IG.yaml","dodecane_IG.yaml.npz")
 
 
 def case_order(smoke=False):
@@ -154,6 +157,41 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+def current_source_hashes(project):
+    project = Path(project)
+    paths = [p for p in (project/"src").rglob("*") if p.is_file()]
+    paths += [project/"example/reactors"/name for name in EXAMPLE_HELPERS]
+    paths.append(project/"validation/real_gas_timing.jl")
+    return {p.relative_to(project).as_posix():sha(p) for p in sorted(paths)}
+
+
+def verify_native_source_inventory(project,meta):
+    before = tomllib.loads(meta.get("source_hashes_toml",""))
+    after = tomllib.loads(meta.get("source_hashes_after_toml",""))
+    current = current_source_hashes(project)
+    if not before or before!=after or before!=current:
+        raise ValueError("native source inventory or bytes differ before/after/current checkout")
+    return current
+
+
+def require_unchanged(expected):
+    if any(not Path(path).is_file() or sha(path)!=value for path,value in expected.items()):
+        raise ValueError("benchmark input or driver bytes changed during calculations")
+
+
+def mapped_cantera_hashes(record=None):
+    paths = {p.resolve() for p in loaded_library_paths() if "cantera" in p.name.lower()}
+    extension = Path(compiled.__file__).resolve()
+    if extension not in paths or not any("libcantera" in p.name for p in paths):
+        raise ValueError("the Cantera extension and shared library must both be actually mapped")
+    hashes = {str(p):sha(p) for p in sorted(paths)}
+    if record is not None:
+        recorded = {Path(k).name:v for k,v in record.get("library_hashes",{}).items()}
+        if any(recorded.get(Path(p).name)!=value for p,value in hashes.items()):
+            raise ValueError("actually mapped Cantera library/extension bytes differ from build record")
+    return hashes
+
+
 def same_trajectories(actual,expected):
     """Check complete deterministic replay outside the timed calculation."""
     return actual.keys()==expected.keys() and all(
@@ -196,10 +234,11 @@ def same_input_data(actual,expected):
 def verify_native_mechanisms(directory,meta,gases):
     if directory is None:
         return {"verified":False,"reason":"native mechanism directory was not supplied"}
-    names = ("dodecane_RK.yaml","dodecane_IG.yaml","dodecane_IG.yaml.npz")
+    names = NATIVE_MECHANISMS
     recorded = tomllib.loads(meta["mechanism_hashes_toml"])
+    after = tomllib.loads(meta.get("mechanism_hashes_after_toml",""))
     current = {name:sha(directory/name) for name in names}
-    if recorded!=current:
+    if recorded!=after or recorded!=current:
         raise ValueError("native mechanism files differ from the files hashed by the Julia run")
     with np.load(directory/names[2]) as sidecar:
         sidecar_source = bytes(sidecar["source_sha256_utf8"]).decode()
@@ -238,6 +277,8 @@ def main():
     parser.add_argument("--mechanism",type=Path,help="defaults to Cantera's installed nDodecane_Reitz.yaml")
     parser.add_argument("--native-mechanism-directory",type=Path,
         help="prepared native YAML/sidecar directory; required for controlled timing")
+    parser.add_argument("--native-project",type=Path,default=Path(__file__).resolve().parent.parent,
+        help="current native source checkout; must exactly match the Julia before/after inventory")
     parser.add_argument("--validate-only",action="store_true")
     args = parser.parse_args()
     if args.repetitions<7:
@@ -248,6 +289,7 @@ def main():
         raise ValueError("unknown native shock-tube scope")
     smoke = meta["scope"]=="1000_K_pair"
     native_samples,native_warm_matches_first = native_replay_checks(native)
+    source_hashes = verify_native_source_inventory(args.native_project,meta)
     if args.source_example is not None and sha(args.source_example)!=SOURCE_EXAMPLE_SHA256:
         raise ValueError("source example hash differs from the pinned Cantera source")
     if args.qualification=="controlled":
@@ -267,6 +309,13 @@ def main():
         raise ValueError("reference mechanism hash differs from the pinned Cantera source")
     gases = {phase:ct.Solution(str(mechanism),"nDodecane_"+phase) for phase in ("RK","IG")}
     native_provenance = verify_native_mechanisms(args.native_mechanism_directory,meta,gases)
+    record = json.loads(args.cantera_build_record.read_text()) if args.cantera_build_record else None
+    libraries_before = mapped_cantera_hashes(record)
+    input_paths = [Path(__file__),Path(__file__).with_name("benchmark_environment.py"),args.julia_result,mechanism]
+    input_paths += [p for p in (args.source_example,args.cantera_build_record) if p is not None]
+    if args.native_mechanism_directory is not None:
+        input_paths += [args.native_mechanism_directory/name for name in NATIVE_MECHANISMS]
+    input_hashes = {str(p.resolve()):sha(p) for p in input_paths}
     hardware = host_metadata()
     thread_checks = {"before":verify_threads()}
     hardware["load_average_start"] = os.getloadavg()
@@ -314,11 +363,16 @@ def main():
     thread_checks["after"] = verify_threads(enforce=False)
     reference_path = args.output.with_suffix(".cantera.npz")
     np.savez(reference_path,**reference_arrays)
-    libraries = cantera_library_hashes(ct.__file__)
-    record = json.loads(args.cantera_build_record.read_text()) if args.cantera_build_record else None
+    libraries_after = mapped_cantera_hashes(record)
+    if libraries_after!=libraries_before:
+        raise ValueError("actually mapped Cantera library inventory or bytes changed during calculations")
+    require_unchanged(input_hashes)
+    if current_source_hashes(args.native_project)!=source_hashes:
+        raise ValueError("native source inventory or bytes changed during Cantera calculations")
+    libraries = {Path(p).name:value for p,value in libraries_after.items() if "libcantera" in Path(p).name}
     source_sha = record["source"]["commit"] if record else getattr(ct,"__git_commit__","unknown")
     recorded_libraries = {Path(k).name:v for k,v in (record or {}).get("library_hashes",{}).items()}
-    extension_sha = sha(compiled.__file__)
+    extension_sha = libraries_after[str(Path(compiled.__file__).resolve())]
     build_matches = bool(libraries and recorded_libraries
         and all(recorded_libraries.get(k)==v for k,v in libraries.items())
         and recorded_libraries.get(Path(compiled.__file__).name)==extension_sha)
@@ -352,6 +406,8 @@ def main():
         "cantera_version":ct.__version__,"cantera_source_sha":source_sha,
         "cantera_build_record_sha256":sha(args.cantera_build_record) if record else None,
         "cantera_shared_libraries_sha256":libraries,"cantera_extension_sha256":extension_sha,
+        "mapped_cantera_hashes_before":libraries_before,"mapped_cantera_hashes_after":libraries_after,
+        "input_hashes_before_and_after":input_hashes,"input_source_bytes_unchanged":True,
         "cantera_build_matches_loaded_libraries":build_matches,
         "published_source_sha256":sha(args.source_example) if args.source_example else None,
         "harness_sha256":sha(__file__),"native_artifact_sha256":sha(args.julia_result),
@@ -382,6 +438,8 @@ def main():
         "cantera_tolerances":{"rtol":first[order[0]]["rtol"],"atol":first[order[0]]["atol"]},
         "native_solver":meta.get("solver","OrdinaryDiffEqSDIRK.KenCarp4"),
         "native_tolerances":{"rtol":float(native["native_rtol"][0]),"atol":float(native["native_atol"][0])},
+        "native_temperature_atol_K":float(native["native_temperature_atol_K"][0]) if "native_temperature_atol_K" in native else None,
+        "native_trial_policy":meta.get("trial_policy","clipped concentrations"),
         "native_absolute_tolerance_formula":meta.get("absolute_tolerance_formula","scalar tolerance for every state component"),
         "accuracy_note":"Native pointwise checks use independently refined Cantera tolerances; published default-tolerance results are retained, including known low-temperature convergence error.",
         "correctness_pass":correct,"reference_validation_seconds":validation_seconds,"cases":cases,

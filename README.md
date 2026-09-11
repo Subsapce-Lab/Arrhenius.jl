@@ -29,6 +29,8 @@ closed constant-pressure and constant-volume reactors; connected stirred
 reactors with flow devices and heat-transfer walls; planar premixed free flames
 and burner-stabilized flames; counterflow diffusion, opposed premixed and twin
 premixed flames; and premixed impinging jets with an inert wall.
+Gas/solid TP and HP equilibrium supports one initially absent, fixed-stoichiometry
+condensed phase with NASA7 or constant-cp thermodynamics, including graphite formation.
 Flame calculations support adaptive
 grids, mixture-averaged and multicomponent diffusion, Soret diffusion, and
 prescribed burner temperature profiles. Counterflow diffusion flames also
@@ -94,6 +96,15 @@ compares frozen and equilibrium acoustic responses.
 The [mixing example](example/thermodynamics/mixing.jl) conserves species and
 enthalpy while combining streams, then evaluates the mixture at chemical equilibrium.
 Reactor examples use a caller-supplied Julia ODE integrator.
+
+The [gas/graphite example](example/thermodynamics/adiabatic.jl) computes adiabatic
+equilibrium temperature and all gas/solid species amounts across 50 fuel/air mixtures.
+Prepare the gas sidecar and condensed-phase parameters, then run:
+
+```bash
+python mechanism/export_condensed_phase.py graphite.yaml graphite --output graphite.condensed.json
+julia --project=. example/thermodynamics/adiabatic.jl path/to/gri30.yaml graphite.condensed.json
+```
 
 For catalytic calculations, prepare an ideal-surface parameter archive:
 

@@ -22,6 +22,7 @@ module Arrhenius
     include("ReactorNetworks.jl")
     include("MovingWallReactors.jl")
     include("SurfaceKinetics.jl")
+    include("CondensedEquilibrium.jl")
     include("CoverageDependentThermo.jl")
     include("SurfaceFlowReactors.jl")
     include("PureWater.jl")

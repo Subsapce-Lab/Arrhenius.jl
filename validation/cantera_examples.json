@@ -578,12 +578,27 @@
     {
       "id": "thermo/adiabatic",
       "url": "https://cantera.org/dev/examples/python/thermo/adiabatic.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/adiabatic.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_adiabatic.json",
+        "additional_report": "validation/results/cantera4_m4_adiabatic.json",
+        "case": "thermo/adiabatic",
+        "scope": "All 50 source fuel/air mixtures: HP equilibrium temperature and all 54 gas/solid species amounts; independently refined reference, element and enthalpy balances, phase affinity and complementarity, and every warm replay checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_adiabatic.json",
+        "case": "thermo/adiabatic",
+        "speed_ratio": 66.84888454995895,
+        "scope": "Complete 50-point public adiabatic_calculation on prepared gas/solid models; nine fresh warm sweeps; imports, model preparation, compilation, printing and I/O excluded."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_adiabatic.json",
+        "case": "thermo/adiabatic",
+        "speed_ratio": 68.44546301685044,
+        "scope": "Complete 50-point public adiabatic_calculation on prepared gas/solid models; nine fresh warm sweeps; imports, model preparation, compilation, printing and I/O excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/coverage_dependent_surf",
