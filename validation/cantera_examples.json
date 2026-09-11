@@ -8,12 +8,21 @@
     {
       "id": "kinetics/blowers_masel",
       "url": "https://cantera.org/dev/examples/python/kinetics/blowers_masel.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/kinetics/blowers_masel.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_properties.json",
+        "case": "blowers_masel",
+        "scope": "32 temperature states and 100 reaction-enthalpy shifts; every output and warm repetition checked"
+      },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_properties.json",
+        "case": "blowers_masel",
+        "speed_ratio": 28.771171360994067,
+        "scope": "Warm calculation on prepared phases; native enthalpy shifts evaluated directly; imports and compilation separate"
+      },
+      "performance_status": "validated"
     },
     {
       "id": "kinetics/custom_reactions",
@@ -720,12 +729,21 @@
     {
       "id": "transport/dusty_gas",
       "url": "https://cantera.org/dev/examples/python/transport/dusty_gas.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/transport/dusty_gas.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_properties.json",
+        "case": "dusty_gas",
+        "scope": "Full diffusion matrix, conductivity, uniform and pressure-gradient molar fluxes; every warm repetition checked"
+      },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_properties.json",
+        "case": "dusty_gas",
+        "speed_ratio": 4.793215136258884,
+        "scope": "Warm calculation on fresh transport workspaces; preparation, imports and compilation separate"
+      },
+      "performance_status": "validated"
     },
     {
       "id": "transport/high_pressure_transport",

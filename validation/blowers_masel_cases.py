@@ -27,7 +27,8 @@ for T in temperatures:
     forward.append(gas.forward_rate_constants.copy())
     reverse.append(gas.reverse_rate_constants.copy())
     enthalpy.append(gas.delta_enthalpy.copy())
-# The source uses the effective barrier after the temperature loop for these limits.
+# In Cantera 4 the standalone rate object's delta_enthalpy remains zero until
+# explicitly assigned, so the source uses the intrinsic barrier for these limits.
 E0 = gas.reaction(1).rate.activation_energy
 deltaH = np.linspace(-5*E0,5*E0,100)
 barriers = []

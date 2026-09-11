@@ -17,8 +17,9 @@ function blowers_masel_calculation(gas)
         rates[:,j] = [rate.A*T^rate.b*exp(-rate.Ea0/(R*T)),
                       rate_constant(rate,T,h2),rate_constant(rate,T,methane)]
     end
-    effective_barrier = activation_energy(rate,first(reaction_enthalpies(gas,last(temperatures),index)))
-    enthalpies = collect(range(-5effective_barrier,5effective_barrier;length=100))
+    # Sweep ±5 times the intrinsic barrier, matching the example's rate object
+    # before its reaction enthalpy is assigned explicitly.
+    enthalpies = collect(range(-5rate.Ea0,5rate.Ea0;length=100))
     barriers = activation_energy.(Ref(rate),enthalpies)
     return (;temperatures,rates,enthalpies,barriers)
 end
