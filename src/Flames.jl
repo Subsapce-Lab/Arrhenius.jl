@@ -16,6 +16,7 @@ mutable struct FreeFlame{G<:Solution} <: AbstractPremixedFlame
     soret_enabled::Bool
     multicomponent_data::Union{Nothing,MultiTransportData}
     flux_gradient_basis::Symbol
+    discretization::Symbol
 end
 
 "A planar premixed flame with prescribed inlet mass flux."
@@ -38,6 +39,7 @@ mutable struct BurnerFlame{G<:Solution} <: AbstractPremixedFlame
     soret_enabled::Bool
     multicomponent_data::Union{Nothing,MultiTransportData}
     flux_gradient_basis::Symbol
+    discretization::Symbol
 end
 
 """
@@ -47,10 +49,15 @@ Construct a native Julia premixed flame with mixture-averaged diffusion using
 mole-fraction gradients. The inlet mass flux (and flame speed) is an eigenvalue.
 Initialization uses native constant-enthalpy chemical equilibrium. Call `solve!`
 to solve the species and energy equations with adaptive grid refinement.
+`discretization=:conservative` uses shared finite-volume species and total
+enthalpy fluxes; `:finite_difference` retains the original discretization.
 """
 function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothing,
         transport_model=:mixture_averaged, multicomponent_data=nothing, soret=false,
-        flux_gradient_basis=:mole)
+        flux_gradient_basis=:mole, discretization=:conservative)
+    discretization = Symbol(discretization)
+    discretization in (:finite_difference,:conservative) ||
+        throw(ArgumentError("discretization must be :finite_difference or :conservative"))
     isfinite(T) && 200 <= T <= 6000 && isfinite(P) && P > 0 ||
         throw(ArgumentError("finite inlet temperature in 200–6000 K and positive pressure required"))
     gas.trans.poly_order == 5 || throw(ArgumentError("regenerate the sidecar to include native transport fits"))
@@ -72,7 +79,7 @@ function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothin
     end
     anchor = clamp(argmin(abs.(state[1,:] .- (.75*T+.25*eq.T)/1000)),2,length(z)-1)
     flame = FreeFlame(gas,z,Float64(P),Float64(T),y,state,anchor,
-        1000*state[1,anchor],argmax(y),false,:mixture_averaged,false,nothing,:mole)
+        1000*state[1,anchor],argmax(y),false,:mixture_averaged,false,nothing,:mole,discretization)
     return set_transport!(flame,transport_model; data=multicomponent_data,soret,flux_gradient_basis)
 end
 
@@ -82,13 +89,15 @@ end
 Construct a burner-stabilized premixed flame. `mdot` is the inlet mass flux in
 kg/(m² s). The energy equation is enabled unless `set_temperature_profile!`
 specifies a measured temperature profile.
+Use `discretization=:conservative` for finite-volume species and total enthalpy
+balances, or `:finite_difference` for the original discretization.
 """
 function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=nothing,
         transport_model=:mixture_averaged,multicomponent_data=nothing,soret=false,
-        flux_gradient_basis=:mole)
+        flux_gradient_basis=:mole,discretization=:conservative)
     isfinite(mdot) && mdot > 0 || throw(ArgumentError("mass flux must be finite and positive"))
     initial_grid = isnothing(grid) ? width .* [0,.1,.2,.3,.5,.7,1] : grid
-    base = FreeFlame(gas; T,P,X,width,grid=initial_grid,transport_model,multicomponent_data,soret,flux_gradient_basis)
+    base = FreeFlame(gas; T,P,X,width,grid=initial_grid,transport_model,multicomponent_data,soret,flux_gradient_basis,discretization)
     Teq = base.state[1,end]
     Yeq = copy(base.state[2:end-1,end])
     transition_length = (base.grid[end]-base.grid[1])/5
@@ -115,7 +124,7 @@ function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=noth
     return BurnerFlame(base.gas,base.grid,base.pressure,base.inlet_temperature,
         base.inlet_Y,base.state,base.anchor,base.fixed_temperature,
         base.dependent_species,false,Float64(mdot),Float64[],Float64[],Float64[],
-        base.transport_model,base.soret_enabled,base.multicomponent_data,base.flux_gradient_basis)
+        base.transport_model,base.soret_enabled,base.multicomponent_data,base.flux_gradient_basis,base.discretization)
 end
 
 """
@@ -170,6 +179,19 @@ function set_temperature_profile!(f::BurnerFlame,positions,temperatures;relative
     isapprox(_interpolate_profile(z,T,f.grid[1]),f.inlet_temperature;atol=1e-6,rtol=0) ||
         throw(ArgumentError("profile inlet must match burner temperature"))
     f.profile_positions,f.profile_temperatures = z,T
+    if _conservative_flame(f)
+        # Resolve prescribed derivative discontinuities exactly. Thermal
+        # diffusion can produce matching jumps in species gradients here.
+        oldz,oldu = f.grid,f.state
+        newz = sort!(unique(vcat(oldz,filter(x->oldz[1]<x<oldz[end],z))))
+        if length(newz) != length(oldz)
+            anchor_z = oldz[f.anchor]
+            f.state = [_interpolate_profile(oldz,@view(oldu[k,:]),x)
+                for k in axes(oldu,1), x in newz]
+            f.grid = newz
+            f.anchor = findfirst(==(anchor_z),newz)
+        end
+    end
     f.imposed_temperature = [_interpolate_profile(z,T,x) for x in f.grid]
     f.state[1,:] .= f.imposed_temperature ./ 1000
     f.converged = false
@@ -187,6 +209,22 @@ function velocity(f::AbstractPremixedFlame)
         for j in eachindex(f.grid)]
 end
 flame_speed(f::AbstractPremixedFlame) = velocity(f)[1]
+
+# Property adapters used by opposed-flow flames retain their own discretization.
+_conservative_flame(f) = false
+_conservative_flame(f::Union{FreeFlame,BurnerFlame}) = f.discretization == :conservative
+
+struct ConservativeFlameWorkspace
+    density_diffusion::Matrix{Float64}
+    species_flux::Matrix{Float64}
+    enthalpy_flux::Vector{Float64}
+    enthalpy::Vector{Float64}
+    cp::Vector{Float64}
+    previous_enthalpy::Vector{Float64}
+    previous_species_enthalpy::Vector{Float64}
+end
+ConservativeFlameWorkspace(n,N) = ConservativeFlameWorkspace(zeros(n,N-1),
+    zeros(n,N),zeros(N),zeros(N),zeros(N),zeros(N),zeros(n))
 
 struct FlameWorkspace{K}
     kinetics::K
@@ -212,6 +250,7 @@ struct FlameWorkspace{K}
     thermal_diffusion::Matrix{Float64}
     mixture_thermal::Union{Nothing,MixtureThermalDiffusionWorkspace}
     rate_caches::Vector{_KineticsTemperatureCache}
+    conservative::Union{Nothing,ConservativeFlameWorkspace}
 end
 function FlameWorkspace(f::AbstractPremixedFlame)
     n, N = f.gas.n_species, length(f.grid)
@@ -223,11 +262,13 @@ function FlameWorkspace(f::AbstractPremixedFlame)
         zeros(n,n,f.transport_model == :multicomponent ? N-1 : 0),zeros(n,N-1),
         f.transport_model == :mixture_averaged && f.soret_enabled ?
             MixtureThermalDiffusionWorkspace(f.multicomponent_data) : nothing,
-        [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N])
+        [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],
+        _conservative_flame(f) ? ConservativeFlameWorkspace(n,N) : nothing)
 end
 
 function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid))
     gas, n, N = f.gas, f.gas.n_species, length(f.grid)
+    conservative = _conservative_flame(f)
     @inbounds for j in nodes
         T = 1000*u[1,j]
         sumY = 0.0
@@ -277,12 +318,26 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
                         gas.MW[k]*gas.MW[l]*w.multi_transport.diffusion[k,l]
                 end
                 w.thermal_diffusion[:,j] .= w.multi_transport.thermal_diffusion
+                if conservative
+                    # These positive scalar mixture diffusivities determine only
+                    # the advective interpolation. Physical diffusion remains
+                    # the full multicomponent matrix below.
+                    mixture_transport!(w.transport,gas,f.pressure,Tmid,w.xmid)
+                    for k in 1:n
+                        w.conservative.density_diffusion[k,j] =
+                            f.pressure*meanMW/(R*Tmid)*w.transport.diffusion[k]
+                    end
+                end
             else
                 _, w.conductivity[j] = mixture_transport!(w.transport,gas,f.pressure,Tmid,w.xmid;
                     basis=f.flux_gradient_basis)
                 for k in 1:n
                     weight = f.flux_gradient_basis == :mass ? meanMW : gas.MW[k]
                     w.diffusion_prefactor[k,j] = f.pressure/(R*Tmid)*weight*w.transport.diffusion[k]
+                    if conservative
+                        w.conservative.density_diffusion[k,j] =
+                            f.pressure*meanMW/(R*Tmid)*w.transport.diffusion[k]
+                    end
                 end
                 if f.soret_enabled
                     w.thermal_diffusion[:,j] .= mixture_thermal_diffusion!(w.mixture_thermal,
@@ -308,7 +363,7 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
                 fluxsum += w.flux[k,j]
             end
             for k in 1:n
-                w.flux[k,j] -= u[k+1,j]*fluxsum
+                w.flux[k,j] -= (conservative ? w.ymid[k] : u[k+1,j])*fluxsum
             end
         end
         if f.soret_enabled
@@ -321,11 +376,125 @@ end
 
 const _flame_timescale = 1e-4
 
+# Exponential-fit interpolation approaches centered interpolation on resolved
+# cells and upwind interpolation in convection-dominated cells. One weight is
+# shared by every species and total enthalpy, preserving elemental balances.
+_flame_face_centering(Pe) = Pe < 1e-4 ? 1-Pe/6+Pe^3/360 : 1+2/Pe-1/tanh(Pe/2)
+
+function _conservative_flame_fluxes!(c,f,u,w)
+    n,N = f.gas.n_species,length(f.grid)
+    MW = f.gas.MW
+    @inbounds for j in 1:N
+        h,cp = 0.0,0.0
+        for k in 1:n
+            h += u[k+1,j]*w.h[k,j]/MW[k]
+            cp += u[k+1,j]*w.cp[k,j]/MW[k]
+        end
+        c.enthalpy[j],c.cp[j] = h,cp
+    end
+    @inbounds for j in 1:N-1
+        cpface = 0.0
+        density_diffusion = Inf
+        for k in 1:n
+            cpface += .25*(u[k+1,j]+u[k+1,j+1])*(w.cp[k,j]+w.cp[k,j+1])/MW[k]
+            density_diffusion = min(density_diffusion,c.density_diffusion[k,j])
+        end
+        density_diffusion = min(density_diffusion,w.conductivity[j]/cpface)
+        dz = f.grid[j+1]-f.grid[j]
+        mdot = .5*(u[end,j]+u[end,j+1])
+        Pe = abs(mdot)*dz/density_diffusion
+        right_weight = .5*_flame_face_centering(Pe)
+        mdot < 0 && (right_weight = 1-right_weight)
+        left_weight = 1-right_weight
+        hflux = mdot*(left_weight*c.enthalpy[j]+right_weight*c.enthalpy[j+1])-
+            1000*w.conductivity[j]*(u[1,j+1]-u[1,j])/dz
+        for k in 1:n
+            c.species_flux[k,j] = mdot*(left_weight*u[k+1,j]+right_weight*u[k+1,j+1])+w.flux[k,j]
+            hflux += .5*(w.h[k,j]+w.h[k,j+1])*w.flux[k,j]/MW[k]
+        end
+        c.enthalpy_flux[j] = hflux
+    end
+    # Natural outflow: zero diffusive/conductive boundary flux. Reactions and
+    # accumulation in the final half-cell remain in the finite-volume balance.
+    @inbounds for k in 1:n
+        c.species_flux[k,N] = u[end,N]*u[k+1,N]
+    end
+    c.enthalpy_flux[N] = u[end,N]*c.enthalpy[N]
+    return c
+end
+
+function _flame_previous_enthalpy!(c,f,previous)
+    @inbounds for j in eachindex(f.grid)
+        T = 1000*previous[1,j]
+        # Ideal-gas species enthalpies are composition independent.
+        cal_h_RT!(c.previous_species_enthalpy,f.gas,T,f.pressure,f.inlet_Y)
+        h = 0.0
+        for k in 1:f.gas.n_species
+            h += previous[k+1,j]*c.previous_species_enthalpy[k]*R*T/f.gas.MW[k]
+        end
+        c.previous_enthalpy[j] = h
+    end
+    return c.previous_enthalpy
+end
+
+function _conservative_flame_residual!(residual,f,u,w;previous=nothing,dt=Inf,
+        previous_enthalpy=nothing)
+    n,N = f.gas.n_species,length(f.grid)
+    c = _conservative_flame_fluxes!(w.conservative,f,u,w)
+    if previous !== nothing && previous_enthalpy === nothing
+        previous_enthalpy = _flame_previous_enthalpy!(c,f,previous)
+    end
+    @inbounds for j in 1:N
+        if f isa BurnerFlame
+            residual[end,j] = j == 1 ? u[end,j]-f.mass_flux : u[end,j]-u[end,j-1]
+        elseif j == f.anchor
+            residual[end,j] = u[1,j]-f.fixed_temperature/1000
+        elseif j < f.anchor
+            residual[end,j] = u[end,j+1]-u[end,j]
+        else
+            residual[end,j] = u[end,j]-u[end,j-1]
+        end
+        if j == 1
+            residual[1,j] = u[1,j]-f.inlet_temperature/1000
+            for k in 1:n
+                residual[k+1,j] = u[end,j]*f.inlet_Y[k]-c.species_flux[k,j]
+            end
+        else
+            cell = .5*(f.grid[min(j+1,N)]-f.grid[j-1])
+            factor = _flame_timescale/w.rho[j]
+            for k in 1:n
+                residual[k+1,j] = factor*(f.gas.MW[k]*w.source[k,j]-
+                    (c.species_flux[k,j]-c.species_flux[k,j-1])/cell)
+                if previous !== nothing
+                    residual[k+1,j] -= _flame_timescale/dt*(u[k+1,j]-previous[k+1,j])
+                end
+            end
+            residual[1,j] = -factor/(1000*c.cp[j])*
+                (c.enthalpy_flux[j]-c.enthalpy_flux[j-1])/cell
+            if previous !== nothing
+                # Formation enthalpy changes with composition. Storing only T
+                # here would suppress chemical heating during pseudo-time steps.
+                residual[1,j] -= _flame_timescale/(1000*c.cp[j]*dt)*
+                    (c.enthalpy[j]-previous_enthalpy[j])
+            end
+        end
+        if f isa BurnerFlame && !isempty(f.imposed_temperature)
+            residual[1,j] = u[1,j]-f.imposed_temperature[j]/1000
+        end
+        residual[f.dependent_species+1,j] = sum(@view(u[2:n+1,j]))-1
+    end
+    return residual
+end
+
 "Evaluate the discretized steady species, energy, and mass-flow residual."
 function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameWorkspace(f);
-        previous=nothing, dt=Inf, update_transport=true,nodes=eachindex(f.grid))
+        previous=nothing, dt=Inf, update_transport=true,nodes=eachindex(f.grid),
+        previous_enthalpy=nothing)
     n,N = f.gas.n_species,length(f.grid)
     _flame_properties!(w,f,u; update_transport,nodes)
+    if _conservative_flame(f)
+        return _conservative_flame_residual!(residual,f,u,w;previous,dt,previous_enthalpy)
+    end
     z, MW = f.grid, f.gas.MW
     @inbounds for j in 1:N
         if f isa BurnerFlame
@@ -383,7 +552,7 @@ end
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
-function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf)
+function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing)
     B,N = size(u)
     band = w.band
     fill!(band,0)
@@ -393,12 +562,15 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf)
     rp = w.residual_perturbed
     steps = w.steps
     base_properties = (copy(w.X),copy(w.rho),copy(w.cp),copy(w.h),copy(w.source))
+    if _conservative_flame(f) && previous !== nothing && previous_enthalpy === nothing
+        previous_enthalpy = _flame_previous_enthalpy!(w.conservative,f,previous)
+    end
     for k in 1:B, color in 1:3
         for j in color:3:N
             steps[j] = 1e-7*max(abs(u[k,j]), k == 1 ? .1 : 1e-5)
             perturbed[k,j] = u[k,j]+steps[j]
         end
-        flame_residual!(rp,f,perturbed,w; previous,dt,update_transport=false,nodes=color:3:N)
+        flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport=false,nodes=color:3:N)
         for j in color:3:N
             column = (j-1)*B+k
             for jj in max(1,j-1):min(N,j+1), kk in 1:B
@@ -423,14 +595,18 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
     pivots = LinearAlgebra.BlasInt[]
     age = 5
     last_contraction = Inf
+    # `previous` is immutable throughout this Newton solve. Cache its enthalpy
+    # once per solve, never across successive pseudo-time states.
+    previous_enthalpy = _conservative_flame(f) && previous !== nothing ?
+        _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
     for iteration in 1:maxiters
-        flame_residual!(r,f,u,w; previous,dt)
+        flame_residual!(r,f,u,w; previous,dt,previous_enthalpy)
         residual_norm = norm(r,Inf)
         residual_norm < tolerance && return true
         refresh = age >= 5 || last_contraction > .7
         step = try
             if refresh
-                J = _flame_jacobian(f,u,w,r; previous,dt)
+                J = _flame_jacobian(f,u,w,r; previous,dt,previous_enthalpy)
                 _,pivots = LinearAlgebra.LAPACK.gbtrf!(bandwidth,bandwidth,length(u),J)
                 age = 0
             end
@@ -457,7 +633,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         accepted = false
         for backtrack in 1:24
             @. trial = u + alpha*step
-            flame_residual!(rt,f,trial,w; previous,dt)
+            flame_residual!(rt,f,trial,w; previous,dt,previous_enthalpy)
             if all(isfinite,rt) && norm(rt) < norm(r)*(1-1e-4*alpha)
                 u .= trial
                 accepted = true
@@ -527,6 +703,15 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
         gspan = ghigh-glow
         if gspan > .01*max(abs(glow),abs(ghigh))
             for j in 1:N-2
+                if _conservative_flame(f) && f isa BurnerFlame && f.soret_enabled &&
+                        !isempty(f.imposed_temperature)
+                    knot = searchsortedfirst(f.profile_positions,z[j+1])
+                    if knot <= length(f.profile_positions) && f.profile_positions[knot] == z[j+1]
+                        # Soret couples an imposed T-gradient jump to a real
+                        # species-gradient jump. Refinement cannot smooth it.
+                        continue
+                    end
+                end
                 if abs(gradients[j+1]-gradients[j]) > curve*gspan+threshold/spacing[j] &&
                         min(spacing[j],spacing[j+1])>=2e-10
                     insert[j] = true

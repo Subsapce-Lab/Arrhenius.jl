@@ -1,0 +1,49 @@
+# Methane/air burner with the measured temperature profile from Cantera's
+# flame_fixed_T.py example. Export both mechanism sidecars before running.
+# julia --project=. example/flames/flame_fixed_T.jl [gri30.yaml] [output-directory]
+using Arrhenius
+
+mechanism=isempty(ARGS) ? joinpath(@__DIR__,"..","..","mechanism","gri30.yaml") : ARGS[1]
+output=length(ARGS)>1 ? ARGS[2] : mktempdir()
+mkpath(output)
+gas=CreateSolution(mechanism)
+f=BurnerFlame(gas;T=373.7,P=one_atm,X="CH4:.65,O2:1,N2:3.76",mdot=.04,width=.01,
+    discretization=:conservative)
+positions=[
+    0.,.00015625,.00023437,.00039063,.00046875,.00050781,
+    .00054688,.000625,.00066406,.00070312,.00074219,.00078125,
+    .00082031,.00085938,.00089844,.0009375,.00101563,.00105469,
+    .00109375,.00113281,.00117187,.00121094,.00125,.00128906,
+    .00132813,.00136719,.00140625,.00144531,.00148438,.00152344,
+    .0015625,.00160156,.00164062,.00171875,.00175781,.00179688,
+    .00183594,.001875,.00191406,.00195312,.00199219,.00203125,
+    .00207031,.00210938,.00214844,.0021875,.00222656,.00226562,
+    .00230469,.00234375,.00238281,.00242187,.00246094,.0025,
+    .00257813,.00265625,.00273437,.0028125,.00289062,.00296875,
+    .00304688,.003125,.00328125,.0034375,.00359375,.00375,
+    .00390625,.0087,.01]
+temperatures=[
+    373.7,465.4070428,510.4311676,599.5552837,643.8342938,
+    665.9335545,688.0122338,732.1284327,754.1744755,776.2170662,
+    798.2588757,820.3020011,842.348001,864.3979228,886.4523159,
+    908.5112198,952.6396629,974.7018199,996.7515831,1018.777651,
+    1040.765863,1062.69948,1084.558639,1106.320078,1127.956918,
+    1149.438472,1170.730129,1191.793309,1212.585506,1233.060477,
+    1253.168589,1272.857384,1292.072391,1328.859767,1346.323998,
+    1363.101361,1379.147594,1394.425274,1408.905834,1422.569115,
+    1435.40408,1447.410648,1458.597668,1468.982722,1478.590978,
+    1487.453914,1495.607879,1503.092709,1509.950449,1516.224147,
+    1521.956853,1527.19079,1531.966722,1536.32348,1543.891739,
+    1550.203579,1555.480771,1559.908135,1563.637879,1566.794144,
+    1569.477867,1571.77099,1575.385829,1578.108169,1580.194856,
+    1581.820666,1583.106578,1589.51315,1589.578955]
+set_temperature_profile!(f,positions,temperatures;relative=false)
+solve!(f;slope=.3,curve=1.)
+save_flame(joinpath(output,"mixture.npz"),f)
+data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+set_transport!(f,:multicomponent;data)
+solve!(f;slope=.1,curve=.2)
+save_flame(joinpath(output,"multicomponent.npz"),f)
+save_flame(joinpath(output,"flame-fixed-T.csv"),f;basis=:mole)
+println("Solved ",length(f.grid)," points; inlet velocity ",velocity(f)[1]," m/s")
+println("Results: ",output)

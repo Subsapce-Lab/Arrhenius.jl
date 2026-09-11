@@ -11,7 +11,7 @@ using Arrhenius, LinearAlgebra, Test
     @test_throws ArgumentError FreeFlame(gas;X,width=-.1)
     @test_throws ArgumentError FreeFlame(gas;X,grid=[0.,.1,.1,.2,.3])
     @test_throws ArgumentError BurnerFlame(gas;X,mdot=0.)
-    f = FreeFlame(gas;X)
+    f = FreeFlame(gas;X,discretization=:finite_difference)
     @test_throws ArgumentError set_transport!(f,:multicomponent)
     @test_throws ArgumentError set_transport!(f,:mixture_averaged;soret=true)
     @test_throws ArgumentError solve!(f;initial_time_step=0.)
@@ -41,6 +41,22 @@ using Arrhenius, LinearAlgebra, Test
         @test restored.state == f.state
         @test restored.grid == f.grid
         @test flame_speed(restored) == flame_speed(f)
+        @test restored.discretization == :finite_difference
+        # A restart must retain its equations, including when the destination
+        # was constructed with another discretization. Old archives retain the
+        # finite-difference semantics under which they were written.
+        arrays = Arrhenius.npzread(snapshot)
+        arrays["discretization_utf8"] = collect(codeunits("conservative"))
+        Arrhenius.npzwrite(snapshot,arrays)
+        restore_flame!(restored,snapshot)
+        @test restored.discretization == :conservative
+        delete!(arrays,"discretization_utf8")
+        Arrhenius.npzwrite(snapshot,arrays)
+        restore_flame!(restored,snapshot)
+        @test restored.discretization == :finite_difference
+        arrays["discretization_utf8"] = collect(codeunits("unknown"))
+        Arrhenius.npzwrite(snapshot,arrays)
+        @test_throws ArgumentError restore_flame!(restored,snapshot)
         save_flame(table,f;basis=:mole)
         lines = readlines(table)
         @test length(lines) == length(f.grid)+1
@@ -92,7 +108,7 @@ using Arrhenius, LinearAlgebra, Test
     @test flame_speed(f) ≈ .7204474366630716 rtol=.01
     @test norm(flame_residual!(similar(f.state),f),Inf) < 1e-8
 
-    burner = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,width=.5)
+    burner = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,width=.5,discretization=:finite_difference)
     solve!(burner;slope=.05,curve=.1)
     @test burner.converged
     @test maximum(temperature(burner)) ≈ 1857.234327060171 rtol=.01
@@ -101,7 +117,7 @@ using Arrhenius, LinearAlgebra, Test
     # A supplied mesh is part of the user's boundary-value problem. Its domain
     # and coordinates must survive construction, including a shifted origin.
     supplied_grid = .1 .+ .5 .* [0,.1,.2,.3,.5,.7,1]
-    supplied = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,grid=supplied_grid)
+    supplied = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,grid=supplied_grid,discretization=:finite_difference)
     @test supplied.grid == supplied_grid
     @test supplied.state[1,1] == .373
     @test supplied.state[end,:] == fill(.06,length(supplied_grid))

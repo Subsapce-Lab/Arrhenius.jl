@@ -25,7 +25,8 @@ _flame_utf8(value) = collect(codeunits(string(value)))
     save_flame(path, flame; overwrite=false, basis=:mass)
 
 Save a `.npz` restart snapshot or a `.csv` table. Snapshots retain the grid,
-boundary conditions, temperature profile, transport options and native state.
+boundary conditions, temperature profile, transport options, spatial discretization
+and native state.
 CSV columns contain position [m], velocity [m/s], temperature [K], density
 [kg/m³], heat release [W/m³] and species fractions (`basis=:mass` or `:mole`).
 """
@@ -54,6 +55,7 @@ function save_flame(path::AbstractString,f::AbstractPremixedFlame;overwrite=fals
             "grid"=>f.grid,"state"=>f.state,"inlet_Y"=>f.inlet_Y,
             "conditions"=>[f.pressure,f.inlet_temperature,f.anchor,f.fixed_temperature],
             "transport_utf8"=>_flame_utf8(f.transport_model),
+            "discretization_utf8"=>_flame_utf8(f.discretization),
             "gradient_basis_utf8"=>_flame_utf8(f.flux_gradient_basis),
             "soret"=>[Int(f.soret_enabled)])
         if f isa BurnerFlame
@@ -97,9 +99,12 @@ function restore_flame!(f::AbstractPremixedFlame,path::AbstractString)
     length(conditions)==4 && all(isfinite,conditions) && conditions[1]>0 &&
         200<=conditions[2]<=6000 && isinteger(conditions[3]) && 2<=conditions[3]<N ||
         throw(ArgumentError("invalid snapshot boundary conditions"))
+    discretization = haskey(arrays,"discretization_utf8") ? Symbol(text("discretization_utf8")) : :finite_difference
+    discretization in (:finite_difference,:conservative) || throw(ArgumentError("invalid snapshot discretization"))
     set_transport!(f,Symbol(text("transport_utf8"));soret=Bool(only(arrays["soret"])),
         flux_gradient_basis=Symbol(text("gradient_basis_utf8")))
     f.grid,f.state,f.inlet_Y = z,u,Y
+    f.discretization = discretization
     f.pressure,f.inlet_temperature = conditions[1:2]
     f.anchor,f.fixed_temperature = Int(conditions[3]),conditions[4]
     f.dependent_species = argmax(Y)
