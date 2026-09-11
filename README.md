@@ -106,6 +106,20 @@ python mechanism/export_condensed_phase.py graphite.yaml graphite --output graph
 julia --project=. example/thermodynamics/adiabatic.jl path/to/gri30.yaml graphite.condensed.json
 ```
 
+The [CO2 equation-of-state example](example/thermodynamics/equations_of_state.jl)
+computes ideal-gas, Redlich–Kwong and Span–Wagner properties over 1–100 bar at
+300 K, including the stable vapor/liquid transition. It uses the native Julia
+package Clapeyron 0.6.28 in a caller-supplied environment. Prepare Cantera's
+`example_data/co2-thermo.yaml` and its sidecar, then export the full Helmholtz
+parameters with CoolProp and run the Julia calculation:
+
+```bash
+julia --project=EOS_ENV -e 'using Pkg; Pkg.develop(path="."); Pkg.add(PackageSpec(name="Clapeyron", version="0.6.28"))'
+python mechanism/export_sidecar.py path/to/co2-thermo.yaml
+python mechanism/export_helmholtz.py CO2 carbon-dioxide.json
+julia --project=EOS_ENV example/thermodynamics/equations_of_state.jl path/to/co2-thermo.yaml carbon-dioxide.json
+```
+
 For catalytic calculations, prepare an ideal-surface parameter archive:
 
 ```bash

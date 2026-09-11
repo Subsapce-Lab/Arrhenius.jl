@@ -665,9 +665,14 @@
     {
       "id": "thermo/equations_of_state",
       "url": "https://cantera.org/dev/examples/python/thermo/equations_of_state.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/equations_of_state.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_equations_of_state.json",
+        "additional_report": "validation/results/cantera4_m4_equations_of_state.json",
+        "case": "thermo/equations_of_state",
+        "scope": "Complete 1,000-pressure, three-EOS CO2 calculation on WSL and M4, with all 15,000 source properties, 3,000 densities, gas/liquid phase and native identity/replay checks. Performance remains unmeasured."
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"
