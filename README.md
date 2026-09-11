@@ -97,6 +97,21 @@ The [mixing example](example/thermodynamics/mixing.jl) conserves species and
 enthalpy while combining streams, then evaluates the mixture at chemical equilibrium.
 Reactor examples use a caller-supplied Julia ODE integrator.
 
+The [engine example](example/reactors/ic_engine.jl) computes eight revolutions
+of an n-dodecane engine with prescribed injection, valves and piston motion.
+It uses QNDF from OrdinaryDiffEqBDF, with SciMLBase and ForwardDiff in the
+caller's Julia environment. Prepare the mechanism and run:
+
+```bash
+python validation/ic_engine_case.py engine-input
+julia --project=ENGINE_ENV example/reactors/ic_engine.jl engine-input/dodecane_IG.yaml engine.csv
+```
+
+The CSV contains crank-angle profiles; the companion TOML contains heat,
+pressure work, efficiency and CO estimates integrated over accepted states.
+The callable entry `solve_ic_engine_qndf` is provided by
+[NativeEngineQNDF](example/reactors/ic_engine_qndf_solver.jl).
+
 The [parallel transport example](example/transport/multiprocessing_viscosity.jl)
 computes multicomponent thermal conductivity and viscosity over 5,000 temperatures
 for a methane/oxygen/nitrogen mixture. It runs both serial and parallel sweeps,
