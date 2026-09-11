@@ -79,7 +79,7 @@ def main():
     threads=verify_threads(set_accelerate=True)
     report=dict(case=a.case,formal=a.formal,passed=False,performance_pass=False,date=time.strftime("%Y-%m-%d %H:%M:%S %z"),host=host,target=a.target,
         scope="Sum of construction/initialization/adaptive-solve stages in the complete published transport sequence. Mechanism/sidecar loading, snapshots and output excluded. No refined-reference solve is timed.",
-        compilation_scope="Julia runtime startup and using/imports are outside timers. First stage timings include JIT triggered inside the measured calculations; first repetition is recorded separately and excluded from warm medians.",
+        compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
         cantera_build_record_sha256=digest(a.build_record),mechanism_sha256=digest(mechanism),
         sidecar_sha256=digest(str(mechanism)+".npz"),multicomponent_sha256=digest(str(mechanism)+".multicomponent.npz"),
