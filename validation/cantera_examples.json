@@ -1,0 +1,596 @@
+{
+  "index_url": "https://cantera.org/dev/examples/python/index.html",
+  "retrieved_utc": "2026-09-11T18:37:13.329205+08:00",
+  "index_sha256": "a0c350db370d3f72a584f5cdf923213f909b1ea3eaad81234e45afc74e50df02",
+  "minimum_speed_ratio": 0.95,
+  "speed_ratio_definition": "Cantera elapsed / Arrhenius elapsed",
+  "examples": [
+    {
+      "id": "kinetics/blowers_masel",
+      "url": "https://cantera.org/dev/examples/python/kinetics/blowers_masel.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/custom_reactions",
+      "url": "https://cantera.org/dev/examples/python/kinetics/custom_reactions.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/diamond_cvd",
+      "url": "https://cantera.org/dev/examples/python/kinetics/diamond_cvd.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/extract_submechanism",
+      "url": "https://cantera.org/dev/examples/python/kinetics/extract_submechanism.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/interactive_path_diagram",
+      "url": "https://cantera.org/dev/examples/python/kinetics/interactive_path_diagram.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/jet_stirred_reactor",
+      "url": "https://cantera.org/dev/examples/python/kinetics/jet_stirred_reactor.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/lithium_ion_battery",
+      "url": "https://cantera.org/dev/examples/python/kinetics/lithium_ion_battery.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/mechanism_reduction",
+      "url": "https://cantera.org/dev/examples/python/kinetics/mechanism_reduction.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/reaction_path",
+      "url": "https://cantera.org/dev/examples/python/kinetics/reaction_path.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/shock_tube",
+      "url": "https://cantera.org/dev/examples/python/kinetics/shock_tube.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "kinetics/sofc",
+      "url": "https://cantera.org/dev/examples/python/kinetics/sofc.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/adiabatic_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/adiabatic_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/burner_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/burner_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/catalytic_combustion",
+      "url": "https://cantera.org/dev/examples/python/onedim/catalytic_combustion.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/diffusion_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/diffusion_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/diffusion_flame_batch",
+      "url": "https://cantera.org/dev/examples/python/onedim/diffusion_flame_batch.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/diffusion_flame_continuation",
+      "url": "https://cantera.org/dev/examples/python/onedim/diffusion_flame_continuation.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/diffusion_flame_extinction",
+      "url": "https://cantera.org/dev/examples/python/onedim/diffusion_flame_extinction.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flame_fixed_T",
+      "url": "https://cantera.org/dev/examples/python/onedim/flame_fixed_T.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flame_initial_guess",
+      "url": "https://cantera.org/dev/examples/python/onedim/flame_initial_guess.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flame_solver_timestep_controls",
+      "url": "https://cantera.org/dev/examples/python/onedim/flame_solver_timestep_controls.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flame_speed",
+      "url": "https://cantera.org/dev/examples/python/onedim/flame_speed.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flame_speed_convergence_analysis",
+      "url": "https://cantera.org/dev/examples/python/onedim/flame_speed_convergence_analysis.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/flamespeed_sensitivity",
+      "url": "https://cantera.org/dev/examples/python/onedim/flamespeed_sensitivity.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/ion_burner_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/ion_burner_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/ion_free_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/ion_free_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/premixed_counterflow_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/premixed_counterflow_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/premixed_counterflow_twin_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/premixed_counterflow_twin_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "onedim/stagnation_flame",
+      "url": "https://cantera.org/dev/examples/python/onedim/stagnation_flame.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/1D_packed_bed",
+      "url": "https://cantera.org/dev/examples/python/reactors/1D_packed_bed.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/1D_pfr_surfchem",
+      "url": "https://cantera.org/dev/examples/python/reactors/1D_pfr_surfchem.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/combustor",
+      "url": "https://cantera.org/dev/examples/python/reactors/combustor.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/continuous_reactor",
+      "url": "https://cantera.org/dev/examples/python/reactors/continuous_reactor.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/custom",
+      "url": "https://cantera.org/dev/examples/python/reactors/custom.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/custom2",
+      "url": "https://cantera.org/dev/examples/python/reactors/custom2.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/fuel_injection",
+      "url": "https://cantera.org/dev/examples/python/reactors/fuel_injection.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/ic_engine",
+      "url": "https://cantera.org/dev/examples/python/reactors/ic_engine.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/mix1",
+      "url": "https://cantera.org/dev/examples/python/reactors/mix1.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/nanosecond_pulse_discharge",
+      "url": "https://cantera.org/dev/examples/python/reactors/nanosecond_pulse_discharge.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/non_ideal_shock_tube",
+      "url": "https://cantera.org/dev/examples/python/reactors/non_ideal_shock_tube.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/periodic_cstr",
+      "url": "https://cantera.org/dev/examples/python/reactors/periodic_cstr.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/pfr",
+      "url": "https://cantera.org/dev/examples/python/reactors/pfr.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/piston",
+      "url": "https://cantera.org/dev/examples/python/reactors/piston.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/plasma",
+      "url": "https://cantera.org/dev/examples/python/reactors/plasma.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/porous_media_burner",
+      "url": "https://cantera.org/dev/examples/python/reactors/porous_media_burner.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/preconditioned_integration",
+      "url": "https://cantera.org/dev/examples/python/reactors/preconditioned_integration.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/preconditioned_network",
+      "url": "https://cantera.org/dev/examples/python/reactors/preconditioned_network.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/reactor1",
+      "url": "https://cantera.org/dev/examples/python/reactors/reactor1.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/reactor2",
+      "url": "https://cantera.org/dev/examples/python/reactors/reactor2.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/sensitivity1",
+      "url": "https://cantera.org/dev/examples/python/reactors/sensitivity1.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/surf_pfr",
+      "url": "https://cantera.org/dev/examples/python/reactors/surf_pfr.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "reactors/surf_pfr_chain",
+      "url": "https://cantera.org/dev/examples/python/reactors/surf_pfr_chain.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/adiabatic",
+      "url": "https://cantera.org/dev/examples/python/thermo/adiabatic.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/coverage_dependent_surf",
+      "url": "https://cantera.org/dev/examples/python/thermo/coverage_dependent_surf.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/critical_properties",
+      "url": "https://cantera.org/dev/examples/python/thermo/critical_properties.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/equations_of_state",
+      "url": "https://cantera.org/dev/examples/python/thermo/equations_of_state.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/equivalenceRatio",
+      "url": "https://cantera.org/dev/examples/python/thermo/equivalenceRatio.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/isentropic",
+      "url": "https://cantera.org/dev/examples/python/thermo/isentropic.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/isentropic_units",
+      "url": "https://cantera.org/dev/examples/python/thermo/isentropic_units.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/mixing",
+      "url": "https://cantera.org/dev/examples/python/thermo/mixing.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/plasma-eedf",
+      "url": "https://cantera.org/dev/examples/python/thermo/plasma-eedf.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/plasma_equilibrium",
+      "url": "https://cantera.org/dev/examples/python/thermo/plasma_equilibrium.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/rankine",
+      "url": "https://cantera.org/dev/examples/python/thermo/rankine.html",
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/water_rankine.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "rankine",
+        "scope": "Native calculation outputs; plotting and presentation excluded"
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "rankine",
+        "scope": "Warm calculation; compilation and imports reported separately",
+        "minimum_speed_ratio": 0.95
+      }
+    },
+    {
+      "id": "thermo/rankine_units",
+      "url": "https://cantera.org/dev/examples/python/thermo/rankine_units.html",
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/water_rankine_units.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "rankine_units",
+        "scope": "Native calculation outputs; plotting and presentation excluded"
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "rankine_units",
+        "scope": "Warm calculation; compilation and imports reported separately",
+        "minimum_speed_ratio": 0.95
+      }
+    },
+    {
+      "id": "thermo/sound_speed",
+      "url": "https://cantera.org/dev/examples/python/thermo/sound_speed.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/sound_speed_units",
+      "url": "https://cantera.org/dev/examples/python/thermo/sound_speed_units.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "thermo/vapordome",
+      "url": "https://cantera.org/dev/examples/python/thermo/vapordome.html",
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/water_vapordome.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "vapordome",
+        "scope": "Native calculation outputs; plotting and presentation excluded"
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_water.json",
+        "case": "vapordome",
+        "scope": "Warm calculation; compilation and imports reported separately",
+        "minimum_speed_ratio": 0.95
+      }
+    },
+    {
+      "id": "transport/dusty_gas",
+      "url": "https://cantera.org/dev/examples/python/transport/dusty_gas.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "transport/high_pressure_transport",
+      "url": "https://cantera.org/dev/examples/python/transport/high_pressure_transport.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    },
+    {
+      "id": "transport/multiprocessing_viscosity",
+      "url": "https://cantera.org/dev/examples/python/transport/multiprocessing_viscosity.html",
+      "status": "not_validated",
+      "julia_example": null,
+      "correctness_evidence": null,
+      "m4_timing_evidence": null
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 function read_species_basics(yaml)
     n_species = length(yaml["phases"][1]["species"])
-    n_reactions = length(yaml["reactions"])
+    n_reactions = length(get(yaml,"reactions",Any[]))
     species_names = yaml["phases"][1]["species"]
     elements = yaml["phases"][1]["elements"]
     n_elements = length(elements)
@@ -72,6 +72,16 @@ function CreateSolution(mech)
 
     npz = npzread("$mech.npz")
     _validate_sidecar_metadata(npz, mech)
+    # Inert phases have no reaction arrays. Empty NPZ entries are omitted by the
+    # exporter for compatibility with NPZ.jl; restore their unambiguous shapes.
+    if n_reactions == 0
+        npz = Dict{String,Any}(npz)
+        for key in ("efficiencies_coeffs","product_stoich_coeffs","reactant_stoich_coeffs","reactant_orders")
+            haskey(npz,key) || (npz[key] = zeros(n_species,0))
+        end
+        haskey(npz,"is_reversible") || (npz["is_reversible"] = Bool[])
+        haskey(npz,"Arrhenius_coeffs") || (npz["Arrhenius_coeffs"] = zeros(0,3))
+    end
     MW = vec(Float64.(npz["molecular_weights"]))
     efficiencies_coeffs_full = Matrix{Float64}(npz["efficiencies_coeffs"])
     product_stoich_coeffs = sparse(Float64.(npz["product_stoich_coeffs"]))
@@ -107,7 +117,7 @@ function CreateSolution(mech)
 
     has_plog = any(
         get(reaction, "type", "") == "pressure-dependent-Arrhenius"
-        for reaction in yaml["reactions"]
+        for reaction in get(yaml,"reactions",Any[])
     )
     if haskey(npz, "Plog_reaction_indices")
         plog_reaction_indices = vec(Int64.(npz["Plog_reaction_indices"]))
@@ -138,12 +148,14 @@ function CreateSolution(mech)
         )
     end
 
-    if haskey(npz, "index_three_body")
+    if any(haskey(npz, key) for key in ("index_three_body", "index_falloff", "index_falloff_Troe"))
         # The Cantera API also identifies implicit or explicit colliders whose
         # YAML reaction lacks a `type: three-body` field.
-        index_three_body = vec(Int64.(npz["index_three_body"]))
-        index_falloff = vec(Int64.(npz["index_falloff"]))
-        index_falloff_Troe = vec(Int64.(npz["index_falloff_Troe"]))
+        index_three_body = vec(Int64.(get(npz, "index_three_body", Int64[])))
+        index_falloff = vec(Int64.(get(npz, "index_falloff", Int64[])))
+        index_falloff_Troe = vec(Int64.(get(npz, "index_falloff_Troe", Int64[])))
+        length(index_falloff) == length(index_falloff_Troe) ||
+            throw(ArgumentError("one Troe index is required per falloff reaction"))
     else
         index_three_body = Int64[]
         index_falloff = Int64[]

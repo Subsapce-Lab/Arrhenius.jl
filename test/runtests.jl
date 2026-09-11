@@ -4,6 +4,16 @@ using LinearAlgebra
 using SHA
 using Test
 
+include("equilibrium_native.jl")
+include("species_thermo_native.jl")
+include("reactors_native.jl")
+include("reactor_networks_native.jl")
+include("pure_water_native.jl")
+include("flames_native.jl")
+include("counterflow_native.jl")
+include("kinetics_cache.jl")
+include("inert_phase.jl")
+
 @testset "sidecar provenance" begin
     mechanism, stream = mktemp()
     write(stream, "mechanism fixture\n")
@@ -112,7 +122,7 @@ end
 @testset "jl" begin
     # Write your tests here.
 
-    gas = CreateSolution("../mechanism/gri30.yaml")
+    gas = CreateSolution(joinpath(@__DIR__,"..","mechanism","gri30.yaml"))
     ns = gas.n_species
 
     Y0 = ones(ns) ./ ns

@@ -227,6 +227,48 @@ function KineticsWorkspace(reaction::Reaction, ::Type{T}=Float64) where {T}
 end
 export KineticsWorkspace
 
+# Per-grid-point cache for flame Jacobians. Only temperature-dependent factors
+# are cached; collider concentrations, pressure-dependent rates and mass action
+# are recomputed for every state. The owning flame workspace fixes the mechanism.
+mutable struct _KineticsTemperatureCache
+    temperature::Float64
+    forward::Vector{Float64}
+    low::Vector{Float64}
+    log_fcent::Vector{Float64}
+    equilibrium::Vector{Float64}
+end
+_KineticsTemperatureCache(reaction::Reaction) = _KineticsTemperatureCache(NaN,
+    zeros(reaction.n_reactions),zeros(length(reaction.index_falloff)),
+    zeros(size(reaction.Troe_,1)),zeros(reaction.n_reactions))
+
+@inline _concentration_power(c, order) = c^order
+@inline function _concentration_power(c, order::AbstractFloat)
+    value = convert(promote_type(typeof(c),typeof(order)),c)
+    order == one(order) && return value
+    order == oftype(order,2) && return value*value
+    return c^order
+end
+
+function _mass_action!(workspace, reaction::Reaction, C)
+    reactants = reaction.reactant_orders
+    products = reaction.product_stoich_coeffs
+    ri, rv = rowvals(reactants), nonzeros(reactants)
+    pi, pv = rowvals(products), nonzeros(products)
+    @inbounds for i in 1:reaction.n_reactions
+        forward,reverse = workspace.kf[i],workspace.kr[i]
+        for j in nzrange(reactants,i)
+            forward *= _concentration_power(C[ri[j]],rv[j])
+        end
+        if reaction.is_reversible[i]
+            for j in nzrange(products,i)
+                reverse *= _concentration_power(C[pi[j]],pv[j])
+            end
+        end
+        workspace.kf[i],workspace.kr[i] = forward,reverse
+        workspace.rates_of_progress[i] = forward-reverse
+    end
+end
+
 "Compute reaction source terms into preallocated storage."
 function wdot!(
     wdot,
@@ -239,6 +281,7 @@ function wdot!(
     get_qdot=false,
     rate_multipliers=nothing,
     log_rate_data=nothing,
+    temperature_cache=nothing,
 )
     kf = workspace.kf
     kr = workspace.kr
@@ -246,6 +289,8 @@ function wdot!(
     gas_constant = oftype(T, R)
     one_atmosphere = oftype(T, one_atm)
     activation_scale = oftype(T, 4184.0 / R) / T
+    cached = temperature_cache !== nothing && log_rate_data === nothing && T isa Float64
+    refresh_temperature = !cached || temperature_cache.temperature != T
     if !isnothing(log_rate_data)
         length(log_rate_data.base_log_a) == length(kf) ||
             throw(DimensionMismatch(
@@ -256,6 +301,9 @@ function wdot!(
         rate_logT = log(rate_temperature)
         rate_activation_scale = RateScalar(4184.0 / R) / rate_temperature
     end
+    if !refresh_temperature
+        copyto!(kf,temperature_cache.forward)
+    else
     @inbounds for i in eachindex(kf)
         if isnothing(log_rate_data)
             kf[i] = reaction.Arrhenius_coeffs[i, 1] * exp(
@@ -272,6 +320,20 @@ function wdot!(
                 T,
             )
         end
+    end
+    if cached
+        copyto!(temperature_cache.forward,kf)
+        for j in eachindex(temperature_cache.low)
+            temperature_cache.low[j] = reaction.Arrhenius_0[j,1]*exp(
+                reaction.Arrhenius_0[j,2]*logT-reaction.Arrhenius_0[j,3]*activation_scale)
+        end
+        for k in eachindex(temperature_cache.log_fcent)
+            temperature_cache.log_fcent[k] = log10(
+                (1-reaction.Troe_[k,1])*exp(-T/reaction.Troe_[k,4])+
+                reaction.Troe_[k,1]*exp(-T/reaction.Troe_[k,2])+
+                exp(-reaction.Troe_[k,3]/T))
+        end
+    end
     end
 
     if !isempty(reaction.plog.reaction_indices)
@@ -309,7 +371,9 @@ function wdot!(
         @inbounds A0 = reaction.Arrhenius_0[j, 1]
         @inbounds b0 = reaction.Arrhenius_0[j, 2]
         @inbounds Ea0 = reaction.Arrhenius_0[j, 3]
-        k0 = if isnothing(log_rate_data)
+        k0 = if cached
+            temperature_cache.low[j]
+        elseif isnothing(log_rate_data)
             A0 * exp(b0 * logT - Ea0 * activation_scale)
         else
             _mixed_elementary_rate(
@@ -336,11 +400,15 @@ function wdot!(
 
         if reaction.index_falloff_Troe[j] > 0
             k = reaction.index_falloff_Troe[j]
+            lF_cent = if cached
+                temperature_cache.log_fcent[k]
+            else
             @inbounds F_cent =
                 (one(T) - reaction.Troe_[k, 1]) * exp(-T / reaction.Troe_[k, 4]) +
                 reaction.Troe_[k, 1] * exp(-T / reaction.Troe_[k, 2]) +
                 exp(-reaction.Troe_[k, 3] / T)
-            lF_cent = log10(F_cent)
+                log10(F_cent)
+            end
             C_troe = -oftype(T, 0.4) - oftype(T, 0.67) * lF_cent
             N = oftype(T, 0.75) - oftype(T, 1.27) * lF_cent
             f1 = (lPr + C_troe) /
@@ -360,29 +428,29 @@ function wdot!(
         end
     end
 
-    mul!(workspace.delta_s, transpose(reaction.vk), S0)
-    mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
+    if refresh_temperature
+        mul!(workspace.delta_s, transpose(reaction.vk), S0)
+        mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
+        @inbounds for i in eachindex(kf)
+            workspace.equilibrium_constants[i] = exp(
+                workspace.delta_s[i] / gas_constant -
+                workspace.delta_h[i] / (gas_constant * T) +
+                log(one_atmosphere / gas_constant / T) * reaction.vk_sum[i],
+            )
+        end
+        if cached
+            copyto!(temperature_cache.equilibrium,workspace.equilibrium_constants)
+            temperature_cache.temperature = T
+        end
+    else
+        copyto!(workspace.equilibrium_constants,temperature_cache.equilibrium)
+    end
     @inbounds for i in eachindex(kf)
-        workspace.equilibrium_constants[i] = exp(
-            workspace.delta_s[i] / gas_constant -
-            workspace.delta_h[i] / (gas_constant * T) +
-            log(one_atmosphere / gas_constant / T) * reaction.vk_sum[i],
-        )
         kr[i] = reaction.is_reversible[i] ?
             kf[i] / workspace.equilibrium_constants[i] : zero(T)
     end
 
-    @inbounds for i = 1:reaction.n_reactions
-        for j in reaction.i_reactant[i]
-            kf[i] *= C[j]^reaction.reactant_orders[j, i]
-        end
-        if reaction.is_reversible[i]
-            for j in reaction.i_product[i]
-                kr[i] *= C[j]^reaction.product_stoich_coeffs[j, i]
-            end
-        end
-        workspace.rates_of_progress[i] = kf[i] - kr[i]
-    end
+    _mass_action!(workspace,reaction,C)
 
     if get_qdot
         return workspace.rates_of_progress

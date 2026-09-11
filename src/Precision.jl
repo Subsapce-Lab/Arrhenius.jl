@@ -70,11 +70,17 @@ function _convert_precision(
     thermo::IdealGasThermo,
     ::Type{T},
 ) where {T<:AbstractFloat}
+    extra = isnothing(thermo.extra) ? nothing : SpeciesThermoData(
+        copy(thermo.extra.models),
+        [_precision_array(values,T,"species temperature ranges") for values in thermo.extra.ranges],
+        [_precision_array(values,T,"extended species thermo coefficients") for values in thermo.extra.coefficients],
+    )
     return IdealGasThermo(
         _precision_array(thermo.nasa_low, T, "low-temperature NASA coefficients"),
         _precision_array(thermo.nasa_high, T, "high-temperature NASA coefficients"),
         _precision_array(thermo.Trange, T, "thermodynamic temperature ranges"),
         thermo.isTcommon,
+        extra,
     )
 end
 

@@ -1,4 +1,4 @@
-"""Create an Arrhenius.jl mechanism sidecar with Cantera 3.2 and NumPy."""
+"""Create an Arrhenius.jl mechanism sidecar with Cantera 3.2+ and NumPy."""
 
 from __future__ import annotations
 
@@ -118,9 +118,24 @@ def export(mechanism: Path, output: Path) -> None:
                 plog_rate_offsets.append(len(plog_arrhenius) + 1)
             plog_group_offsets.append(len(plog_pressures) + 1)
 
+    transport = {}
+    if gas.transport_model in {"mixture-averaged", "multicomponent", "unity-Lewis-number"}:
+        # Cantera's native degree-four fits in log(T), in ascending order.
+        # Julia evaluates the fits and mixture rules; no Python runtime is used.
+        transport = {
+            "species_viscosities_poly": np.array([
+                gas.get_viscosity_polynomial(k) for k in range(gas.n_species)
+            ]).T,
+            "thermal_conductivity_poly": np.array([
+                gas.get_thermal_conductivity_polynomial(k) for k in range(gas.n_species)
+            ]).T,
+            "binary_diff_coeffs_poly": np.array([
+                gas.get_binary_diff_coeffs_polynomial(i, j)
+                for j in range(gas.n_species) for i in range(gas.n_species)
+            ]).T,
+        }
     output.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(
-        output,
+    payload = dict(
         molecular_weights=np.asarray(gas.molecular_weights, dtype=np.float64),
         reactant_stoich_coeffs=reactant_stoich,
         product_stoich_coeffs=product_stoich,
@@ -146,7 +161,11 @@ def export(mechanism: Path, output: Path) -> None:
         sidecar_format_utf8=np.frombuffer(b"arrhenius-sidecar-v2", dtype=np.uint8),
         source_sha256_utf8=np.frombuffer(sha256(mechanism).encode(), dtype=np.uint8),
         cantera_version_utf8=np.frombuffer(ct.__version__.encode(), dtype=np.uint8),
+        **transport,
     )
+    # NPZ.jl 0.4 / ZipFile cannot read a zero-length member at EOF. Optional
+    # reaction families are represented by absent keys, as accepted by the loader.
+    np.savez(output, **{key: value for key, value in payload.items() if value.size})
 
 
 def main() -> None:

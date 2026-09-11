@@ -12,5 +12,13 @@ module Arrhenius
     include("Thermo.jl")
     include("Kinetics.jl")
     include("Transport.jl")
+    include("MulticomponentTransport.jl")
+    include("Equilibrium.jl")
+    include("Reactors.jl")
+    include("ReactorNetworks.jl")
+    include("PureWater.jl")
+    include("Flames.jl")
+    include("FlameIO.jl")
+    include("CounterflowFlames.jl")
     include("Precision.jl")
 end

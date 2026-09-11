@@ -4,12 +4,12 @@ We are in an early-development. Expect some adventures and rough edges.
 
 ## Installation
 
-> pkg> add https://github.com/DENG-MIT/Arrhenius.jl
+> pkg> add https://github.com/Subsapce-Lab/Arrhenius.jl
 
 ## Mechanism preprocessing
 
 `CreateSolution` reads a Cantera YAML file and a same-name `.yaml.npz`
-sidecar. Generate a sidecar using Cantera 3.2 and NumPy:
+sidecar. Generate a sidecar using Cantera 3.2 or 4.0 dev and NumPy:
 
 ```bash
 python mechanism/export_sidecar.py path/to/mechanism.yaml
@@ -17,8 +17,54 @@ python mechanism/export_sidecar.py path/to/mechanism.yaml
 
 The exporter supports elementary and three-body Arrhenius reactions,
 Lindemann and Troe falloff reactions, pressure-dependent Arrhenius (PLOG)
-reactions, one- and two-region NASA7 thermochemistry, and explicit reaction
-orders. Unsupported Cantera rate models are rejected during preprocessing.
+reactions and explicit reaction orders. Unsupported Cantera rate models are
+rejected during preprocessing. Native ideal-gas thermochemistry supports
+NASA7, multi-region NASA9, Shomate and constant-cp species models.
+
+## Native calculations
+
+The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV;
+closed constant-pressure and constant-volume reactors; connected stirred
+reactors with flow devices and heat-transfer walls; planar premixed free flames
+and burner-stabilized flames; and axisymmetric counterflow diffusion flames.
+Flame calculations support adaptive
+grids, mixture-averaged and multicomponent diffusion, Soret diffusion, and
+prescribed burner temperature profiles. Counterflow diffusion flames also
+support optically thin CO₂/H₂O radiation. A native pure-water model provides
+liquid/vapor states, saturation properties and Rankine-cycle calculations.
+Chemistry, thermodynamics, transport
+evaluation and equation solves run in Julia. Cantera is used to preprocess
+mechanisms and generate independent validation data.
+
+```julia
+using Arrhenius
+
+gas = CreateSolution("mechanism/h2o2.yaml")
+flame = FreeFlame(gas; T=300., P=one_atm, X="H2:1.1,O2:1,AR:5", width=.03)
+solve!(flame)
+println(flame_speed(flame))  # m/s
+save_flame("flame.csv", flame; basis=:mole)
+save_flame("flame.npz", flame)
+```
+
+For multicomponent or Soret diffusion, also export collision-integral data:
+
+```bash
+python mechanism/export_multicomponent.py mechanism/h2o2.yaml mechanism/h2o2.yaml.multicomponent.npz
+```
+
+```julia
+data = MultiTransportData("mechanism/h2o2.yaml.multicomponent.npz", gas)
+set_transport!(flame, :multicomponent; data, soret=true)
+solve!(flame; slope=.02, curve=.04)
+```
+
+See [premixed flames](example/flames/adiabatic_flame.jl),
+[burner flames](example/flames/burner_flame.jl),
+[counterflow diffusion flames](example/flames/counterflow_diffusion.jl),
+[closed reactors](example/reactors), and
+[thermodynamics](example/thermodynamics) for runnable calculations.
+Reactor examples use a caller-supplied Julia ODE integrator.
 
 
 ## Publication
