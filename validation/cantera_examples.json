@@ -431,9 +431,12 @@
     {
       "id": "reactors/mix1",
       "url": "https://cantera.org/dev/examples/python/reactors/mix1.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/mix1.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_mix1.json",
+        "scope": "Complete stationary reacting mixer with distinct air and GRI mechanisms, original initial state, bulk/species outputs and conservation; native WSL and Windows compared with independent Cantera source/refined references"
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"

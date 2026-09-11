@@ -95,7 +95,20 @@ area–Mach curves, and the [sound-speed example](example/thermodynamics/sound_s
 compares frozen and equilibrium acoustic responses.
 The [mixing example](example/thermodynamics/mixing.jl) conserves species and
 enthalpy while combining streams, then evaluates the mixture at chemical equilibrium.
-Reactor examples use a caller-supplied Julia ODE integrator.
+Transient reactor examples use a caller-supplied Julia ODE integrator.
+
+The [reactor mixer example](example/reactors/mix1.jl) solves the stationary
+species and energy equations with separate air and fuel mechanisms. Prepare
+both sidecars and run:
+
+```bash
+python mechanism/export_sidecar.py path/to/gri30.yaml
+python mechanism/export_sidecar.py path/to/air.yaml
+julia --project=. example/reactors/mix1.jl path/to/gri30.yaml path/to/air.yaml
+```
+
+The callable `solve_mixing_network(gas, air)` is provided by
+[mixing_solver.jl](example/reactors/mixing_solver.jl).
 
 The [engine example](example/reactors/ic_engine.jl) computes eight revolutions
 of an n-dodecane engine with prescribed injection, valves and piston motion.
