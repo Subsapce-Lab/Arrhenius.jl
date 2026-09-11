@@ -3,6 +3,49 @@ module RealGasTrialContracts
 using Arrhenius, ForwardDiff, LinearAlgebra, NPZ, SparseArrays, Test, YAML
 include(joinpath(@__DIR__,"..","example","reactors","real_gas_ad_jacobian.jl"))
 
+@testset "Signed mass-action column polynomials" begin
+    # The columns represent 2x, 2x^2 and (2x)y. At negative trials, two
+    # negative factors suppress the product; a single negative factor remains.
+    A=sparse([1,1,1,2],[1,2,3,3],[1.,2.,1.,1.],2,3)
+    product=(i,c)->_integer_trial_product(2.,c,rowvals(A),nonzeros(A),nzrange(A,i))
+    for (c,values,gradients) in (
+            ([2.,3.],[4.,8.,12.],([2.,0.],[8.,0.],[6.,4.])),
+            ([0.,3.],[0.,0.,0.],([2.,0.],[0.,0.],[6.,0.])),
+            ([0.,0.],[0.,0.,0.],([2.,0.],[0.,0.],[0.,0.])),
+            ([-2.,3.],[-4.,0.,-12.],([2.,0.],[0.,0.],[6.,-4.])),
+            ([2.,-3.],[4.,8.,-12.],([2.,0.],[8.,0.],[-6.,4.])),
+            ([-2.,-3.],[-4.,0.,0.],([2.,0.],[0.,0.],[0.,0.])))
+        for i in 1:3
+            @test product(i,c)==values[i]
+            @test ForwardDiff.gradient(z->product(i,z),c)==gradients[i]
+        end
+    end
+    # Preserve the stored-order grouping; k*(x*y) rounds differently here.
+    @test _integer_trial_product(.1,[.2,.3],rowvals(A),nonzeros(A),nzrange(A,3))===.006000000000000001
+    for T in (Float32,Float64)
+        orders=T.(A)
+        for (i,expected) in enumerate(T[4,8,12])
+            value=_integer_trial_product(2f0,Float32[2,3],rowvals(orders),nonzeros(orders),nzrange(orders,i))
+            @test value===expected
+        end
+    end
+
+    # Mutations must select the live arity/order without prepared metadata.
+    live=sparse([1],[1],[1.],2,1)
+    evaluate=c->_integer_trial_product(2.,c,rowvals(live),nonzeros(live),nzrange(live,1))
+    @test evaluate([2.,3.])==4.
+    live[2,1]=1. # (1) -> (1,1)
+    @test evaluate([2.,3.])==12.
+    @test ForwardDiff.gradient(evaluate,[2.,3.])==[6.,4.]
+    live[1,1]=2. # (2,1) exercises the unchanged generic fallback: 2x^2 y.
+    @test evaluate([2.,3.])==24.
+    @test ForwardDiff.gradient(evaluate,[2.,3.])==[24.,8.]
+    @test evaluate([-2.,3.])==0.
+    live[2,1]=0.;dropzeros!(live) # (2,1) -> (2)
+    @test evaluate([2.,3.])==8.
+    @test ForwardDiff.gradient(evaluate,[2.,3.])==[8.,0.]
+end
+
 @testset "Mechanism-bound signed shock-tube trials" begin
     path=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
     gas=CreateSolution(path)

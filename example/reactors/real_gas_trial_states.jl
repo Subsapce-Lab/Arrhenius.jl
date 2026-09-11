@@ -127,6 +127,42 @@ function _check_integer_trial_reactions(reaction)
     nothing
 end
 
+# Read live CSC entries on every call; retain the generic ordered loop below.
+# Only the common (1), (2), and (1,1) columns receive explicit scalar paths.
+@inline function _integer_trial_product(factor,activity,rows,values,indices)
+    first_index,last_index=first(indices),last(indices)
+    @inbounds if first_index==last_index
+        order=values[first_index]
+        if order==one(order)
+            concentration=activity[rows[first_index]]
+            value=convert(promote_type(typeof(concentration),typeof(order)),concentration)
+            return factor*value
+        elseif order==oftype(order,2)
+            concentration=activity[rows[first_index]]
+            value=convert(promote_type(typeof(concentration),typeof(order)),concentration)
+            result=factor*(value*value)
+            return concentration<0 ? zero(result) : result
+        end
+    elseif last_index==first_index+1
+        order1,order2=values[first_index],values[last_index]
+        if order1==one(order1) && order2==one(order2)
+            c1,c2=activity[rows[first_index]],activity[rows[last_index]]
+            v1=convert(promote_type(typeof(c1),typeof(order1)),c1)
+            v2=convert(promote_type(typeof(c2),typeof(order2)),c2)
+            result=(factor*v1)*v2
+            return c1<0 && c2<0 ? zero(result) : result
+        end
+    end
+    negative_factors=0.
+    @inbounds for j in indices
+        concentration=activity[rows[j]]
+        factor*=Arrhenius._concentration_power(concentration,values[j])
+        negative_factors+=concentration<0 ? values[j] : 0.
+    end
+    negative_factors>=2 && (factor=zero(factor))
+    factor
+end
+
 function _integer_trial_wdot!(output,reaction,T,C,S0,h,work;activity_concentrations=nothing,reverse_plan=nothing,kwargs...)
     # Reuse native Arrhenius / equilibrium / collider / falloff / PLOG factors.
     if isnothing(reverse_plan)
@@ -140,21 +176,9 @@ function _integer_trial_wdot!(output,reaction,T,C,S0,h,work;activity_concentrati
     pi,pv=rowvals(products),nonzeros(products)
     @inbounds for i in 1:reaction.n_reactions
         forward,reverse=work.kf[i],work.kr[i]
-        negative_factors=0.
-        for j in nzrange(reactants,i)
-            concentration=activity[ri[j]]
-            forward*=Arrhenius._concentration_power(concentration,rv[j])
-            negative_factors+=concentration<0 ? rv[j] : 0.
-        end
-        negative_factors>=2 && (forward=zero(forward))
+        forward=_integer_trial_product(forward,activity,ri,rv,nzrange(reactants,i))
         if reaction.is_reversible[i]
-            negative_factors=0.
-            for j in nzrange(products,i)
-                concentration=activity[pi[j]]
-                reverse*=Arrhenius._concentration_power(concentration,pv[j])
-                negative_factors+=concentration<0 ? pv[j] : 0.
-            end
-            negative_factors>=2 && (reverse=zero(reverse))
+            reverse=_integer_trial_product(reverse,activity,pi,pv,nzrange(products,i))
         end
         work.kf[i],work.kr[i]=forward,reverse
         work.rates_of_progress[i]=forward-reverse
