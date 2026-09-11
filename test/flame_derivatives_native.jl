@@ -87,3 +87,55 @@ end
         @test maximum(abs.(exact-numerical)./max.(abs.(exact),1e-6))<1e-4
     end
 end
+
+@testset "multicomponent trace flux cancellation" begin
+    mechanism=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas=CreateSolution(mechanism)
+    data=MultiTransportData(mechanism*".multicomponent.npz",gas)
+    f=FreeFlame(gas;X="H2:1.1,O2:1,AR:5",grid=collect(range(0.,.01;length=5)))
+    set_transport!(f,:multicomponent;data)
+    k=findfirst(==("H2O2"),gas.species_names)
+    q=findfirst(==("H2"),gas.species_names)
+    oxygen=findfirst(==("O2"),gas.species_names)
+    argon=findfirst(==("AR"),gas.species_names)
+    n=gas.n_species
+    for j in axes(f.state,2)
+        f.state[1,j]=1.2;f.state[end,j]=0. # isolate diffusion from advection
+        f.state[2:n+1,j].=1e-22
+        f.state[k+1,j]=(1+j)*1e-20
+        f.state[q+1,j]=.12+.01j;f.state[oxygen+1,j]=.25-.008j
+        f.state[argon+1,j]=1-sum(@view(f.state[2:n+1,j]))+f.state[argon+1,j]
+    end
+    w=Arrhenius.FlameWorkspace(f)
+    Arrhenius._flame_properties!(w,f,f.state)
+    transport=MultiTransportWorkspace(data)
+    setprecision(BigFloat,256) do
+        mw=BigFloat.(gas.MW)
+        for j in 1:4
+            # Assemble the original Float64 physical prefactors independently;
+            # the oracle never reads the centered cache under test.
+            y=0.5 .*(f.state[2:n+1,j]+f.state[2:n+1,j+1])
+            ysum=0.;inverse=0.
+            for l in 1:n;ysum+=y[l];inverse+=y[l]/gas.MW[l];end
+            meanMW=ysum/inverse
+            x=[(y[l]/ysum)*meanMW/gas.MW[l] for l in 1:n]
+            T=500*(f.state[1,j]+f.state[1,j+1])
+            multicomponent_transport!(transport,data,gas,f.pressure,T,x)
+            p=BigFloat[f.pressure/(Arrhenius.R*T*meanMW)*gas.MW[k]*gas.MW[l]*
+                transport.diffusion[k,l] for l in 1:n]
+            left=BigFloat.(f.state[2:n+1,j])./mw;left./=sum(left)
+            right=BigFloat.(f.state[2:n+1,j+1])./mw
+            denominator=sum(right);right./=denominator
+            # dX/dY_H2 at fixed other mass fractions, with normalization exact
+            # in the high-precision oracle. Transport coefficients stay frozen.
+            derivative=-right/(mw[q]*denominator)
+            derivative[q]+=1/(mw[q]*denominator)
+            dz=BigFloat(f.grid[j+1]-f.grid[j])
+            expected_flux=Float64(dot(p,right-left)/dz)
+            expected_derivative=Float64(dot(p,derivative)/dz)
+            Arrhenius._flame_face_derivatives!(w.conservative.derivatives,f,f.state,w,j)
+            @test w.flux[k,j]≈expected_flux rtol=1e-10 atol=1e-30
+            @test w.conservative.derivatives.flux_right[k+1,q+1]≈expected_derivative rtol=1e-10 atol=1e-30
+        end
+    end
+end

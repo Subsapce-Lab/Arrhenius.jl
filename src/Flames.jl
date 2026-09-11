@@ -320,6 +320,15 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
                     w.multi_prefactor[k,l,j] = f.pressure/(R*Tmid*meanMW)*
                         gas.MW[k]*gas.MW[l]*w.multi_transport.diffusion[k,l]
                 end
+                # A row-wise constant vanishes against normalized mole-fraction
+                # gradients. Center on the fixed dependent species to avoid
+                # cancellation in both the primal and analytic contractions.
+                for k in 1:n
+                    common = w.multi_prefactor[k,f.dependent_species,j]
+                    for l in 1:n
+                        w.multi_prefactor[k,l,j] -= common
+                    end
+                end
                 w.thermal_diffusion[:,j] .= w.multi_transport.thermal_diffusion
                 if conservative
                     # These positive scalar mixture diffusivities determine only
