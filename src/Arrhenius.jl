@@ -14,6 +14,7 @@ module Arrhenius
     include("Kinetics.jl")
     include("Transport.jl")
     include("MulticomponentTransport.jl")
+    include("DustyGasTransport.jl")
     include("Equilibrium.jl")
     include("Reactors.jl")
     include("ReactorNetworks.jl")

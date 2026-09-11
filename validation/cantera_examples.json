@@ -641,8 +641,13 @@
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
       },
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_water.json",
+        "speed_ratio": 11.64756889366467,
+        "scope": "fresh water model + source calculation; excludes plots, reports, dataframe presentation, file I/O",
+        "case": "rankine"
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/rankine_units",
@@ -660,8 +665,13 @@
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
       },
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_water.json",
+        "speed_ratio": 11.587242003159272,
+        "scope": "fresh water model + source calculation; excludes plots, reports, dataframe presentation, file I/O",
+        "case": "rankine_units"
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/sound_speed",
@@ -699,8 +709,13 @@
         "scope": "Warm calculation; compilation and imports reported separately",
         "minimum_speed_ratio": 0.95
       },
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_water.json",
+        "speed_ratio": 14.365932834353703,
+        "scope": "fresh water model + source calculation; excludes plots, reports, dataframe presentation, file I/O",
+        "case": "vapordome"
+      },
+      "performance_status": "validated"
     },
     {
       "id": "transport/dusty_gas",

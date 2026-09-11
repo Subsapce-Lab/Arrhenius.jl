@@ -37,6 +37,8 @@ Redlich–Kwong mixtures support gas and liquid cubic roots, caloric properties,
 fugacity coefficients and partial molar properties.
 Ideal-surface chemistry supports elementary and sticking reactions, coverage
 dependencies, fixed-stoichiometry solids and isothermal catalytic reactors.
+Porous-media transport includes molecular and Knudsen diffusion and Darcy flow
+through the native `DustyGasTransport` model.
 Chemistry, thermodynamics, transport
 evaluation and equation solves run in Julia. Cantera is used to preprocess
 mechanisms and generate independent validation data.
