@@ -15,7 +15,12 @@
         "case": "blowers_masel",
         "scope": "32 temperature states and 100 reaction-enthalpy shifts; every output and warm repetition checked"
       },
-      "m4_timing_evidence": null,
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_properties.json",
+        "case": "blowers_masel",
+        "speed_ratio": 13.293599314751699,
+        "scope": "Warm calculation on prepared phases; native enthalpy shifts evaluated directly; imports and compilation separate"
+      },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_properties.json",
         "case": "blowers_masel",
@@ -736,7 +741,12 @@
         "case": "dusty_gas",
         "scope": "Full diffusion matrix, conductivity, uniform and pressure-gradient molar fluxes; every warm repetition checked"
       },
-      "m4_timing_evidence": null,
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_properties.json",
+        "case": "dusty_gas",
+        "speed_ratio": 1.885151459498951,
+        "scope": "Warm calculation on fresh transport workspaces; preparation, imports and compilation separate"
+      },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_properties.json",
         "case": "dusty_gas",
@@ -766,7 +776,13 @@
       "performance_status": "not_validated"
     }
   ],
-  "performance_target": "WSL",
+  "performance_target": "WSL and Apple M4 Mac mini",
+  "performance_targets": ["wsl", "apple-m4"],
+  "performance_status_legend": {
+    "not_validated": "No complete performance qualification on either required host.",
+    "partially_validated": "Performance qualified on one required host; the other remains outstanding.",
+    "validated": "Performance qualified on both WSL and Apple M4 Mac mini."
+  },
   "status_legend": {
     "not_validated": "Complete per-example calculation validation remains outstanding.",
     "calculation_validated": "Source calculation outputs validated; performance tracked separately for the target host."

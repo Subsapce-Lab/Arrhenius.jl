@@ -223,6 +223,8 @@ build_matches = bool(loaded_libraries and recorded_libraries
                      and all(recorded_libraries.get(k) == v for k, v in loaded_libraries.items())
                      and recorded_libraries.get(Path(compiled.__file__).name) == extension_sha)
 thread_settings = {key: os.environ.get(key) for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS")}
+if hardware["system"] == "Darwin":
+    thread_settings["VECLIB_MAXIMUM_THREADS"] = os.environ.get("VECLIB_MAXIMUM_THREADS")
 native_host = {key: native_meta.get(key, "") for key in ("cpu", "system", "kernel_release")}
 report = {
     "cantera_version": ct.__version__, "cantera_source_sha": source_sha,
