@@ -132,22 +132,46 @@
     {
       "id": "onedim/adiabatic_flame",
       "url": "https://cantera.org/dev/examples/python/onedim/adiabatic_flame.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/flames/adiabatic_flame.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_adiabatic_flame.json",
+        "additional_report": "validation/results/cantera4_m4_adiabatic_flame.json",
+        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_adiabatic_flame.json",
+        "speed_ratio": 0.7007710377106176,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_adiabatic_flame.json",
+        "speed_ratio": 0.7290298277724586,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "performance_status": "below_target"
     },
     {
       "id": "onedim/burner_flame",
       "url": "https://cantera.org/dev/examples/python/onedim/burner_flame.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/flames/burner_flame.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_burner_flame.json",
+        "additional_report": "validation/results/cantera4_m4_burner_flame.json",
+        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_burner_flame.json",
+        "speed_ratio": 1.5144544784344043,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_burner_flame.json",
+        "speed_ratio": 1.8487399257535007,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "onedim/catalytic_combustion",
@@ -202,12 +226,24 @@
     {
       "id": "onedim/flame_fixed_T",
       "url": "https://cantera.org/dev/examples/python/onedim/flame_fixed_T.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/flames/flame_fixed_T.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_flame_fixed_T.json",
+        "additional_report": "validation/results/cantera4_m4_flame_fixed_T.json",
+        "scope": "Complete published transport sequence; every temperature/species profile, grid and warm replay checked against independently refined Cantera references."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_flame_fixed_T.json",
+        "speed_ratio": 0.09316376788404859,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_flame_fixed_T.json",
+        "speed_ratio": 0.08799935377460931,
+        "scope": "Nine warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured call separate."
+      },
+      "performance_status": "below_target"
     },
     {
       "id": "onedim/flame_initial_guess",

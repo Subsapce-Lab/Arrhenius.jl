@@ -1,20 +1,23 @@
-# Native low-pressure burner with an energy equation or a prescribed temperature.
-# Run: julia --project=. example/flames/burner_flame.jl [mechanism.yaml] [output-directory]
+# Low-pressure hydrogen/oxygen/argon burner, mixture then multicomponent transport.
+# julia --project=. example/flames/burner_flame.jl /path/to/stock/h2o2.yaml [output-directory]
+# Prepare its chemistry and multicomponent sidecars before running.
 using Arrhenius
+include("source_flame_sequence.jl")
 
-mechanism = isempty(ARGS) ? joinpath(@__DIR__,"..","..","mechanism","h2o2.yaml") : ARGS[1]
-output = length(ARGS)>1 ? ARGS[2] : mktempdir()
+isempty(ARGS) && throw(ArgumentError("supply prepared stock Cantera h2o2.yaml (10 species, 29 reactions)"))
+mechanism=ARGS[1]
+output=length(ARGS)>1 ? ARGS[2] : mktempdir()
 mkpath(output)
-gas = CreateSolution(mechanism)
-flame = BurnerFlame(gas;T=373.,P=.05one_atm,X="H2:1.5,O2:1,AR:7",width=.5,mdot=.06)
-solve!(flame;slope=.05,curve=.1)
-println("Peak temperature: ",maximum(temperature(flame))," K")
-save_flame(joinpath(output,"burner.csv"),flame)
-save_flame(joinpath(output,"burner.npz"),flame)
-
-# Selected demonstration input; replace this profile with measured temperatures.
-set_temperature_profile!(flame,[0.,.005,.01,.02,.05,.1,1.],
-    [373.,650.,1000.,1350.,1650.,1750.,1750.])
-solve!(flame;slope=.05,curve=.1)
-save_flame(joinpath(output,"burner-prescribed.csv"),flame)
+gas=CreateSolution(mechanism)
+data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+function write_burner_stage(flame,mode)
+    label=mode=="mole" ? "mixture" : "multicomponent"
+    println(label," peak temperature: ",maximum(temperature(flame))," K")
+    save_flame(joinpath(output,label*".npz"),flame)
+    if mode=="multi"
+        save_flame(joinpath(output,"burner.csv"),flame)
+        save_flame(joinpath(output,"burner.npz"),flame)
+    end
+end
+run_source_sequence(gas,data,"burner";after_stage=write_burner_stage)
 println("Results: ",output)

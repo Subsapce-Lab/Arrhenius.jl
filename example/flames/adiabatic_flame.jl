@@ -1,22 +1,22 @@
-# Native hydrogen/oxygen/argon premixed flames with different transport models.
-# Run: julia --project=. example/flames/adiabatic_flame.jl [mechanism.yaml] [output-directory]
+# Hydrogen/oxygen/argon flame: mixture, mixture/Soret, multi, and multi/Soret.
+# julia --project=. example/flames/adiabatic_flame.jl /path/to/stock/h2o2.yaml [output-directory]
+# Prepare its chemistry and multicomponent sidecars before running.
 using Arrhenius
+include("source_flame_sequence.jl")
 
-mechanism = isempty(ARGS) ? joinpath(@__DIR__,"..","..","mechanism","h2o2.yaml") : ARGS[1]
-output = length(ARGS)>1 ? ARGS[2] : mktempdir()
+isempty(ARGS) && throw(ArgumentError("supply prepared stock Cantera h2o2.yaml (10 species, 29 reactions)"))
+mechanism=ARGS[1]
+output=length(ARGS)>1 ? ARGS[2] : mktempdir()
 mkpath(output)
-gas = CreateSolution(mechanism)
-flame = FreeFlame(gas;T=300.,P=one_atm,X="H2:1.1,O2:1,AR:5",width=.03,
-    flux_gradient_basis=:mass)
-solve!(flame;slope=.02,curve=.04)
-println("Mixture-averaged speed: ",flame_speed(flame)," m/s")
-data = MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
-for (model,soret,label) in ((:mixture_averaged,true,"mixture-soret"),
-        (:multicomponent,false,"multicomponent"),(:multicomponent,true,"multicomponent-soret"))
-    set_transport!(flame,model;data,soret)
-    solve!(flame;slope=.02,curve=.04)
+gas=CreateSolution(mechanism)
+data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+labels=Dict("mass"=>"mixture","mass-soret"=>"mixture-soret",
+    "multi"=>"multicomponent","multi-soret"=>"multicomponent-soret")
+function write_adiabatic_stage(flame,mode)
+    label=labels[mode]
     println(label," speed: ",flame_speed(flame)," m/s")
     save_flame(joinpath(output,label*".npz"),flame)
+    mode=="multi-soret" && save_flame(joinpath(output,"adiabatic-flame.csv"),flame;basis=:mole)
 end
-save_flame(joinpath(output,"adiabatic-flame.csv"),flame;basis=:mole)
+run_source_sequence(gas,data,"free";after_stage=write_adiabatic_stage)
 println("Results: ",output)
