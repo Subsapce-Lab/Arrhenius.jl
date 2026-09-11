@@ -52,7 +52,7 @@ function MultiTransportData(path::AbstractString; mechanism=nothing)
     text("format_utf8") == "arrhenius-multicomponent-v1" ||
         throw(ArgumentError("unsupported multicomponent sidecar format"))
     if mechanism !== nothing && haskey(a, "source_sha256_utf8")
-        bytes2hex(SHA.sha256(read(mechanism))) == text("source_sha256_utf8") ||
+        _matches_mechanism_hash(text("source_sha256_utf8"), mechanism) ||
             throw(ArgumentError("multicomponent sidecar does not match mechanism"))
     end
     names = String.(split(text("species_names_utf8"), '\n'))

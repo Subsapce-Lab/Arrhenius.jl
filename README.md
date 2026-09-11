@@ -32,6 +32,8 @@ grids, mixture-averaged and multicomponent diffusion, Soret diffusion, and
 prescribed burner temperature profiles. Counterflow diffusion flames also
 support optically thin CO₂/H₂O radiation. A native pure-water model provides
 liquid/vapor states, saturation properties and Rankine-cycle calculations.
+Redlich–Kwong mixtures support gas and liquid cubic roots, caloric properties,
+fugacity coefficients and partial molar properties.
 Chemistry, thermodynamics, transport
 evaluation and equation solves run in Julia. Cantera is used to preprocess
 mechanisms and generate independent validation data.

@@ -26,6 +26,16 @@ function _sidecar_string(npz, key)
     return String(vec(UInt8.(npz[key])))
 end
 
+function _matches_mechanism_hash(expected, mechanism)
+    raw = read(mechanism)
+    expected == bytes2hex(SHA.sha256(raw)) && return true
+    # Git may change only the YAML line endings when checking out a sidecar
+    # generated on another OS. Keep all other bytes significant.
+    lf = replace(String(raw), "\r\n" => "\n")
+    expected == bytes2hex(SHA.sha256(lf)) && return true
+    return expected == bytes2hex(SHA.sha256(replace(lf, "\n" => "\r\n")))
+end
+
 function _validate_sidecar_metadata(npz, mechanism)
     if haskey(npz, "sidecar_format_utf8")
         format = _sidecar_string(npz, "sidecar_format_utf8")
@@ -36,8 +46,7 @@ function _validate_sidecar_metadata(npz, mechanism)
     end
     if haskey(npz, "source_sha256_utf8")
         expected = _sidecar_string(npz, "source_sha256_utf8")
-        actual = bytes2hex(SHA.sha256(read(mechanism)))
-        expected == actual || throw(ArgumentError(
+        _matches_mechanism_hash(expected, mechanism) || throw(ArgumentError(
             "the Arrhenius sidecar does not match $mechanism; regenerate " *
             "$(mechanism).npz from the current YAML mechanism",
         ))

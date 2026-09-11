@@ -9,6 +9,7 @@ include("species_thermo_native.jl")
 include("reactors_native.jl")
 include("reactor_networks_native.jl")
 include("pure_water_native.jl")
+include("real_gas_native.jl")
 include("flames_native.jl")
 include("counterflow_native.jl")
 include("kinetics_cache.jl")
@@ -35,6 +36,16 @@ include("inert_phase.jl")
     unknown = copy(metadata)
     unknown["sidecar_format_utf8"] = collect(codeunits("arrhenius-sidecar-v99"))
     @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(unknown, mechanism)
+
+    for source in ("species:\n  - H2\n", "species:\r\n  - H2\r\n")
+        metadata["source_sha256_utf8"] = collect(codeunits(bytes2hex(SHA.sha256(source))))
+        for checkout in ("species:\n  - H2\n", "species:\r\n  - H2\r\n")
+            write(mechanism, checkout)
+            @test Arrhenius._validate_sidecar_metadata(metadata, mechanism) === nothing
+        end
+        write(mechanism, "species:\n  - O2\n")
+        @test_throws ArgumentError Arrhenius._validate_sidecar_metadata(metadata, mechanism)
+    end
 end
 
 @testset "single-region NASA7" begin

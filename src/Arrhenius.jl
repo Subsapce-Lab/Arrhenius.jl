@@ -17,6 +17,7 @@ module Arrhenius
     include("Reactors.jl")
     include("ReactorNetworks.jl")
     include("PureWater.jl")
+    include("RealGasThermo.jl")
     include("Flames.jl")
     include("FlameIO.jl")
     include("CounterflowFlames.jl")
