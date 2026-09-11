@@ -40,8 +40,10 @@ reference thermodynamics and `a(T)=a0+a1*T`, quadratic attraction mixing and
 linear covolume mixing. Explicit `binary-a` coefficients override geometric
 means. YAML units and species critical parameters are accepted. An optional
 critical-properties YAML file supplies missing critical data; none are guessed.
-Pure-species a0, a1 and b must be nonnegative; signed binary coefficients are
-accepted. This constructor does not support negative pure-species a1 values.
+Pure-species a0 and b must be nonnegative; a1 and binary coefficients may be
+signed. Unlike-species coefficients use the nonnegative geometric mean while
+pure-species a1 retains its sign. Opposite-sign a1 pairs require explicit
+`binary-a` coefficients because their geometric mean is not real.
 
 The standalone constructor needs no kinetic sidecar or Cantera installation.
 Default atomic weights cover H, He, C, N, O, S, Cl and Ar. For other elements or
@@ -150,13 +152,26 @@ function RedlichKwongThermo(source;phase=nothing,molecular_weights=nothing,criti
             b[i] = 0.0866403499650*R*Tc/Pc
         end
     end
-    all(isfinite,vcat(diag0,diag1,b)) && all(>=(0),diag0) && all(>=(0),diag1) && all(>=(0),b) ||
-        throw(ArgumentError("RK pure-species coefficients must be finite and nonnegative"))
+    all(isfinite,vcat(diag0,diag1,b)) && all(>=(0),diag0) && all(>=(0),b) ||
+        throw(ArgumentError("RK coefficients must be finite, with nonnegative pure-species a0 and b"))
     all(i -> b[i] > 0 || (diag0[i] == 0 && diag1[i] == 0),1:n) ||
         throw(ArgumentError("nonzero attraction requires positive covolume"))
-    sqrt0,sqrt1 = sqrt.(diag0),sqrt.(diag1)
+    sqrt0,sqrt1 = sqrt.(diag0),sqrt.(abs.(diag1))
     a0,a1 = sqrt0*sqrt0',sqrt1*sqrt1'
-    geometric = true
+    geometric = all(>=(0),diag1)
+    if !geometric
+        # Cantera preserves signed diagonal slopes, but uses sqrt(a1_i*a1_j)
+        # for unlike species. Such a matrix no longer has the rank-one form
+        # used by the nonnegative fast path. Defer non-real pairs until after
+        # explicit binary coefficients have been applied.
+        for j in 1:n, i in 1:n
+            if i == j
+                a1[i,j] = diag1[i]
+            elseif !iszero(diag1[i]) && !iszero(diag1[j]) && signbit(diag1[i]) != signbit(diag1[j])
+                a1[i,j] = NaN
+            end
+        end
+    end
     seen = Dict{Tuple{Int,Int},Tuple{Float64,Float64}}()
     for (i,eos) in enumerate(eos_data)
         bin = get(eos,"binary-a",Dict())
@@ -175,6 +190,8 @@ function RedlichKwongThermo(source;phase=nothing,molecular_weights=nothing,criti
             geometric = false
         end
     end
+    all(isfinite,a1) || throw(ArgumentError(
+        "opposite-sign RK a1 pairs require explicit binary-a coefficients"))
     return RedlichKwongThermo(reference,names,mw,a0,a1,b,sqrt0,sqrt1,geometric)
 end
 

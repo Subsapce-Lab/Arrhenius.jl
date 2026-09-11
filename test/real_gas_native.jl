@@ -122,3 +122,78 @@ end
     binary_doc["species"][2]["equation-of-state"]["binary-a"] = Dict("o2"=>[1.4e12,1.7e8])
     @test_throws ArgumentError RedlichKwongThermo(binary_doc)
 end
+
+@testset "Signed Redlich–Kwong temperature coefficients" begin
+    doc = YAML.load_file(joinpath(@__DIR__,"co2_rk.yaml"))
+    pure = RedlichKwongThermo(doc)
+    @test !pure.geometric_mixing
+    @test pure.a0[1,1] ≈ 7.54e6
+    @test pure.a1[1,1] ≈ -4130.
+    @test pure.b[1] ≈ .0278
+    # Cantera 4.0.0a2, revision 726522be4e2a13454d8415b7ef799d621f665cf3,
+    # loaded from co2_rk.yaml; rows contain P, rho, h, u, s, cp, cv in SI mass units.
+    reference = [
+        (1e5,1.772771214392675,-8940800.093746273,-8997208.951915972,
+         4863.613888168665,850.5368310951037,657.8086047375474),
+        (5e6,126.1285607715614,-8995675.88040386,-9035317.9723251,
+         3990.255807680334,1527.7405293208762,728.6848591956644),
+        (1e7,769.0275960998944,-9183390.048580717,-9196393.483113775,
+         3318.2802006527013,3069.903751378139,1028.2577363535004)]
+    for (P,rho,h,u,s,cp,cv) in reference
+        state = redlich_kwong_state(pure;T=300.,P,X=[1.])
+        for (value,expected) in zip((state.rho,state.h_mass,state.u_mass,
+                state.s_mass,state.cp_mass,state.cv_mass),(rho,h,u,s,cp,cv))
+            @test value ≈ expected rtol=1e-10
+        end
+        du = ForwardDiff.derivative(300.) do T
+            w = RedlichKwongWorkspace(pure,typeof(T))
+            redlich_kwong_properties!(w,pure,T,state.rho,[1.]).u
+        end
+        @test du ≈ state.cv rtol=2e-12
+        dsdv = ForwardDiff.derivative(state.v) do v
+            w = RedlichKwongWorkspace(pure,typeof(v))
+            redlich_kwong_properties!(w,pure,300.,state.MW/v,[1.]).s
+        end
+        @test dsdv ≈ state.dpdT rtol=2e-12
+    end
+
+    # A pair of negative slopes has positive unlike-species geometric mixing,
+    # while both pure-species slopes retain their signs.
+    binary_doc = deepcopy(doc)
+    second = deepcopy(only(binary_doc["species"]))
+    second["name"] = "CO2B"
+    second["equation-of-state"]["a"] = [6e7,-2e4]
+    push!(binary_doc["species"],second)
+    push!(only(binary_doc["phases"])["species"],"CO2B")
+    negative = RedlichKwongThermo(binary_doc)
+    @test negative.a1[1,1] ≈ -4130.
+    @test negative.a1[2,2] ≈ -2000.
+    @test negative.a1[1,2] ≈ sqrt(4130.0 * 2000.0)
+    @test !negative.geometric_mixing
+
+    # Opposite signs cannot provide a real geometric mean. Explicit binary
+    # coefficients resolve the ambiguity without changing either diagonal.
+    second["equation-of-state"]["a"][2] = 2e4
+    @test_throws ArgumentError RedlichKwongThermo(binary_doc)
+    first(binary_doc["species"])["equation-of-state"]["binary-a"] =
+        Dict("CO2B"=>[6.5e7,-1e4])
+    mixed = RedlichKwongThermo(binary_doc)
+    @test mixed.a1 ≈ [-4130. -1000.; -1000. 2000.]
+    for model in (negative,mixed)
+        x = [.4,.6]
+        state = redlich_kwong_state(model;T=300.,P=2e6,X=x)
+        utilde = ForwardDiff.gradient(x) do amounts
+            n = sum(amounts)
+            density = dot(amounts,model.MW)/state.v
+            w = RedlichKwongWorkspace(model,eltype(amounts))
+            n*redlich_kwong_properties!(w,model,300.,density,amounts/n).u
+        end
+        @test utilde ≈ state.u_TV rtol=2e-12
+        @test dot(x,state.partial_molar_enthalpies) ≈ state.h rtol=2e-12
+        @test dot(x,state.partial_molar_volumes) ≈ state.v rtol=2e-12
+    end
+    # A zero slope can mix with either sign without an explicit cross term.
+    delete!(first(binary_doc["species"])["equation-of-state"],"binary-a")
+    second["equation-of-state"]["a"][2] = 0.
+    @test RedlichKwongThermo(binary_doc).a1 ≈ [-4130. 0.; 0. 0.]
+end
