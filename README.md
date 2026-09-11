@@ -24,6 +24,7 @@ NASA7, multi-region NASA9, Shomate and constant-cp species models.
 ## Native calculations
 
 The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV;
+isentropic states and frozen or equilibrium sound speeds;
 closed constant-pressure and constant-volume reactors; connected stirred
 reactors with flow devices and heat-transfer walls; planar premixed free flames
 and burner-stabilized flames; counterflow diffusion, opposed premixed and twin
@@ -82,6 +83,9 @@ See [premixed flames](example/flames/adiabatic_flame.jl),
 [inert-wall flames](example/flames/counterflow_stagnation.jl),
 [closed reactors](example/reactors), and
 [thermodynamics](example/thermodynamics) for runnable calculations.
+The [nozzle example](example/thermodynamics/isentropic.jl) computes adiabatic
+area–Mach curves, and the [sound-speed example](example/thermodynamics/sound_speed.jl)
+compares frozen and equilibrium acoustic responses.
 Reactor examples use a caller-supplied Julia ODE integrator.
 
 For catalytic calculations, prepare an ideal-surface parameter archive:

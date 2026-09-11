@@ -5,6 +5,7 @@ using SHA
 using Test
 
 include("equilibrium_native.jl")
+include("ideal_gas_states.jl")
 include("species_thermo_native.jl")
 include("reactors_native.jl")
 include("reactor_networks_native.jl")

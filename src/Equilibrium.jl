@@ -282,7 +282,8 @@ function _equilibrium_at!(system, T, P; constant_volume=false, initial_temperatu
 end
 
 """
-    equilibrate(gas; T, P=one_atm, X, mode=:TP, temperature_bounds=(200,6000))
+    equilibrate(gas; T, P=one_atm, X, mode=:TP, temperature_bounds=(200,6000),
+                property_rtol=1e-10)
 
 Native single-phase ideal-gas equilibrium. Supported conserved pairs are `:TP`,
 `:TV`, `:HP`, `:UV`, `:SP` and `:SV` (symbols or strings). The supplied state
@@ -294,12 +295,17 @@ underlying NASA property functions, evaluation outside species fit ranges
 extrapolates the polynomials. Supply bounds within the shared fit interval when
 extrapolation is unsuitable. This solver does not support charged, nonideal,
 surface, or multiphase equilibrium.
+`property_rtol` controls the outer conserved-property temperature solve for HP,
+UV, SP and SV states, with an enthalpy/energy scale floor of 1e6 J/kg or an
+entropy scale floor of 1e3 J/(kg K). Element-balance tolerances are unchanged.
 """
-function equilibrate(gas::Solution; T, P=one_atm, X, mode=:TP, temperature_bounds=(200.0,6000.0))
+function equilibrate(gas::Solution; T, P=one_atm, X, mode=:TP, temperature_bounds=(200.0,6000.0),
+                     property_rtol=1e-10)
     gas.thermo isa IdealGasThermo || throw(ArgumentError("ideal-gas thermo required"))
     isfinite(T) && T > 0 && isfinite(P) && P > 0 || throw(ArgumentError("positive finite T and P required"))
     mode = Symbol(mode)
     mode in (:TP,:TV,:HP,:UV,:SP,:SV) || throw(ArgumentError("unsupported equilibrium mode: $mode"))
+    isfinite(property_rtol) && 0 < property_rtol < 1 || throw(ArgumentError("property_rtol must lie between zero and one"))
     length(temperature_bounds) == 2 || throw(ArgumentError("provide lower and upper temperature bounds"))
     lo, hi = Float64.(temperature_bounds)
     isfinite(lo) && isfinite(hi) && 0 < lo < hi || throw(ArgumentError("temperature bounds must be finite, positive, and ordered"))
@@ -315,7 +321,7 @@ function equilibrate(gas::Solution; T, P=one_atm, X, mode=:TP, temperature_bound
     trialT = clamp(Float64(T),lo,hi)
     trial = state(trialT)
     residual = property(gas,trial.T,trial.P,trial.X)-target
-    abs(residual) < 1e-10*scale && return trial
+    abs(residual) < property_rtol*scale && return trial
     if residual < 0
         lower, fl = trialT, residual
         upper, fu = trialT, residual
@@ -340,7 +346,7 @@ function equilibrate(gas::Solution; T, P=one_atm, X, mode=:TP, temperature_bound
         trialT = clamp((lower*fu-upper*fl)/(fu-fl),lower+0.05*width,upper-0.05*width)
         trial = state(trialT)
         residual = property(gas,trial.T,trial.P,trial.X)-target
-        (abs(residual) <= 1e-10*scale || width < 1e-7) && return trial
+        (abs(residual) <= property_rtol*scale || width < min(1e-7,property_rtol*trialT)) && return trial
         if residual > 0
             upper, fu = trialT, residual
         else
