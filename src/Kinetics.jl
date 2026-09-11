@@ -442,11 +442,12 @@ function wdot!(
     if refresh_temperature
         mul!(workspace.delta_s, transpose(reaction.vk), S0)
         mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
+        log_reference_concentration = log(one_atmosphere / gas_constant / T)
         @inbounds for i in eachindex(kf)
             workspace.equilibrium_constants[i] = exp(
                 workspace.delta_s[i] / gas_constant -
                 workspace.delta_h[i] / (gas_constant * T) +
-                log(one_atmosphere / gas_constant / T) * reaction.vk_sum[i],
+                log_reference_concentration * reaction.vk_sum[i],
             )
         end
         if cached

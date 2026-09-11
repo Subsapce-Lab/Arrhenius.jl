@@ -214,6 +214,8 @@ flame_speed(f::AbstractPremixedFlame) = velocity(f)[1]
 _conservative_flame(f) = false
 _conservative_flame(f::Union{FreeFlame,BurnerFlame}) = f.discretization == :conservative
 
+include("FlameDerivatives.jl")
+
 struct ConservativeFlameWorkspace
     density_diffusion::Matrix{Float64}
     species_flux::Matrix{Float64}
@@ -222,9 +224,10 @@ struct ConservativeFlameWorkspace
     cp::Vector{Float64}
     previous_enthalpy::Vector{Float64}
     previous_species_enthalpy::Vector{Float64}
+    derivatives::_ConservativeFlameDerivatives
 end
-ConservativeFlameWorkspace(n,N) = ConservativeFlameWorkspace(zeros(n,N-1),
-    zeros(n,N),zeros(N),zeros(N),zeros(N),zeros(N),zeros(n))
+ConservativeFlameWorkspace(n,N,gas) = ConservativeFlameWorkspace(zeros(n,N-1),
+    zeros(n,N),zeros(N),zeros(N),zeros(N),zeros(N),zeros(n),_ConservativeFlameDerivatives(gas,N))
 
 struct FlameWorkspace{K}
     kinetics::K
@@ -263,7 +266,7 @@ function FlameWorkspace(f::AbstractPremixedFlame)
         f.transport_model == :mixture_averaged && f.soret_enabled ?
             MixtureThermalDiffusionWorkspace(f.multicomponent_data) : nothing,
         [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],
-        _conservative_flame(f) ? ConservativeFlameWorkspace(n,N) : nothing)
+        _conservative_flame(f) ? ConservativeFlameWorkspace(n,N,f.gas) : nothing)
 end
 
 function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid))
@@ -552,7 +555,10 @@ end
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
-function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing)
+function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing,analytic=true)
+    if analytic && _conservative_flame(f) && _conservative_flame_jacobian!(f,u,w,r;previous,dt,previous_enthalpy)
+        return w.band
+    end
     B,N = size(u)
     band = w.band
     fill!(band,0)
@@ -588,7 +594,8 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     return band
 end
 
-function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,loglevel=0)
+function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
+        require_positive=false,minimum_iterations=0,loglevel=0)
     u = f.state
     r,trial,rt = similar(u),similar(u),similar(u)
     bandwidth = 2*size(u,1)-1
@@ -599,10 +606,19 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
     # once per solve, never across successive pseudo-time states.
     previous_enthalpy = _conservative_flame(f) && previous !== nothing ?
         _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
+    residual_valid = false
     for iteration in 1:maxiters
-        flame_residual!(r,f,u,w; previous,dt,previous_enthalpy)
+        if !residual_valid
+            flame_residual!(r,f,u,w; previous,dt,previous_enthalpy)
+        end
+        residual_valid = false
         residual_norm = norm(r,Inf)
-        residual_norm < tolerance && return true
+        # Final-grid polishing also checks the physical species criterion.
+        # Intermediate grids retain the existing equation-residual criterion.
+        if iteration > minimum_iterations && residual_norm < tolerance && (!require_positive ||
+                minimum(@view(u[2:end-1,:])) > -1e-12)
+            return true
+        end
         refresh = age >= 5 || last_contraction > .7
         step = try
             if refresh
@@ -648,6 +664,10 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             continue
         end
         last_contraction = norm(rt)/norm(r)
+        # The accepted trial already evaluated the full residual and properties
+        # at exactly the newly accepted state. A rejected search never reuses it.
+        r,rt = rt,r
+        residual_valid = _conservative_flame(f)
         age += 1
     end
     return false
@@ -655,19 +675,25 @@ end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6))
     w = FlameWorkspace(f)
+    steady_state = _conservative_flame(f) ? copy(f.state) : nothing
     _flame_newton!(f,w; loglevel) && return true
+    # A failed steady trial must not replace the accepted pseudo-time state.
+    steady_state === nothing || copyto!(f.state,steady_state)
     dt = timestep[]
+    previous = similar(f.state)
     for step in 1:max_time_steps
-        previous = copy(f.state)
+        copyto!(previous,f.state)
         if _flame_newton!(f,w; previous,dt,maxiters=20,loglevel=0)
             dt = min(dt*1.5,1.0)
             timestep[] = dt
             if step % 10 == 0
                 loglevel > 0 && println("Transient step ",step," dt=",dt)
+                steady_state === nothing || copyto!(steady_state,f.state)
                 _flame_newton!(f,w; loglevel) && return true
+                steady_state === nothing || copyto!(f.state,steady_state)
             end
         else
-            f.state .= previous
+            copyto!(f.state,previous)
             dt *= .25
             timestep[] = dt
             dt > 1e-12 || return false
@@ -765,6 +791,26 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         loglevel > 0 && println("Solving on ",length(f.grid)," points")
         _flame_steady!(f; loglevel,max_time_steps,timestep) || error("flame solve failed on $(length(f.grid)) points")
         if !refine_grid || !_refine_flame!(f;ratio,slope,curve,max_points)
+            if _conservative_flame(f) && minimum(@view(f.state[2:end-1,:])) <= -1e-12
+                # A clipped negative trial can converge on an unphysical branch.
+                # Build a nonnegative starting guess, preserving normalization,
+                # then require an accepted Newton step and a fresh full solve.
+                for j in axes(f.state,2)
+                    correction = 0.0
+                    for k in 2:size(f.state,1)-1
+                        if f.state[k,j] < 0
+                            correction -= f.state[k,j]
+                            f.state[k,j] = 0.0
+                        end
+                    end
+                    dominant = argmax(@view(f.state[2:end-1,j]))+1
+                    f.state[dominant,j] -= correction
+                end
+                _flame_newton!(f,FlameWorkspace(f);require_positive=true,
+                    minimum_iterations=1,loglevel) ||
+                    error("flame final species polishing failed on $(length(f.grid)) points")
+                refine_grid && _refine_flame!(f;ratio,slope,curve,max_points) && continue
+            end
             f.converged = true
             return f
         end

@@ -42,7 +42,7 @@ using Arrhenius,LinearAlgebra,Test
             @test abs(delta)>1e-8 # Composition storage contributes with no T change.
             # The final half-cell retains the same nearest-neighbor Jacobian
             # stencil, including its energy/species pseudo-time coupling.
-            band=copy(Arrhenius._flame_jacobian(f,f.state,w,rp;previous,dt))
+            band=copy(Arrhenius._flame_jacobian(f,f.state,w,rp;previous,dt,analytic=false))
             B,N=size(f.state);kl=2B-1
             for (k,j) in ((1,N),(2,N-1),(B,1))
                 u=copy(f.state);step=1e-7*max(abs(u[k,j]),k==1 ? .1 : 1e-5);u[k,j]+=step
