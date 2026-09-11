@@ -582,32 +582,74 @@
     {
       "id": "thermo/equivalenceRatio",
       "url": "https://cantera.org/dev/examples/python/thermo/equivalenceRatio.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/equivalence_ratio.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "equivalence_ratio",
+        "scope": "All nine mixture compositions and 16 scalar outputs, including source HP equilibration. Every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_thermo.json",
+        "case": "equivalence_ratio",
+        "speed_ratio": 6.423678595887115,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "equivalence_ratio",
+        "speed_ratio": 6.037965026566367,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/isentropic",
       "url": "https://cantera.org/dev/examples/python/thermo/isentropic.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/isentropic.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "isentropic",
+        "scope": "Complete 200-pressure nozzle on the stock ten-species h2o2 mechanism; full temperature, velocity, area and Mach profiles. Every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_thermo.json",
+        "case": "isentropic",
+        "speed_ratio": 2.226809179418463,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "isentropic",
+        "speed_ratio": 2.2861091629878922,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/isentropic_units",
       "url": "https://cantera.org/dev/examples/python/thermo/isentropic_units.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/isentropic_units.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "isentropic_units",
+        "scope": "Complete ten-pressure GRI-Mech nozzle; explicit SI unit conversions, without Pint wrapper overhead. Every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_thermo.json",
+        "case": "isentropic_units",
+        "speed_ratio": 2.8492906058101575,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "isentropic_units",
+        "speed_ratio": 2.5142745157307633,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/mixing",
@@ -690,22 +732,50 @@
     {
       "id": "thermo/sound_speed",
       "url": "https://cantera.org/dev/examples/python/thermo/sound_speed.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/sound_speed.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "sound_speed",
+        "scope": "All 24 temperatures, equilibrium/frozen speeds and final states; independent entropy and equilibrium refinement checks. Every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_thermo.json",
+        "case": "sound_speed",
+        "speed_ratio": 1.7634459289583724,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "sound_speed",
+        "speed_ratio": 1.88372893429161,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/sound_speed_units",
       "url": "https://cantera.org/dev/examples/python/thermo/sound_speed_units.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/sound_speed_units.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "sound_speed_units",
+        "scope": "All 25 Fahrenheit temperatures, equilibrium/frozen speeds and final states; explicit unit conversions and independent refinement checks. Every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_thermo.json",
+        "case": "sound_speed_units",
+        "speed_ratio": 1.22234776922627,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_thermo.json",
+        "case": "sound_speed_units",
+        "speed_ratio": 1.2673907803062294,
+        "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/vapordome",
@@ -777,7 +847,10 @@
     }
   ],
   "performance_target": "WSL and Apple M4 Mac mini",
-  "performance_targets": ["wsl", "apple-m4"],
+  "performance_targets": [
+    "wsl",
+    "apple-m4"
+  ],
   "performance_status_legend": {
     "not_validated": "No complete performance qualification on either required host.",
     "partially_validated": "Performance qualified on one required host; the other remains outstanding.",

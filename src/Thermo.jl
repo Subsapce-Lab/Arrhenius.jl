@@ -37,6 +37,11 @@ function _nasa7_mean_dimless(::Val{phi}, thermo::IdealGasThermo,
     z = zero(promote_type(typeof(T), eltype(thermo.nasa_low)))
     acc = zero(promote_type(typeof(T), eltype(thermo.nasa_low), eltype(X), typeof(logp)))
     @inbounds for i in eachindex(X)
+        Xi = X[i]
+        # Exact zeros contribute nothing for ordinary floating compositions.
+        # Dual-valued fractions retain their species term: their composition
+        # derivative can be nonzero even when the primal fraction is zero.
+        Xi isa AbstractFloat && iszero(Xi) && continue
         nasa = T <= thermo.Trange[i, 2] ? thermo.nasa_low : thermo.nasa_high
         cp = need_cp ? nasa[i, 1] + nasa[i, 2] * T + nasa[i, 3] * T2 +
              nasa[i, 4] * T3 + nasa[i, 5] * T4 : z
@@ -44,7 +49,7 @@ function _nasa7_mean_dimless(::Val{phi}, thermo::IdealGasThermo,
             nasa[i, 4] * T3 / 4 + nasa[i, 5] * T4 / 5 + nasa[i, 6] / T : z
         s = need_s ? nasa[i, 1] * logT + nasa[i, 2] * T + nasa[i, 3] * T2 / 2 +
             nasa[i, 4] * T3 / 3 + nasa[i, 5] * T4 / 4 + nasa[i, 7] : z
-        acc += _mean_term(Val(phi), X[i], cp, h, s, tiny, logp)
+        acc += _mean_term(Val(phi), Xi, cp, h, s, tiny, logp)
     end
     return acc
 end
@@ -57,11 +62,13 @@ function _extended_mean_dimless(::Val{phi}, thermo::IdealGasThermo,
     z = zero(promote_type(typeof(T), eltype(thermo.nasa_low)))
     acc = zero(promote_type(typeof(T), eltype(thermo.nasa_low), eltype(X), typeof(logp)))
     @inbounds for i in eachindex(X)
+        Xi = X[i]
+        Xi isa AbstractFloat && iszero(Xi) && continue
         species_cp, species_h, species_s = _extended_thermo(thermo, i, T)
         cp = need_cp ? species_cp : z
         h = need_h ? species_h : z
         s = need_s ? species_s : z
-        acc += _mean_term(Val(phi), X[i], cp, h, s, tiny, logp)
+        acc += _mean_term(Val(phi), Xi, cp, h, s, tiny, logp)
     end
     return acc
 end

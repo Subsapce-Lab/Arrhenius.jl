@@ -18,7 +18,10 @@
 # (validation/isentropic_cases.py produces exactly this directory). Timed
 # regions cover only the complete example calculations on prepared phases;
 # mechanism loading, printing and I/O are excluded, and first-call compilation
-# is recorded separately from at least nine warm repetitions. A controlled
+# is recorded separately from at least nine warm batches. Each sample is the
+# mean elapsed calculation time within a batch targeting 20 ms (at most 1000
+# complete calls); setup and output checks remain outside every call's timer.
+# A controlled
 # result additionally requires an otherwise idle target machine.
 import_seconds = @elapsed @eval using Arrhenius, NPZ, SHA, Dates, LinearAlgebra
 BLAS.set_num_threads(1)
@@ -111,22 +114,31 @@ function measured_example(setup,calculation,repetitions,qualification)
     output = calculation(state)
     first_seconds = (time_ns()-started)/1e9
     samples = Float64[]
+    batch_size = 0
     if qualification != "validate-only"
-        calculation(setup()) == output || error("warmup changed the calculation output")
+        state = setup()
+        started = time_ns()
+        warmup = calculation(state)
+        warmup_seconds = (time_ns()-started)/1e9
+        warmup == output || error("warmup changed the calculation output")
+        batch_size = clamp(ceil(Int, 0.020/max(warmup_seconds, 1e-9)), 1, 1000)
         GC.gc()
         for _ in 1:repetitions
-            state = setup()
-            started = time_ns()
-            repeated_output = calculation(state)
-            elapsed = (time_ns()-started)/1e9
-            repeated_output == output || error("repetition changed the calculation output")
-            push!(samples,elapsed)
+            elapsed = 0.0
+            for _ in 1:batch_size
+                state = setup()
+                started = time_ns()
+                repeated_output = calculation(state)
+                elapsed += (time_ns()-started)/1e9
+                repeated_output == output || error("repetition changed the calculation output")
+            end
+            push!(samples,elapsed/batch_size)
         end
     end
-    return output,first_seconds,samples
+    return output,first_seconds,samples,batch_size
 end
 
-function store!(data,prefix,result,first_seconds,samples)
+function store!(data,prefix,result,first_seconds,samples,batch_size)
     for key in keys(result)
         value = result[key]
         name = prefix*"_"*string(key)
@@ -140,7 +152,10 @@ function store!(data,prefix,result,first_seconds,samples)
     end
     data[prefix*"_first_seconds"] = [first_seconds]
     data[prefix*"_seconds"] = samples
-    println(prefix,": completed; first = ",first_seconds," s; warm samples = ",length(samples))
+    data[prefix*"_batch_size"] = [batch_size]
+    data[prefix*"_warm_outputs_checked"] = [length(samples)*batch_size]
+    println(prefix,": completed; first = ",first_seconds," s; warm batches = ",length(samples),
+            "; calculations per batch = ",batch_size)
     return data
 end
 
@@ -152,8 +167,8 @@ cases = (
     ("sound_speed_units",() -> gas_gri,sound_speed_units_calculation),
 )
 for (prefix,setup,calculation) in cases
-    output,first_seconds,samples = measured_example(setup,calculation,repetitions,qualification)
-    store!(data,prefix,output,first_seconds,samples)
+    output,first_seconds,samples,batch_size = measured_example(setup,calculation,repetitions,qualification)
+    store!(data,prefix,output,first_seconds,samples,batch_size)
 end
 println("qualification: ",qualification)
 

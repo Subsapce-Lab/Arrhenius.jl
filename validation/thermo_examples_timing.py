@@ -8,7 +8,9 @@ Run this with Cantera 4 after validation/thermo_examples_timing.jl writes its
 NPZ result. Both programs time only the complete example calculations on
 prepared phases; mechanism loading, state reset, printing, plotting and file
 I/O are excluded, and first calls are recorded separately from at least nine
-warm repetitions. The Cantera state is reset (TPX with the correct fresh
+warm batches. Samples are per-calculation means of batches targeting 20 ms,
+capped at 1000 complete calls; reset and output checks are outside each call's
+timer. The Cantera state is reset (TPX with the correct fresh
 composition) before EVERY repetition; per-source state changes happen inside
 the measured region. The units examples are recomputed with mathematically
 equivalent explicit SI conversions (degF->K, m/s->ft/s) instead of the
@@ -35,6 +37,7 @@ import argparse
 import gc
 import hashlib
 import json
+import math
 import os
 import statistics
 import time
@@ -456,19 +459,26 @@ for name, spec in CASES.items():
     output = spec["run"]()
     first_seconds = time.perf_counter()-started
     samples = []
+    batch_size = 0
     if not args.validate_only:
         spec["setup"]()
+        started = time.perf_counter()
         warmup = spec["run"]()
+        warmup_seconds = time.perf_counter()-started
         assert_same_output(name, output, warmup)
+        batch_size = max(1, min(1000, math.ceil(.020/max(warmup_seconds, 1e-9))))
         gc.collect()
         for _ in range(args.repetitions):
-            spec["setup"]()
-            started = time.perf_counter()
-            repeated_output = spec["run"]()
-            samples.append(time.perf_counter()-started)
-            # Check outside the measured region: a fast, mutated workload is
-            # not a valid repetition of the original calculation.
-            assert_same_output(name, output, repeated_output)
+            elapsed = 0.0
+            for _ in range(batch_size):
+                spec["setup"]()
+                started = time.perf_counter()
+                repeated_output = spec["run"]()
+                elapsed += time.perf_counter()-started
+                # Check outside the measured region: a fast, mutated workload
+                # is not a valid repetition of the original calculation.
+                assert_same_output(name, output, repeated_output)
+            samples.append(elapsed/batch_size)
     if name == "equivalence_ratio":
         outputs, case_ok = compare_equivalence(output)
     elif name in ("isentropic", "isentropic_units"):
@@ -477,14 +487,22 @@ for name, spec in CASES.items():
         refined, refined2 = references[name]
         outputs, case_ok = compare_acoustics(name, output, refined, refined2)
     native_samples = native[f"{name}_seconds"].tolist()
+    native_batch_size = int(native[f"{name}_batch_size"][0])
+    native_checked = int(native[f"{name}_warm_outputs_checked"][0])
+    if native_checked != len(native_samples)*native_batch_size:
+        raise SystemExit(f"{name}: inconsistent native output-check count")
     ratio = statistics.median(samples)/statistics.median(native_samples) if samples and native_samples else None
     controlled = bool(controlled_base and len(samples) >= MIN_REPETITIONS
-                      and len(native_samples) >= MIN_REPETITIONS)
+                      and len(native_samples) >= MIN_REPETITIONS
+                      and 1 <= native_batch_size <= 1000)
     case_report = {
         "correctness_pass": bool(case_ok), "outputs": outputs, "timed_scope": spec["timed_scope"],
         "cantera_first_seconds": first_seconds, "julia_first_seconds": float(native[f"{name}_first_seconds"][0]),
         "cantera_warm_seconds": samples, "julia_warm_seconds": native_samples,
-        "warm_outputs_checked": len(samples), "native_warm_outputs_checked": len(native_samples),
+        "sample_definition": "mean timed seconds per complete calculation within each warm batch; resets and output checks excluded",
+        "batch_policy": "ceil(0.020 / warmup seconds), clamped to 1..1000 complete calculations",
+        "cantera_batch_size": batch_size, "julia_batch_size": native_batch_size,
+        "warm_outputs_checked": len(samples)*batch_size, "native_warm_outputs_checked": native_checked,
         "speed_ratio": ratio, "performance_pass": bool(controlled and case_ok and ratio is not None and ratio >= .95),
         "qualification": "controlled" if controlled else "not_qualified",
     }
