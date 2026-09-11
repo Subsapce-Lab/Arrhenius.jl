@@ -130,6 +130,28 @@ The timed calls include fresh network construction and the full steady solve;
 mechanism loading, startup, output validation and diagram/report generation
 are excluded. Use new output directories for each run.
 
+The [inertial piston example](example/reactors/custom2.jl) computes ignition
+coupled to a wall accelerated by the pressure difference. Its complete 0.5-second
+calculation is checked against Cantera 4.0 on
+[WSL](validation/results/cantera4_wsl_custom2.json) and
+[Apple M4](validation/results/cantera4_m4_custom2.json).
+Use a Julia environment containing Arrhenius, SciMLBase and OrdinaryDiffEqBDF.
+With `CANTERA` pointing to Cantera source revision
+`726522be4e2a13454d8415b7ef799d621f665cf3`, prepare the reference and run:
+
+```bash
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
+python validation/custom2_reference.py --cantera-source "$CANTERA" --output custom2-reference
+julia --threads=1 --project=REACTOR_ENV validation/custom2_case.jl custom2-reference/inputs custom2-native
+julia --threads=1 --project=REACTOR_ENV example/reactors/custom2.jl custom2-reference/inputs custom2-cli.csv
+python validation/custom2_compare.py --native custom2-native --reference custom2-reference --cli custom2-cli.csv --output custom2-comparison.json
+```
+
+Use new output directories for each run. For the recorded WSL MKL configuration,
+add `--lazy-library-receipt validation/results/cantera4_wsl_ic_engine.json` to
+the comparison command. The receipt permits only its two hash-pinned numerical
+libraries to load during the calculation.
+
 The [engine example](example/reactors/ic_engine.jl) computes eight revolutions
 of an n-dodecane engine with prescribed injection, valves and piston motion.
 It uses QNDF from OrdinaryDiffEqBDF, with SciMLBase and ForwardDiff in the
