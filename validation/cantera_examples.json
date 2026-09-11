@@ -960,9 +960,14 @@
     {
       "id": "transport/multiprocessing_viscosity",
       "url": "https://cantera.org/dev/examples/python/transport/multiprocessing_viscosity.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/transport/multiprocessing_viscosity.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_parallel_transport.json",
+        "additional_report": "validation/results/cantera4_m4_parallel_transport.json",
+        "case": "transport/multiprocessing_viscosity",
+        "scope": "All four original 5,000-temperature multicomponent conductivity and viscosity sweeps; serial/parallel replay and independent Cantera 4.0 comparisons on both hosts. Four Julia tasks own separate phase and transport storage."
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"

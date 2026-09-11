@@ -97,6 +97,17 @@ The [mixing example](example/thermodynamics/mixing.jl) conserves species and
 enthalpy while combining streams, then evaluates the mixture at chemical equilibrium.
 Reactor examples use a caller-supplied Julia ODE integrator.
 
+The [parallel transport example](example/transport/multiprocessing_viscosity.jl)
+computes multicomponent thermal conductivity and viscosity over 5,000 temperatures
+for a methane/oxygen/nitrogen mixture. It runs both serial and parallel sweeps,
+using independent phase and transport storage for each Julia task:
+
+```bash
+python mechanism/export_sidecar.py path/to/gri30.yaml
+python mechanism/export_multicomponent.py path/to/gri30.yaml path/to/gri30.yaml.multicomponent.npz
+julia --threads=4 --project=. example/transport/multiprocessing_viscosity.jl path/to/gri30.yaml path/to/gri30.yaml.multicomponent.npz
+```
+
 The [gas/graphite example](example/thermodynamics/adiabatic.jl) computes adiabatic
 equilibrium temperature and all gas/solid species amounts across 50 fuel/air mixtures.
 Prepare the gas sidecar and condensed-phase parameters, then run:
