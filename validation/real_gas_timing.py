@@ -53,6 +53,19 @@ def case_order(smoke=False):
         [(phase,temperature) for phase in ("RK","IG") for temperature in TEMPERATURES])
 
 
+def capture_phase_states(gases):
+    """Save the freshly constructed phases before any whole-example call."""
+    return {phase:gas.state.copy() for phase,gas in gases.items()}
+
+
+def restore_phase_states(gases,states):
+    """Restore whole-example inlet history outside the calculation timer."""
+    if gases.keys()!=states.keys():
+        raise ValueError("prepared phase membership differs from the calculation")
+    for phase,gas in gases.items():
+        gas.state = states[phase]
+
+
 def make_network(gas,temperature,refined=False):
     gas.TP = temperature,40*ct.one_atm
     gas.set_equivalence_ratio(1.,"c12h26",{"o2":1.,"n2":3.76})
@@ -308,6 +321,7 @@ def main():
     if sha(mechanism)!=SOURCE_MECHANISM_SHA256:
         raise ValueError("reference mechanism hash differs from the pinned Cantera source")
     gases = {phase:ct.Solution(str(mechanism),"nDodecane_"+phase) for phase in ("RK","IG")}
+    prepared_states = capture_phase_states(gases)
     native_provenance = verify_native_mechanisms(args.native_mechanism_directory,meta,gases)
     record = json.loads(args.cantera_build_record.read_text()) if args.cantera_build_record else None
     libraries_before = mapped_cantera_hashes(record)
@@ -319,6 +333,7 @@ def main():
     hardware = host_metadata()
     thread_checks = {"before":verify_threads()}
     hardware["load_average_start"] = os.getloadavg()
+    restore_phase_states(gases,prepared_states)
     start = time.perf_counter()
     first = calculate(gases,smoke)
     first_seconds = time.perf_counter()-start
@@ -327,6 +342,7 @@ def main():
     if not args.validate_only:
         gc.collect()
         for repetition in range(args.repetitions):
+            restore_phase_states(gases,prepared_states)
             start = time.perf_counter()
             result = calculate(gases,smoke)
             samples.append(time.perf_counter()-start)
@@ -337,6 +353,7 @@ def main():
     # Keep source-default timings above as the qualification baseline. This
     # second source-style loop quantifies the independent accuracy reference's
     # cost using the same output sampling rather than the validation grid.
+    restore_phase_states(gases,prepared_states)
     start = time.perf_counter()
     refined_first = calculate(gases,smoke,refined=True)
     refined_first_seconds = time.perf_counter()-start
@@ -344,6 +361,7 @@ def main():
     if not args.validate_only:
         gc.collect()
         for repetition in range(args.repetitions):
+            restore_phase_states(gases,prepared_states)
             start = time.perf_counter()
             result = calculate(gases,smoke,refined=True)
             refined_samples.append(time.perf_counter()-start)
@@ -429,6 +447,7 @@ def main():
         "refined_cantera_solver_stats":{key:refined_first[key]["solver_stats"] for key in order},
         "refined_cantera_speed_ratio":statistics.median(refined_samples)/statistics.median(native_samples) if refined_samples and native_samples else None,
         "qualification_timing_baseline":"published Cantera default tolerances",
+        "whole_call_reset":"restore pristine phase states outside every source-default and refined calculation timer; published per-case TP-then-composition operations are unchanged",
         "first_call_note":"one full first invocation per process; Julia includes JIT; warm repetitions reuse code and preloaded static models",
         "cantera_warm_seconds":samples,"julia_warm_seconds":native_samples,
         "cantera_warm_delays":warm_delays,"julia_warm_delays":native["warm_delays"].T.tolist(),

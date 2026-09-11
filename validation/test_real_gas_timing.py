@@ -15,6 +15,32 @@ def as_toml(values):
 
 
 class ShockTubeProvenanceTests(unittest.TestCase):
+    def test_pristine_phase_reset_preserves_complete_inlets(self):
+        gases={phase:timing.ct.Solution("nDodecane_Reitz.yaml","nDodecane_"+phase)
+               for phase in ("RK","IG")}
+        states=timing.capture_phase_states(gases)
+        original={phase:state.copy() for phase,state in states.items()}
+        inlets={}
+        for phase,gas in gases.items():
+            timing.make_network(gas,1000)
+            inlets[phase]=(gas.state.copy(),gas.P,gas.X.copy())
+            self.assertTrue(np.array_equal(states[phase],original[phase]))
+        for repetition in range(2):
+            # A completed prior sweep leaves a different composition/density.
+            for gas in gases.values():
+                gas.TPX=2200.,40*timing.ct.one_atm,{"co2":12.,"h2o":13.,"n2":69.56}
+            timing.restore_phase_states(gases,states)
+            for phase,gas in gases.items():
+                with self.subTest(phase=phase,repetition=repetition):
+                    self.assertTrue(np.array_equal(gas.state,original[phase]))
+                    timing.make_network(gas,1000)
+                    self.assertTrue(np.array_equal(gas.state,inlets[phase][0]))
+                    self.assertEqual(gas.P,inlets[phase][1])
+                    self.assertTrue(np.array_equal(gas.X,inlets[phase][2]))
+                    self.assertTrue(np.array_equal(states[phase],original[phase]))
+        with self.assertRaisesRegex(ValueError,"membership"):
+            timing.restore_phase_states(gases,{"RK":states["RK"]})
+
     def test_complete_native_inventory(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
