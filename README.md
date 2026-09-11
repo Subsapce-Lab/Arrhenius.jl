@@ -124,9 +124,10 @@ The CSV contains crank-angle profiles; the companion TOML contains heat,
 pressure work, efficiency and CO estimates integrated over accepted states.
 The callable entry `solve_ic_engine_qndf` is provided by
 [NativeEngineQNDF](example/reactors/ic_engine_qndf_solver.jl).
-The complete calculation has been checked against Cantera 4.0 on WSL;
-[validation results and reproduction commands](validation/results/cantera4_wsl_ic_engine.json)
-cover the species and thermal histories, conservation, and integrated outputs.
+The complete calculation has been checked against Cantera 4.0 on
+[WSL](validation/results/cantera4_wsl_ic_engine.json) and
+[Apple M4](validation/results/cantera4_m4_ic_engine.json), including species and
+thermal histories, conservation, and integrated outputs.
 
 The [parallel transport example](example/transport/multiprocessing_viscosity.jl)
 computes multicomponent thermal conductivity and viscosity over 5,000 temperatures
