@@ -259,7 +259,7 @@ function _equilibrium_newton!(system, logpressure, constant_volume)
         f, _, J = _equilibrium_evaluate(system,state,logpressure,constant_volume; jacobian=true)
         all(isfinite,f) && all(isfinite,J) || return false
         residual_max,residual_norm = norm(f,Inf),norm(f)
-        residual_max < 2e-11 && return true
+        residual_max < 5e-14 && return true
         step = _equilibrium_step!(system,f,J)
         all(isfinite,step) || return false
         alpha = min(1.0,20/max(norm(step,Inf),1e-30))
@@ -320,7 +320,7 @@ function _equilibrium_at!(system, T, P; constant_volume=false, initial_temperatu
         seed = copy(system.state)
         # A larger chemical-potential increment avoids redundant Newton solves.
         # Retain the original smaller increments as a convergence fallback.
-        for increment in (12.,3.)
+        for increment in (96.,12.,3.)
             system.state .= seed
             stages = max(2,ceil(Int,maximum(abs.(gtarget-gstart))/increment)+1)
             converged = true

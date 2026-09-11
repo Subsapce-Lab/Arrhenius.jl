@@ -592,13 +592,13 @@
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_m4_thermo.json",
         "case": "equivalence_ratio",
-        "speed_ratio": 6.423678595887115,
+        "speed_ratio": 6.3577855741312135,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_thermo.json",
         "case": "equivalence_ratio",
-        "speed_ratio": 6.037965026566367,
+        "speed_ratio": 5.9532056798858815,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "performance_status": "validated"
@@ -616,13 +616,13 @@
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_m4_thermo.json",
         "case": "isentropic",
-        "speed_ratio": 2.226809179418463,
+        "speed_ratio": 2.2213158496235397,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_thermo.json",
         "case": "isentropic",
-        "speed_ratio": 2.2861091629878922,
+        "speed_ratio": 2.1579985127246593,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "performance_status": "validated"
@@ -640,13 +640,13 @@
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_m4_thermo.json",
         "case": "isentropic_units",
-        "speed_ratio": 2.8492906058101575,
+        "speed_ratio": 2.9132579757156614,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_thermo.json",
         "case": "isentropic_units",
-        "speed_ratio": 2.5142745157307633,
+        "speed_ratio": 2.680803431932546,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "performance_status": "validated"
@@ -654,12 +654,26 @@
     {
       "id": "thermo/mixing",
       "url": "https://cantera.org/dev/examples/python/thermo/mixing.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/mixing.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_mixing.json",
+        "case": "thermo/mixing",
+        "scope": "HP mixing followed by TP equilibrium; all 53 species fractions, both complete thermodynamic states, reported chemical potentials, and independent mass/enthalpy/element conservation; every warm output checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_mixing.json",
+        "case": "thermo/mixing",
+        "speed_ratio": 1.27507548909278,
+        "scope": "Complete warm stream construction, mixing, equilibrium and numerical reports on a prepared phase; nine normalized batches; every reset and replay check outside the timer."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_mixing.json",
+        "case": "thermo/mixing",
+        "speed_ratio": 1.5817022226329038,
+        "scope": "Complete warm stream construction, mixing, equilibrium and numerical reports on a prepared phase; nine normalized batches; every reset and replay check outside the timer."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/plasma-eedf",
@@ -742,13 +756,13 @@
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_m4_thermo.json",
         "case": "sound_speed",
-        "speed_ratio": 1.7634459289583724,
+        "speed_ratio": 3.8732695954039893,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_thermo.json",
         "case": "sound_speed",
-        "speed_ratio": 1.88372893429161,
+        "speed_ratio": 4.021175408288677,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "performance_status": "validated"
@@ -766,13 +780,13 @@
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_m4_thermo.json",
         "case": "sound_speed_units",
-        "speed_ratio": 1.22234776922627,
+        "speed_ratio": 2.5766475353433678,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_thermo.json",
         "case": "sound_speed_units",
-        "speed_ratio": 1.2673907803062294,
+        "speed_ratio": 2.7294863625649666,
         "scope": "Warm complete calculation on prepared phases; nine normalized batches with resets and correctness checks outside each timer; first call and imports separate."
       },
       "performance_status": "validated"

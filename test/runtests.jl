@@ -6,6 +6,7 @@ using Test
 
 include("equilibrium_native.jl")
 include("ideal_gas_states.jl")
+include("ideal_gas_mixing_native.jl")
 include("species_thermo_native.jl")
 include("thermo_means_native.jl")
 include("reactors_native.jl")
