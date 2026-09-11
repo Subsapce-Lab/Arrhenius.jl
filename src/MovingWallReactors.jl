@@ -144,13 +144,13 @@ function (rhs::MovingWallRHS)(du, u, p, t)
     end
     nbase = length(network.initial_state)
     base(@view(du[1:nbase]), @view(u[1:nbase]), p, t; volumes=rhs.volumes)
-    for (i, wall) in enumerate(model.walls)
+    _network_foreach(model.walls) do wall, i
         left, right = model.wall_endpoints[i]
-        l, r = base.states[left], base.states[right]
+        l, r = base.state_vector[left], base.state_vector[right]
         if wall isa InertialWall
-            index = model.velocity_indices[i]
-            velocity = u[index]
-            du[index] = wall.area * (l.pressure - r.pressure) / wall.mass
+            velocity_index = model.velocity_indices[i]
+            velocity = u[velocity_index]
+            du[velocity_index] = wall.area * (l.pressure - r.pressure) / wall.mass
         else
             velocity = wall.K * (l.pressure - r.pressure) + _network_signal(wall.velocity, base.states, t)
         end
@@ -166,11 +166,11 @@ function (rhs::MovingWallRHS)(du, u, p, t)
             rhs.motion_heat[right] += heat
         end
     end
-    energy_input, work_output = 0.0, 0.0
-    for (i, node) in enumerate(network.nodes)
+    index = model.ledger_offset
+    _network_foreach(values(network.nodes)) do node, i
         offset = network.offsets[i]
-        offset == 0 && continue
-        state = base.states[i]
+        offset == 0 && return nothing
+        state = base.state_vector[i]
         volume_rate = rhs.volume_rates[i]
         work = state.pressure * volume_rate
         motion_energy = rhs.motion_heat[i] - work
@@ -180,16 +180,15 @@ function (rhs::MovingWallRHS)(du, u, p, t)
         else
             du[offset+node.initial.gas.n_species] += motion_energy / (state.mass * state.cv)
         end
-        energy_input += base.energy_flux[i] + rhs.motion_heat[i] + base.thermostat_power[i]
-        work_output += work
+        du[index+1] += base.energy_flux[i] + rhs.motion_heat[i] + base.thermostat_power[i]
+        du[index+2] += work
     end
     mass_input = 0.0
     for (i, (up, down)) in enumerate(network.flow_endpoints)
         network.offsets[up] == 0 && network.offsets[down] > 0 && (mass_input += base.mass_flow_rates[i])
         network.offsets[up] > 0 && network.offsets[down] == 0 && (mass_input -= base.mass_flow_rates[i])
     end
-    index = model.ledger_offset
-    du[index], du[index+1], du[index+2] = mass_input, energy_input, work_output
+    du[index] = mass_input
     return nothing
 end
 
@@ -210,11 +209,11 @@ function moving_wall_jacobian!(J, u, rhs::MovingWallRHS, t=0.0)
     relative_step = cbrt(eps(Float64))
     for j in 1:rhs.model.ledger_offset-1
         scale = j in rhs.model.velocity_indices ? 1.0 : 1e-6
-        for (i, node) in enumerate(rhs.model.network.nodes)
+        for i in eachindex(rhs.model.network.offsets)
             offset = rhs.model.network.offsets[i]
             offset == 0 && continue
-            offset <= j < offset+node.initial.gas.n_species &&
-                (scale = rhs.network_rhs.states[i].mass * 1e-6)
+            offset <= j < offset+length(rhs.network_rhs.state_vector[i].mass_fractions) &&
+                (scale = rhs.network_rhs.state_vector[i].mass * 1e-6)
         end
         step = relative_step * max(abs(u[j]), scale)
         rhs.jac_state[j] = u[j] + step
@@ -270,7 +269,7 @@ function moving_wall_diagnostics(rhs::MovingWallRHS, u, t=0.0)
     for (i, node) in enumerate(model.network.nodes)
         offset = model.network.offsets[i]
         offset == 0 && continue
-        state, gas = base.states[i], node.initial.gas
+        state, gas = base.state_vector[i], node.initial.gas
         mass += state.mass
         energy += state.mass * state.internal_energy
         total_volume += state.volume

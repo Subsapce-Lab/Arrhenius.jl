@@ -219,6 +219,7 @@ end
 struct NetworkRHS{N,S}
     network::N
     states::S
+    state_vector::Vector{NetworkNodeState}
     workspaces::Vector{ReactorWorkspace{Float64}}
     mass_flow_rates::Vector{Float64}
     wall_heat_rates::Vector{Float64}
@@ -239,7 +240,7 @@ function network_rhs(network::ReactorNetwork)
             initial.density, volume, Float64.(initial.mass_fractions), 0.0, 0.0, 0.0, 0.0)
     end
     workspaces = [ReactorWorkspace(node.initial.gas, Float64) for node in network.nodes]
-    return NetworkRHS(network, states, workspaces, zeros(length(network.flows)),
+    return NetworkRHS(network, states, collect(values(states)), workspaces, zeros(length(network.flows)),
         zeros(length(network.walls)), zeros(length(network.nodes)), zeros(length(network.nodes)),
         network_state(network), zeros(length(network.initial_state)),
         zeros(length(network.initial_state)), zeros(length(network.initial_state)))
@@ -250,12 +251,21 @@ _network_signal(f, states, t) = applicable(f, states, t) ? f(states, t) : f(t)
 _network_time_signal(value::Real, t) = value
 _network_time_signal(f, t) = f(t)
 
+# Keep each heterogeneous node/device concrete. Runtime tuple indexing boxes
+# the complete immutable mechanism-bearing node tuple on every iteration.
+@inline _network_foreach(f, ::Tuple{}, index::Int=1) = nothing
+@inline function _network_foreach(f::F, items::Tuple, index::Int=1) where F
+    f(first(items), index)
+    _network_foreach(f, Base.tail(items), index + 1)
+    return nothing
+end
+
 function _update_network_states!(rhs, u; volumes=nothing)
     length(u) == length(rhs.network.initial_state) || throw(DimensionMismatch("invalid network state length"))
     volumes === nothing || length(volumes) == length(rhs.network.nodes) ||
         throw(DimensionMismatch("one volume per network node required"))
-    for (i, node) in enumerate(rhs.network.nodes)
-        state, workspace = rhs.states[i], rhs.workspaces[i]
+    _network_foreach(values(rhs.network.nodes)) do node, i
+        state, workspace = rhs.state_vector[i], rhs.workspaces[i]
         gas = node.initial.gas
         offset, ns = rhs.network.offsets[i], gas.n_species
         if offset > 0
@@ -304,10 +314,10 @@ function (rhs::NetworkRHS)(du, u, p, t; volumes=nothing)
     fill!(rhs.energy_flux, 0)
     fill!(rhs.thermostat_power, 0)
     _update_network_states!(rhs, u; volumes)
-    for (i, node) in enumerate(network.nodes)
+    _network_foreach(values(network.nodes)) do node, i
         offset = network.offsets[i]
-        offset == 0 && continue
-        gas, workspace, state = node.initial.gas, rhs.workspaces[i], rhs.states[i]
+        offset == 0 && return nothing
+        gas, workspace, state = node.initial.gas, rhs.workspaces[i], rhs.state_vector[i]
         if node.chemistry
             wdot!(workspace.wdot, gas.reaction, state.temperature, workspace.C,
                 workspace.entropy, workspace.h_mole, workspace.kinetics;
@@ -317,9 +327,9 @@ function (rhs::NetworkRHS)(du, u, p, t; volumes=nothing)
             end
         end
     end
-    for (i, device) in enumerate(network.flows)
+    _network_foreach(network.flows) do device, i
         up, down = network.flow_endpoints[i]
-        source, target = rhs.states[up], rhs.states[down]
+        source, target = rhs.state_vector[up], rhs.state_vector[down]
         delta_p = source.pressure - target.pressure
         rate = if device isa MassFlowController
             _network_signal(device.mdot, rhs.states, t)
@@ -346,19 +356,19 @@ function (rhs::NetworkRHS)(du, u, p, t; volumes=nothing)
             rhs.energy_flux[down] += rate * source.enthalpy
         end
     end
-    for (i, wall) in enumerate(network.walls)
+    _network_foreach(network.walls) do wall, i
         left, right = network.wall_endpoints[i]
-        power = wall.area * (wall.U * (rhs.states[left].temperature - rhs.states[right].temperature) +
+        power = wall.area * (wall.U * (rhs.state_vector[left].temperature - rhs.state_vector[right].temperature) +
                             _network_time_signal(wall.heat_flux, t))
         isfinite(power) || throw(DomainError(power, "finite wall heat rate required"))
         rhs.wall_heat_rates[i] = power
         network.offsets[left] > 0 && (rhs.energy_flux[left] -= power)
         network.offsets[right] > 0 && (rhs.energy_flux[right] += power)
     end
-    for (i, node) in enumerate(network.nodes)
+    _network_foreach(values(network.nodes)) do node, i
         offset = network.offsets[i]
-        offset == 0 && continue
-        gas, state, workspace = node.initial.gas, rhs.states[i], rhs.workspaces[i]
+        offset == 0 && return nothing
+        gas, state, workspace = node.initial.gas, rhs.state_vector[i], rhs.workspaces[i]
         composition_energy = 0.0
         @inbounds for k in 1:gas.n_species
             composition_energy += (workspace.h_mole[k] - R * state.temperature) / gas.MW[k] * du[offset+k-1]
@@ -380,10 +390,10 @@ function network_jacobian!(J, u, rhs::NetworkRHS, t=0.0)
     copyto!(rhs.jac_state, u)
     rhs(rhs.base, u, nothing, t)
     relative_step = cbrt(eps(Float64))
-    for (node_index, node) in enumerate(rhs.network.nodes)
+    _network_foreach(values(rhs.network.nodes)) do node, node_index
         offset = rhs.network.offsets[node_index]
-        offset == 0 && continue
-        mass_scale = rhs.states[node_index].mass * 1e-6
+        offset == 0 && return nothing
+        mass_scale = rhs.state_vector[node_index].mass * 1e-6
         for j in offset:offset+node.initial.gas.n_species
             step = relative_step * max(abs(u[j]), j == offset+node.initial.gas.n_species ? 1.0 : mass_scale)
             rhs.jac_state[j] = u[j] + step
@@ -467,7 +477,7 @@ function network_diagnostics(rhs::NetworkRHS, u, t=0.0)
     for (i, node) in enumerate(network.nodes)
         offset = network.offsets[i]
         offset == 0 && continue
-        gas, state, workspace = node.initial.gas, rhs.states[i], rhs.workspaces[i]
+        gas, state, workspace = node.initial.gas, rhs.state_vector[i], rhs.workspaces[i]
         dm = @view derivative[offset:offset+gas.n_species-1]
         total_mass_rate += sum(dm)
         total_energy_rate += state.mass * state.cv * derivative[offset+gas.n_species]
@@ -526,8 +536,8 @@ function solve_network_steady(network::ReactorNetwork; integrator, interval=1.0,
             offset = network.offsets[i]
             offset == 0 && continue
             ns = node.initial.gas.n_species
-            residual = max(residual, maximum(abs, @view derivative[offset:offset+ns-1]) / rhs.states[i].mass,
-                           abs(derivative[offset+ns]) / rhs.states[i].temperature)
+            residual = max(residual, maximum(abs, @view derivative[offset:offset+ns-1]) / rhs.state_vector[i].mass,
+                           abs(derivative[offset+ns]) / rhs.state_vector[i].temperature)
         end
         residual <= steady_tolerance && return (; state, time, residual)
     end
