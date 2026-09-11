@@ -37,6 +37,8 @@ Redlich–Kwong mixtures support gas and liquid cubic roots, caloric properties,
 fugacity coefficients and partial molar properties.
 Native Redlich–Kwong reaction rates and constant-volume adiabatic reactors
 support nonideal shock-tube ignition calculations.
+Reactor networks support prescribed, pressure-driven and inertial pistons,
+including changing volumes, pressure work and wall heat transfer.
 Ideal-surface chemistry supports elementary and sticking reactions, coverage
 dependencies, fixed-stoichiometry solids and isothermal catalytic reactors.
 Isothermal catalytic plug flow supports a direct spatial DAE and a chain of

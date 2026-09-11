@@ -250,8 +250,10 @@ _network_signal(f, states, t) = applicable(f, states, t) ? f(states, t) : f(t)
 _network_time_signal(value::Real, t) = value
 _network_time_signal(f, t) = f(t)
 
-function _update_network_states!(rhs, u)
+function _update_network_states!(rhs, u; volumes=nothing)
     length(u) == length(rhs.network.initial_state) || throw(DimensionMismatch("invalid network state length"))
+    volumes === nothing || length(volumes) == length(rhs.network.nodes) ||
+        throw(DimensionMismatch("one volume per network node required"))
     for (i, node) in enumerate(rhs.network.nodes)
         state, workspace = rhs.states[i], rhs.workspaces[i]
         gas = node.initial.gas
@@ -261,7 +263,10 @@ function _update_network_states!(rhs, u)
             temperature = node.initial.energy === :isothermal ? node.initial.temperature : u[offset+ns]
             isfinite(mass) && mass > 0 && isfinite(temperature) && temperature > 0 ||
                 throw(DomainError((mass, temperature), "positive finite mass and temperature required"))
-            state.mass, state.temperature, state.density = mass, temperature, mass / node.volume
+            volume = volumes === nothing ? node.volume : volumes[i]
+            isfinite(volume) && volume > 0 || throw(DomainError(volume, "positive finite vessel volume required"))
+            state.volume = volume
+            state.mass, state.temperature, state.density = mass, temperature, mass / volume
             @inbounds for k in 1:ns
                 state.mass_fractions[k] = u[offset+k-1] / mass
             end
@@ -292,13 +297,13 @@ function _update_network_states!(rhs, u)
     return nothing
 end
 
-function (rhs::NetworkRHS)(du, u, p, t)
+function (rhs::NetworkRHS)(du, u, p, t; volumes=nothing)
     network = rhs.network
     length(du) == length(u) || throw(DimensionMismatch("network derivative length mismatch"))
     fill!(du, 0)
     fill!(rhs.energy_flux, 0)
     fill!(rhs.thermostat_power, 0)
-    _update_network_states!(rhs, u)
+    _update_network_states!(rhs, u; volumes)
     for (i, node) in enumerate(network.nodes)
         offset = network.offsets[i]
         offset == 0 && continue
@@ -308,7 +313,7 @@ function (rhs::NetworkRHS)(du, u, p, t)
                 workspace.entropy, workspace.h_mole, workspace.kinetics;
                 rate_multipliers=node.initial.rate_multipliers)
             @inbounds for k in 1:gas.n_species
-                du[offset+k-1] = workspace.wdot[k] * gas.MW[k] * node.volume
+                du[offset+k-1] = workspace.wdot[k] * gas.MW[k] * state.volume
             end
         end
     end
