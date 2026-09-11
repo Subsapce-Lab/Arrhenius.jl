@@ -127,9 +127,13 @@ function _check_integer_trial_reactions(reaction)
     nothing
 end
 
-function _integer_trial_wdot!(output,reaction,T,C,S0,h,work;activity_concentrations=nothing,kwargs...)
+function _integer_trial_wdot!(output,reaction,T,C,S0,h,work;activity_concentrations=nothing,reverse_plan=nothing,kwargs...)
     # Reuse native Arrhenius / equilibrium / collider / falloff / PLOG factors.
-    wdot!(output,reaction,T,C,S0,h,work;activity_concentrations,get_rate_constants=true,kwargs...)
+    if isnothing(reverse_plan)
+        wdot!(output,reaction,T,C,S0,h,work;activity_concentrations,get_rate_constants=true,kwargs...)
+    else
+        Arrhenius._rate_factors!(reaction,T,C,S0,h,work,reverse_plan;kwargs...)
+    end
     activity=isnothing(activity_concentrations) ? C : activity_concentrations
     reactants,products=reaction.reactant_orders,reaction.product_stoich_coeffs
     ri,rv=rowvals(reactants),nonzeros(reactants)
@@ -202,10 +206,12 @@ function _signed_trial_caloric!(w,m,T,rho,X)
     (;T,P,rho,X,MW,v,cv_mass=cv/MW,u_TV=w.u_TV,lnphi=w.lnphi)
 end
 
-struct _SignedTrialRHS{R,W}
+struct _SignedTrialRHS{R,W,P}
     reactor::R
     workspace::W
+    reverse_plan::P
 end
+_SignedTrialRHS(reactor,work)=_SignedTrialRHS(reactor,work,Arrhenius._ReversibleRatePlan(reactor.gas.reaction))
 function _signed_reactor_rhs(reactor,::Type{T}=Float64) where T
     _check_integer_trial_reactions(reactor.gas.reaction)
     reactor.energy===:adiabatic || error("adiabatic trial reactor required")
@@ -237,7 +243,7 @@ function (rhs::_SignedTrialRHS{<:IdealGasReactor})(du,u,p,t)
         work.h_mole[k]*=R*T;work.entropy[k]*=R
     end
     _integer_trial_wdot!(work.wdot,gas.reaction,T,work.C,work.entropy,work.h_mole,work.kinetics;
-        rate_multipliers=reactor.rate_multipliers)
+        rate_multipliers=reactor.rate_multipliers,reverse_plan=rhs.reverse_plan)
     capacity,source=zero(T),zero(T)
     @inbounds for k in 1:gas.n_species
         du[k]=work.wdot[k]*gas.MW[k]/density
@@ -264,7 +270,7 @@ function (rhs::_SignedTrialRHS{<:RedlichKwongReactor})(du,u,p,t)
         work.h0[k]=R*T*work.thermo.h0[k];work.s0[k]=R*work.thermo.s0[k]
     end
     _integer_trial_wdot!(work.wdot,gas.reaction,T,work.C,work.s0,work.h0,work.kinetics;
-        pressure=properties.P,activity_concentrations=work.activity,rate_multipliers=reactor.rate_multipliers)
+        pressure=properties.P,activity_concentrations=work.activity,rate_multipliers=reactor.rate_multipliers,reverse_plan=rhs.reverse_plan)
     source=zero(T)
     @inbounds for k in 1:n
         du[k]=work.wdot[k]*gas.MW[k]/reactor.density

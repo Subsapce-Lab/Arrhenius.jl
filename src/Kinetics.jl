@@ -269,23 +269,32 @@ function _mass_action!(workspace, reaction::Reaction, C)
     end
 end
 
-"Compute reaction source terms into preallocated storage."
-function wdot!(
-    wdot,
-    reaction,
-    T,
-    C,
-    S0,
-    h_mole,
-    workspace;
-    get_qdot=false,
-    rate_multipliers=nothing,
-    log_rate_data=nothing,
-    temperature_cache=nothing,
-    pressure=nothing,
-    activity_concentrations=nothing,
-    get_rate_constants=false,
-)
+# Prepared indices are valid only for this mechanism and reversibility mask.
+# Reaction arrays are mutable, so check the snapshot before every internal use.
+struct _ReversibleRatePlan{R,V}
+    reaction::R
+    flags::V
+    reversible::Vector{Int}
+end
+function _ReversibleRatePlan(reaction::Reaction)
+    flags=copy(reaction.is_reversible)
+    length(flags)==reaction.n_reactions || throw(DimensionMismatch("reaction reversibility mask has the wrong length"))
+    _ReversibleRatePlan(reaction,flags,findall(flags))
+end
+@inline _validate_reversible_plan(::Nothing,reaction)=nothing
+@inline function _validate_reversible_plan(plan::_ReversibleRatePlan,reaction)
+    plan.reaction === reaction || throw(ArgumentError("reverse-rate plan belongs to a different mechanism; rebuild the signed reactor RHS"))
+    plan.flags == reaction.is_reversible || throw(ArgumentError("reaction reversibility changed; rebuild the signed reactor RHS"))
+    nothing
+end
+
+# Internal factor-only entry point. A prepared plan selects reverse columns only
+# for uncached ordinary rates. All cached, mixed-rate and BM calls stay full.
+function _rate_factors!(reaction,T,C,S0,h_mole,workspace,reverse_plan=nothing;
+        rate_multipliers=nothing,log_rate_data=nothing,temperature_cache=nothing,pressure=nothing)
+    _validate_reversible_plan(reverse_plan,reaction)
+    reversible_only = reverse_plan !== nothing && isnothing(temperature_cache) &&
+        isnothing(log_rate_data) && isempty(reaction.blowers_masel.reaction_indices)
     kf = workspace.kf
     kr = workspace.kr
     logT = log(T)
@@ -440,10 +449,27 @@ function wdot!(
     end
 
     if refresh_temperature
-        mul!(workspace.delta_s, transpose(reaction.vk), S0)
-        mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
+        if reversible_only
+            rows,coefficients=rowvals(reaction.vk),nonzeros(reaction.vk)
+            zero_s,zero_h=zero(eltype(workspace.delta_s)),zero(eltype(workspace.delta_h))
+            @inbounds for i in reverse_plan.reversible
+                ds,dh=zero_s,zero_h
+                for j in nzrange(reaction.vk,i)
+                    row=rows[j];coefficient=coefficients[j]
+                    ds=muladd(coefficient,S0[row],ds)
+                    dh=muladd(coefficient,h_mole[row],dh)
+                end
+                # Match SparseArrays' ordered accumulation and final zero addition.
+                workspace.delta_s[i]=ds+zero_s
+                workspace.delta_h[i]=dh+zero_h
+            end
+        else
+            mul!(workspace.delta_s, transpose(reaction.vk), S0)
+            mul!(workspace.delta_h, transpose(reaction.vk), h_mole)
+        end
+        equilibrium_indices = reversible_only ? reverse_plan.reversible : eachindex(kf)
         log_reference_concentration = log(one_atmosphere / gas_constant / T)
-        @inbounds for i in eachindex(kf)
+        @inbounds for i in equilibrium_indices
             workspace.equilibrium_constants[i] = exp(
                 workspace.delta_s[i] / gas_constant -
                 workspace.delta_h[i] / (gas_constant * T) +
@@ -462,6 +488,29 @@ function wdot!(
             kf[i] / workspace.equilibrium_constants[i] : zero(T)
     end
 
+    return nothing
+end
+
+"Compute reaction source terms into preallocated storage."
+function wdot!(
+    wdot,
+    reaction,
+    T,
+    C,
+    S0,
+    h_mole,
+    workspace;
+    get_qdot=false,
+    rate_multipliers=nothing,
+    log_rate_data=nothing,
+    temperature_cache=nothing,
+    pressure=nothing,
+    activity_concentrations=nothing,
+    get_rate_constants=false,
+)
+    _rate_factors!(reaction,T,C,S0,h_mole,workspace;
+        rate_multipliers,log_rate_data,temperature_cache,pressure)
+    kf,kr=workspace.kf,workspace.kr
     get_rate_constants && return (;forward=kf,reverse=kr,equilibrium=workspace.equilibrium_constants)
     _mass_action!(workspace,reaction,isnothing(activity_concentrations) ? C : activity_concentrations)
 
