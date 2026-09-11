@@ -448,12 +448,26 @@
     {
       "id": "reactors/non_ideal_shock_tube",
       "url": "https://cantera.org/dev/examples/python/reactors/non_ideal_shock_tube.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/non_ideal_shock_tube.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_m4_non_ideal_shock_tube.json",
+        "case": "full_34_trajectories",
+        "scope": "All 34 source ideal-gas/Redlich-Kwong ignition trajectories on M4 using the optional signed/scaled QNDF adapter; independent refined reference at every native saved state and overshooting endpoint, OH peak and physical balances checked."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_non_ideal_shock_tube.json",
+        "case": "full_34_trajectories",
+        "speed_ratio": 0.7123960689469533,
+        "scope": "Complete public 34-case calculation, first plus seven warm calls; source-default Cantera timing and refined-reference accuracy reported separately. Below the 0.95 target."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_non_ideal_shock_tube_failure.json",
+        "case": "full_34_trajectories",
+        "speed_ratio": null,
+        "scope": "Native first plus seven warm replays completed; Cantera stopped at its first warm trajectory replay guard. No qualified paired timing."
+      },
+      "performance_status": "below_target"
     },
     {
       "id": "reactors/periodic_cstr",
@@ -947,7 +961,8 @@
   "performance_status_legend": {
     "not_validated": "No complete performance qualification on either required host.",
     "partially_validated": "Performance qualified on one required host; the other remains outstanding.",
-    "validated": "Performance qualified on both WSL and Apple M4 Mac mini."
+    "validated": "Performance qualified on both WSL and Apple M4 Mac mini.",
+    "below_target": "A complete paired measurement on a required host falls below the minimum speed ratio; evidence for the other host is reported separately."
   },
   "status_legend": {
     "not_validated": "Complete per-example calculation validation remains outstanding.",
