@@ -44,6 +44,9 @@ Reactor networks support prescribed, pressure-driven and inertial pistons,
 including changing volumes, pressure work and wall heat transfer.
 Ideal-surface chemistry supports elementary and sticking reactions, coverage
 dependencies, fixed-stoichiometry solids and isothermal catalytic reactors.
+`CoverageThermoModel` evaluates coverage-dependent standard enthalpy, entropy,
+heat capacity and Gibbs energy with linear, polynomial, piecewise-linear or
+interpolated self and cross interactions.
 Isothermal catalytic plug flow supports a direct spatial DAE and a chain of
 stirred reactors with species and elemental-flux diagnostics.
 Catalytic impinging flames couple gas transport and chemistry to steady surface
