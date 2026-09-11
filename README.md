@@ -41,6 +41,8 @@ Ideal-surface chemistry supports elementary and sticking reactions, coverage
 dependencies, fixed-stoichiometry solids and isothermal catalytic reactors.
 Isothermal catalytic plug flow supports a direct spatial DAE and a chain of
 stirred reactors with species and elemental-flux diagnostics.
+Catalytic impinging flames couple gas transport and chemistry to steady surface
+coverages at a prescribed wall temperature.
 Porous-media transport includes molecular and Knudsen diffusion and Darcy flow
 through the native `DustyGasTransport` model.
 Chemistry, thermodynamics, transport

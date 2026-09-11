@@ -27,5 +27,6 @@ module Arrhenius
     include("FlameIO.jl")
     include("CounterflowFlames.jl")
     include("PremixedCounterflowFlames.jl")
+    include("CatalyticFlames.jl")
     include("Precision.jl")
 end

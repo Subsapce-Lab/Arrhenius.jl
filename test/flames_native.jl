@@ -90,6 +90,18 @@ using Arrhenius, LinearAlgebra, Test
     @test norm(flame_residual!(similar(f.state),f),Inf) < 1e-8
 
     burner = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,width=.5)
+    solve!(burner;slope=.05,curve=.1)
+    @test burner.converged
+    @test maximum(temperature(burner)) ≈ 1857.234327060171 rtol=.01
+    @test norm(flame_residual!(similar(burner.state),burner),Inf) < 1e-8
+    @test minimum(mass_fractions(burner)) > -1e-12
+    # A supplied mesh is part of the user's boundary-value problem. Its domain
+    # and coordinates must survive construction, including a shifted origin.
+    supplied_grid = .1 .+ .5 .* [0,.1,.2,.3,.5,.7,1]
+    supplied = BurnerFlame(gas;X="H2:1.5,O2:1,AR:7",T=373.,P=.05one_atm,mdot=.06,grid=supplied_grid)
+    @test supplied.grid == supplied_grid
+    @test supplied.state[1,1] == .373
+    @test supplied.state[end,:] == fill(.06,length(supplied_grid))
     @test_throws ArgumentError set_temperature_profile!(burner,[0.,1.],[300.,1750.])
     @test_throws ArgumentError set_temperature_profile!(burner,[0.,.5],[373.,1750.])
     positions = [0.,.005,.01,.02,.05,.1,1.]
