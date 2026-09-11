@@ -178,7 +178,7 @@ function dusty_gas_thermal_conductivity(w::DustyGasTransport,P,T,X)
     if T==w.thermal_temperature && all(w.multicomponent.X[k]==max(X[k],1e-20) for k in eachindex(X))
         return w.multicomponent.conductivity
     end
-    conductivity=multicomponent_transport!(w.multicomponent,w.multicomponent_data,w.gas,P,T,X)
+    conductivity=multicomponent_thermal_conductivity!(w.multicomponent,w.multicomponent_data,w.gas,P,T,X)
     w.thermal_temperature=T
     return conductivity
 end

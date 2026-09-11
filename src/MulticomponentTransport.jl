@@ -242,6 +242,20 @@ function _multi_thermal!(w, data, T)
     w.conductivity = -4*conductivity
 end
 
+function _multicomponent_state!(w::MultiTransportWorkspace,data::MultiTransportData,P,T,X,cp_R)
+    n = length(data.molecular_weights)
+    length(X) == length(cp_R) == length(w.X) == n || throw(DimensionMismatch("transport species size mismatch"))
+    isfinite(P) && P > 0 && isfinite(T) && T > 0 || throw(ArgumentError("positive finite P and T required"))
+    all(isfinite,X) && all(x -> x >= 0,X) && isapprox(sum(X),1;atol=1e-10,rtol=1e-10) ||
+        throw(ArgumentError("normalized nonnegative mole fractions required"))
+    all(isfinite,cp_R) || throw(ArgumentError("finite species heat capacities required"))
+    @inbounds for i in 1:n
+        w.X[i] = max(X[i],1e-20)
+    end
+    _multi_temperature!(w,data,T,cp_R)
+    return n
+end
+
 """
     multicomponent_transport!(workspace, data, P, T, X, cp_R)
 
@@ -253,16 +267,7 @@ Mole fractions must be normalized and nonnegative; zero entries use the same
 1e-20 transport floor as Cantera. This floor is not renormalized.
 """
 function multicomponent_transport!(w::MultiTransportWorkspace,data::MultiTransportData,P,T,X,cp_R)
-    n = length(data.molecular_weights)
-    length(X) == length(cp_R) == length(w.X) == n || throw(DimensionMismatch("transport species size mismatch"))
-    isfinite(P) && P > 0 && isfinite(T) && T > 0 || throw(ArgumentError("positive finite P and T required"))
-    all(isfinite,X) && all(x -> x >= 0,X) && isapprox(sum(X),1;atol=1e-10,rtol=1e-10) ||
-        throw(ArgumentError("normalized nonnegative mole fractions required"))
-    all(isfinite,cp_R) || throw(ArgumentError("finite species heat capacities required"))
-    @inbounds for i in 1:n
-        w.X[i] = max(X[i],1e-20)
-    end
-    _multi_temperature!(w,data,T,cp_R)
+    n = _multicomponent_state!(w,data,P,T,X,cp_R)
     _multi_L00!(w.L00,w,data,T)
     fill!(w.diffusion,0)
     @inbounds for i in 1:n
@@ -285,6 +290,28 @@ function multicomponent_transport!(w::MultiTransportWorkspace,data::MultiTranspo
     gas.species_names == data.species_names || throw(ArgumentError("transport species order mismatch"))
     cal_cp_R!(w.cp_R,gas,T,P,X)
     return multicomponent_transport!(w,data,P,T,X,w.cp_R)
+end
+
+"""
+    multicomponent_thermal_conductivity!(workspace, data, gas, P, T, X)
+    multicomponent_thermal_conductivity!(workspace, data, P, T, X, cp_R)
+
+Return Dixon–Lewis thermal conductivity [W/(m K)] without computing the
+multicomponent diffusion matrix. This updates thermal diffusion coefficients
+and the thermal workspace; `workspace.diffusion` retains its previous value.
+Input requirements are the same as for `multicomponent_transport!`.
+"""
+function multicomponent_thermal_conductivity!(w::MultiTransportWorkspace,data::MultiTransportData,P,T,X,cp_R)
+    _multicomponent_state!(w,data,P,T,X,cp_R)
+    _multi_thermal!(w,data,T)
+    return w.conductivity
+end
+
+function multicomponent_thermal_conductivity!(w::MultiTransportWorkspace,data::MultiTransportData,
+                                            gas::Solution,P,T,X)
+    gas.species_names == data.species_names || throw(ArgumentError("transport species order mismatch"))
+    cal_cp_R!(w.cp_R,gas,T,P,X)
+    return multicomponent_thermal_conductivity!(w,data,P,T,X,w.cp_R)
 end
 
 """
@@ -314,6 +341,7 @@ function multicomponent_fluxes!(flux,w::MultiTransportWorkspace,data::MultiTrans
 end
 
 export MultiTransportData, MultiTransportWorkspace, multicomponent_transport!, multicomponent_fluxes!
+export multicomponent_thermal_conductivity!
 
 "Reusable storage for the separate mixture-averaged Soret model."
 struct MixtureThermalDiffusionWorkspace

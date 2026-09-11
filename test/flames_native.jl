@@ -79,6 +79,9 @@ using Arrhenius, LinearAlgebra, Test
     @test multicomponent_transport!(wm,data,gas,2one_atm,900.,X) ≈ lambda rtol=1e-12
     @test wm.diffusion ≈ D/2 rtol=1e-12
     @test wm.thermal_diffusion ≈ DT rtol=1e-12
+    @test multicomponent_thermal_conductivity!(wm,data,gas,one_atm,900.,X) == lambda
+    @test wm.diffusion ≈ D/2 rtol=1e-12 # conductivity-only call leaves diffusion intact
+    @test_throws ArgumentError multicomponent_thermal_conductivity!(wm,data,one_atm,900.,2X,wm.cp_R)
     flux = zeros(gas.n_species)
     gradX = collect(1.:gas.n_species); gradX .-= sum(gradX)/length(gradX)
     multicomponent_fluxes!(flux,wm,data,2one_atm,900.,X,gradX,10.)
