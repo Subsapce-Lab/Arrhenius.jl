@@ -108,6 +108,9 @@ compares frozen and equilibrium acoustic responses.
 The [mixing example](example/thermodynamics/mixing.jl) conserves species and
 enthalpy while combining streams, then evaluates the mixture at chemical equilibrium.
 Transient reactor examples use a caller-supplied Julia ODE integrator.
+The [optional reactor environment](example/reactors/README.md) provides QNDF
+with an analytic Jacobian and sparse KLU solve for supported adiabatic,
+constant-pressure reactors.
 
 The [reactor mixer example](example/reactors/mix1.jl) solves the stationary
 species and energy equations with separate air and fuel mechanisms. Prepare

@@ -1,13 +1,53 @@
 using SciMLBase
 using OrdinaryDiffEqBDF
 
-"Integrate an Arrhenius reactor problem with Julia's adaptive QNDF solver."
+# The optional environment pins the cache interfaces used by the structured
+# solver. Other environments retain the ordinary dense QNDF integration.
+if !isdefined(@__MODULE__, :StructuredReactorSolver) &&
+        all(name -> Base.find_package(name) !== nothing,
+            ("ForwardDiff", "LinearSolve", "KLU", "OrdinaryDiffEqDifferentiation", "OrdinaryDiffEqNonlinearSolve"))
+    import ForwardDiff, LinearSolve, KLU, OrdinaryDiffEqDifferentiation, OrdinaryDiffEqNonlinearSolve
+    if Base.pkgversion(ForwardDiff) == v"1.4.6" && Base.pkgversion(SciMLBase) == v"2.155.2" &&
+            Base.pkgversion(OrdinaryDiffEqBDF) == v"1.26.0" &&
+            Base.pkgversion(OrdinaryDiffEqDifferentiation) == v"2.9.0" &&
+            Base.pkgversion(OrdinaryDiffEqNonlinearSolve) == v"1.28.0" &&
+            Base.pkgversion(LinearSolve) == v"3.87.0" && Base.pkgversion(KLU) == v"0.6.0"
+        include(joinpath(@__DIR__, "structured", "StructuredReactorSolver.jl"))
+    end
+end
+
+"""
+Integrate an Arrhenius reactor problem with Julia's adaptive QNDF solver.
+
+The optional reactor environment enables an analytic Jacobian and sparse
+bordered solve for supported constant-pressure, adiabatic ideal-gas reactors.
+Other reactors use the dense Jacobian supplied by `reactor_problem`.
+"""
 function native_bdf(problem; kwargs...)
-    f = ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad)
-    ode = ODEProblem(f, problem.u0, problem.tspan, problem.p)
+    if isdefined(@__MODULE__, :StructuredReactorSolver)
+        adapter = StructuredReactorSolver.try_structured_adapter(problem)
+        if adapter !== nothing
+            integrator_ref = Ref{Any}(nothing)
+            precs = StructuredReactorSolver.adapter_precs(adapter, integrator_ref)
+            linsolve = StructuredReactorSolver.adapter_linsolve(adapter, integrator_ref)
+            f = SciMLBase.ODEFunction(adapter.guard.analytic.float_rhs; jac=adapter, tgrad=problem.tgrad)
+            ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
+            outside_domain = (u, p, t) -> !all(isfinite, u) || u[end] <= 0
+            integrator = SciMLBase.init(ode, OrdinaryDiffEqBDF.QNDF(precs=precs, linsolve=linsolve);
+                isoutofdomain=outside_domain, kwargs...)
+            integrator_ref[] = integrator
+            solution = SciMLBase.solve!(integrator)
+            SciMLBase.successful_retcode(solution) || error("reactor integration failed: $(solution.retcode)")
+            StructuredReactorSolver._lifecycle_valid(adapter) ||
+                error("structured reactor solver cache lifecycle failed")
+            return solution
+        end
+    end
+    f = SciMLBase.ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad)
+    ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
     outside_domain = (u, p, t) -> !all(isfinite, u) || u[end] <= 0 ||
         minimum(view(u, 1:length(u)-1)) < -1e-13
-    solution = solve(ode, QNDF(); isoutofdomain=outside_domain, kwargs...)
+    solution = SciMLBase.solve(ode, OrdinaryDiffEqBDF.QNDF(); isoutofdomain=outside_domain, kwargs...)
     SciMLBase.successful_retcode(solution) || error("reactor integration failed: $(solution.retcode)")
     return solution
 end
