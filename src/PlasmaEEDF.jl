@@ -47,12 +47,14 @@ const _EEDF_AVOGADRO_KMOL = 6.02214076e26           # 1/kmol
 const _EEDF_GAMMA = sqrt(2 * _EEDF_ELECTRON_CHARGE / _EEDF_ELECTRON_MASS)
 
 """
-    EEDFState(model; T, P, mole_fractions, molecular_weights, reduced_field, frequency=0)
+    EEDFState(model; T, P, mole_fractions, molecular_weights, reduced_field, frequency=0, number_density=nothing)
 
 Gas conditions for a temporal two-term electron-energy calculation. Temperature
 is K, pressure Pa, molecular weights kg/kmol, reduced electric field V·m², and
 frequency Hz. Dictionaries are keyed by collision-target names. Mole fractions
 are normalized over participating targets; additional species are ignored.
+`number_density` is the total gas number density in m⁻³. It defaults to
+`P/(kB*T)`; supply the actual density for a two-temperature or non-ideal gas.
 """
 struct EEDFState
     T::Float64
@@ -61,10 +63,16 @@ struct EEDFState
     molecular_weights::Dict{String,Float64}
     reduced_field::Float64
     frequency::Float64
+    number_density::Float64
 end
 
+# Preserve positional construction with the original ideal-gas density.
+EEDFState(T, P, x, mw, reduced_field, frequency) =
+    EEDFState(T, P, x, mw, reduced_field, frequency, Float64(P)/(_EEDF_BOLTZMANN*Float64(T)))
+
 function EEDFState(model::EEDFModel; T, P, mole_fractions::AbstractDict,
-                   molecular_weights::AbstractDict, reduced_field, frequency=0)
+                   molecular_weights::AbstractDict, reduced_field, frequency=0,
+                   number_density=nothing)
     Tf = Float64(T)
     Pf = Float64(P)
     EN = Float64(reduced_field)
@@ -73,6 +81,9 @@ function EEDFState(model::EEDFModel; T, P, mole_fractions::AbstractDict,
     isfinite(Pf) && Pf > 0 || throw(ArgumentError("EEDF pressure must be finite and positive"))
     isfinite(EN) && EN >= 0 || throw(ArgumentError("reduced electric field must be finite and nonnegative"))
     isfinite(freq) && freq >= 0 || throw(ArgumentError("electric field frequency must be finite and nonnegative"))
+
+    density = number_density === nothing ? Pf/(_EEDF_BOLTZMANN*Tf) : Float64(number_density)
+    isfinite(density) && density > 0 || throw(ArgumentError("EEDF number density must be finite and positive m⁻³"))
 
     x = Dict{String,Float64}()
     mw = Dict{String,Float64}()
@@ -92,7 +103,7 @@ function EEDFState(model::EEDFModel; T, P, mole_fractions::AbstractDict,
     for target in keys(x)
         x[target] /= total
     end
-    return EEDFState(Tf, Pf, x, mw, EN, freq)
+    return EEDFState(Tf, Pf, x, mw, EN, freq, density)
 end
 
 """
@@ -367,7 +378,7 @@ function _assemble_operator!(ws::EEDFWorkspace, model::EEDFModel, state::EEDFSta
     nu = _production_frequency(ws, f, floor)
     a0 = fill(NaN, n + 1)
     a1 = fill(NaN, n + 1)
-    density = state.P / (_EEDF_BOLTZMANN * state.T)
+    density = state.number_density
     omega = 2*pi*state.frequency
     for e in 2:n
         energy = edges[e]
@@ -407,11 +418,11 @@ function _eedf_norm(f::Vector{Float64}, centers::Vector{Float64})
     return _eedf_simpson(f .* sqrt.(centers), centers)
 end
 
-function _normalize_eedf!(f::Vector{Float64}, centers::Vector{Float64}; require_positive=false)
+function _normalize_eedf!(f::Vector{Float64}, centers::Vector{Float64}; require_nonnegative=false)
     all(isfinite, f) || throw(ErrorException("EEDF contains non-finite values"))
-    if require_positive && any(f .<= 0)
-        bad = findfirst(f .<= 0)
-        throw(ErrorException("EEDF positivity invariant failed at center index $bad"))
+    if require_nonnegative && any(f .< 0)
+        bad = findfirst(f .< 0)
+        throw(ErrorException("EEDF nonnegativity invariant failed at center index $bad"))
     end
     value = _eedf_norm(f, centers)
     isfinite(value) && value > 0 || throw(ErrorException("EEDF has a nonpositive or non-finite normalization"))
@@ -422,7 +433,7 @@ end
 function _maxwellian(centers::Vector{Float64}, kTe::Float64)
     isfinite(kTe) && kTe > 0 || throw(ArgumentError("Maxwellian energy must be finite and positive"))
     f = @. 2/sqrt(pi) * kTe^(-1.5) * exp(-centers/kTe)
-    _normalize_eedf!(f, centers; require_positive=true)
+    _normalize_eedf!(f, centers; require_nonnegative=true)
     return f
 end
 
@@ -437,7 +448,7 @@ function _electron_mobility(ws::EEDFWorkspace, model::EEDFModel, state::EEDFStat
         isfinite(denom) && denom != 0 || throw(ErrorException("invalid mobility denominator at edge $e"))
         y[e] = edges[e] * df / denom
     end
-    density = state.P / (_EEDF_BOLTZMANN * state.T)
+    density = state.number_density
     mobility = -_EEDF_GAMMA / 3 * _eedf_simpson(y, edges) / density
     isfinite(mobility) || throw(ErrorException("non-finite electron mobility"))
     return mobility
@@ -448,13 +459,17 @@ function _edge_distribution(edges::Vector{Float64}, centers::Vector{Float64}, f:
 end
 
 """
-    solve_eedf(model, state; options=TwoTermOptions())
+    solve_eedf(model, state; options=TwoTermOptions(), initial=nothing)
 
 Solve the fixed-grid temporal two-term EEDF problem. Molecular weights in
-`state` are kg/kmol and `reduced_field` is in V*m^2.
+`state` are kg/kmol and `reduced_field` is in V*m^2. Pass a previous
+[`EEDFResult`](@ref) as `initial` to continue from its center distribution on the
+same grid. The input is copied. At or below `options.low_field_threshold`,
+the calculation always starts from the gas-temperature Maxwellian.
 """
 function solve_eedf(model::EEDFModel, state::EEDFState;
-                    options::TwoTermOptions=TwoTermOptions())
+                    options::TwoTermOptions=TwoTermOptions(),
+                    initial::Union{Nothing,EEDFResult}=nothing)
     _validate_model(model)
     for target in model.target_names
         haskey(state.mole_fractions, target) || throw(ArgumentError("EEDF state is missing target '$target'"))
@@ -471,6 +486,7 @@ function solve_eedf(model::EEDFModel, state::EEDFState;
     isfinite(state.P) && state.P > 0 || throw(ArgumentError("EEDF pressure must be finite and positive"))
     isfinite(state.reduced_field) && state.reduced_field >= 0 || throw(ArgumentError("reduced electric field must be finite and nonnegative"))
     isfinite(state.frequency) && state.frequency >= 0 || throw(ArgumentError("electric field frequency must be finite and nonnegative"))
+    isfinite(state.number_density) && state.number_density > 0 || throw(ArgumentError("EEDF number density must be finite and positive m⁻³"))
     options.max_iterations > 0 || throw(ArgumentError("max_iterations must be positive"))
     isfinite(options.delta0) && options.delta0 > 0 || throw(ArgumentError("delta0 must be finite and positive"))
     isfinite(options.factor) && options.factor > 1 || throw(ArgumentError("factor must be finite and greater than one"))
@@ -480,13 +496,24 @@ function solve_eedf(model::EEDFModel, state::EEDFState;
     isfinite(options.low_field_threshold) && options.low_field_threshold >= 0 || throw(ArgumentError("low_field_threshold must be finite and nonnegative"))
     ws = EEDFWorkspace(model, state)
 
-    kTe = state.reduced_field <= options.low_field_threshold ?
-           _EEDF_BOLTZMANN*state.T/_EEDF_ELECTRON_CHARGE : options.initial_kTe
-    f = _maxwellian(ws.centers, kTe)
+    if initial !== nothing
+        initial.edges == model.energy_edges && initial.centers == ws.centers ||
+            throw(ArgumentError("initial EEDF must use the same energy grid"))
+        length(initial.center_eedf) == length(ws.centers) ||
+            throw(ArgumentError("initial center EEDF length does not match the grid"))
+        all(isfinite, initial.center_eedf) && all(initial.center_eedf .>= 0) ||
+            throw(ArgumentError("initial center EEDF must be finite and nonnegative"))
+        norm = _eedf_norm(initial.center_eedf, ws.centers)
+        isfinite(norm) && abs(norm - 1) <= 1e-12 ||
+            throw(ArgumentError("initial center EEDF must be normalized"))
+    end
+    low_field = state.reduced_field <= options.low_field_threshold
+    kTe = low_field ? _EEDF_BOLTZMANN*state.T/_EEDF_ELECTRON_CHARGE : options.initial_kTe
+    f = !low_field && initial !== nothing ? copy(initial.center_eedf) : _maxwellian(ws.centers, kTe)
     errors = Float64[]
     deltas = Float64[]
     iterations = 0
-    converged = state.reduced_field <= options.low_field_threshold
+    converged = low_field
 
     if !converged
         err0 = 0.0
@@ -506,7 +533,7 @@ function solve_eedf(model::EEDFModel, state::EEDFState;
                 ws.system[i,i] += 1
             end
             f = ws.system \ old
-            _normalize_eedf!(f, ws.centers; require_positive=true)
+            _normalize_eedf!(f, ws.centers; require_nonnegative=true)
             err0 = err1
             err1 = _eedf_norm(abs.(old .- f), ws.centers)
             isfinite(err1) || throw(ErrorException("non-finite convergence error at iteration $iteration"))
@@ -521,7 +548,7 @@ function solve_eedf(model::EEDFModel, state::EEDFState;
     end
 
     edge_f = _edge_distribution(model.energy_edges, ws.centers, f)
-    all(isfinite, edge_f) && all(edge_f .> 0) || throw(ErrorException("edge EEDF positivity invariant failed"))
+    all(isfinite, edge_f) && all(edge_f .>= 0) || throw(ErrorException("edge EEDF nonnegativity invariant failed"))
     mobility = _electron_mobility(ws, model, state, f, options.positivity_floor)
     return EEDFResult(copy(model.energy_edges), edge_f, copy(ws.centers), f,
                       mobility, iterations, converged, errors, deltas)

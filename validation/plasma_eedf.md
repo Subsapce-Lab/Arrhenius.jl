@@ -46,3 +46,20 @@ Both output directories must be new. The drivers save one first call and nine
 warm calls, retaining every sample. Compare every saved distribution before
 dividing the warm medians; the drivers do not independently declare performance
 qualification. Plotting and output serialization are outside the timers.
+
+
+## Phase-selected collisions and continuation
+
+`read_eedf_model(path; phase, data_paths)` resolves selected reaction sections
+and imported species or reactions. Root collision tables remain included.
+`EEDFState` accepts an explicit total `number_density` in m⁻³ for gases whose
+density differs from `P/(kB*T)`.
+
+Pass an earlier result with `solve_eedf(model, state; initial=previous)` to
+continue from its center distribution on the same grid. The input remains
+unchanged. At or below the low-field threshold, the solver resets to the
+current gas-temperature Maxwellian, including valid underflowed zero tails.
+
+[Pulse EEDF checks](results/cantera4_wsl_pulse_eedf_primitives.json) cover all
+34 collision tables and the original methane-discharge example's initial and
+190 Td states. The complete pulse chemistry and trajectory remain unvalidated.

@@ -60,13 +60,131 @@ function _eedf_side(side, ctx)
     return counts
 end
 
-function _eedf_reaction_kind(react, prod)
-    react == prod && return ElasticCollision
-    re = get(react, "Electron", 0)
-    pe = get(prod, "Electron", 0)
-    pe > re && return IonizationCollision
-    pe < re && return AttachmentCollision
+function _eedf_reaction_kind(react, prod, electron, compositions, ctx)
+    react == prod && return EffectiveCollision
+
+    # Files predating phase species declarations conventionally used Electron.
+    # Keep their stoichiometric inference as a compatibility path; phase-aware
+    # files use the selected species compositions, matching Cantera's charge test.
+    if compositions === nothing
+        pe = get(prod, electron, 0)
+        re = get(react, electron, 0)
+        pe > re && return IonizationCollision
+        pe < re && return AttachmentCollision
+        return ExcitationCollision
+    end
+
+    positive = false
+    negative = false
+    for name in keys(prod)
+        name == electron && continue
+        haskey(compositions, name) ||
+            _eedf_error("$ctx: product species $(repr(name)) is not selected by the phase")
+        charge = -get(compositions[name], "E", 0.0)
+        positive |= charge > 0.0
+        negative |= charge < 0.0
+    end
+    positive && negative &&
+        _eedf_error("$ctx: both positive and negative product ions make collision kind ambiguous")
+    positive && return IonizationCollision
+    negative && return AttachmentCollision
     return ExcitationCollision
+end
+
+function _eedf_species_context(root, phase, path, data_paths)
+    haskey(phase, "species") || return "Electron", nothing
+    species_root = root
+    if !haskey(root, "species")
+        species_root = copy(root)
+        species_root["species"] = Any[]
+    end
+    names, defs = _plasma_species(species_root, phase, path, data_paths)
+    compositions = Dict{String,Dict{String,Float64}}()
+    electrons = String[]
+    for (name, def) in zip(names, defs)
+        comp = get(def, "composition", nothing)
+        comp isa AbstractDict ||
+            _eedf_error("selected species '$name' has no composition mapping")
+        parsed = Dict{String,Float64}()
+        nonzero = 0
+        for (raw_element, raw_count) in comp
+            element = String(raw_element)
+            count = _eedf_float(raw_count, "species '$name' composition $element")
+            parsed[element] = count
+            count != 0.0 && (nonzero += 1)
+        end
+        compositions[name] = parsed
+        nonzero == 1 && get(parsed, "E", 0.0) == 1.0 && push!(electrons, name)
+    end
+    length(electrons) == 1 ||
+        _eedf_error("phase must select exactly one pure {E: 1} electron species")
+    return only(electrons), compositions
+end
+
+function _eedf_section(root, path, data_paths, section)
+    source = root
+    key = section
+    context = "mechanism section '$section'"
+    if occursin('/', section)
+        endswith(section, "/reactions") ||
+            _eedf_error("unsupported imported reaction section '$section'; expected <file>/reactions")
+        file = section[1:end-length("/reactions")]
+        isempty(file) && _eedf_error("invalid imported reaction section '$section'")
+        imported = _plasma_import(file, path, data_paths)
+        source = YAML.load_file(imported)
+        source isa AbstractDict || _eedf_error("$imported is not a YAML mapping")
+        key = "reactions"
+        context = "$imported reactions"
+    end
+    entries = get(source, key, nothing)
+    entries isa AbstractVector || _eedf_error("missing or invalid $context")
+    return entries, context
+end
+
+function _eedf_select(entries, wanted, context)
+    wanted == "all" && return collect(entries)
+    wanted isa AbstractVector ||
+        _eedf_error("$context selection must be 'all' or a list of reaction IDs")
+    selected = Any[]
+    for raw_id in wanted
+        raw_id isa AbstractString || _eedf_error("$context reaction IDs must be strings")
+        hits = findall(e -> e isa AbstractDict && get(e, "id", nothing) == raw_id,
+                       entries)
+        isempty(hits) && _eedf_error("reaction ID $(repr(raw_id)) not found in $context")
+        length(hits) == 1 ||
+            _eedf_error("reaction ID $(repr(raw_id)) is ambiguous in $context")
+        push!(selected, entries[only(hits)])
+    end
+    return selected
+end
+
+function _eedf_selected_sections(root, phase, path, data_paths)
+    selected = get(phase, "reactions", nothing)
+    if selected === nothing
+        # Compatibility with the standalone Phelps-style layout, which predates
+        # phase reaction selectors.
+        return [(get(root, "electron-collisions", Any[]), :root,
+                 "electron-collisions"),
+                (get(root, "reactions", Any[]), :reaction, "reactions")]
+    end
+    selected isa AbstractVector || _eedf_error("phase reactions must be a list")
+    # PlasmaPhase installs root collision tables before selecting kinetics.
+    root_entries = get(root, "electron-collisions", Any[])
+    root_entries isa AbstractVector || _eedf_error("electron-collisions must be a list")
+    sections = Tuple{Vector,Symbol,String}[(collect(root_entries), :root, "electron-collisions")]
+    for (i, item) in enumerate(selected)
+        item isa AbstractDict && length(item) == 1 ||
+            _eedf_error("phase reactions item $i must select one section")
+        raw_section, wanted = first(item)
+        raw_section isa AbstractString ||
+            _eedf_error("phase reactions item $i has a non-string section name")
+        section = String(raw_section)
+        entries, context = _eedf_section(root, path, data_paths, section)
+        chosen = _eedf_select(entries, wanted, context)
+        style = section == "electron-collisions" ? :root : :reaction
+        push!(sections, (chosen, style, context))
+    end
+    return sections
 end
 
 function _eedf_grid(phase, ctx)
@@ -109,20 +227,31 @@ function _eedf_phase(root, phase)
 end
 
 """
-    read_eedf_model(path; phase=nothing) -> EEDFModel
+    read_eedf_model(path; phase=nothing, data_paths=String[]) -> EEDFModel
 
 Read electron-collision cross sections from a Cantera-style plasma YAML file.
-Only `Boltzmann-two-term` EEDF definitions are supported. Root-level
-`electron-collisions` entries require an explicit `kind`; reactions of type
-`electron-collision-plasma` get their kind from electron stoichiometry and must
-have exactly one collision target besides `Electron`. A zero threshold is kept as
-zero for root entries; for plasma reactions it is replaced by the first
-strictly positive tabulated energy level.
+Only `Boltzmann-two-term` EEDF definitions are supported. Collision reaction
+sections are resolved from the selected phase, including `<file>/reactions`
+imports searched through `data_paths`. Root-level `electron-collisions` entries
+require an explicit `kind`. Reaction kinds use an explicit `kind` when present;
+otherwise they are inferred from selected species composition and product charge.
+For reaction entries, zero thresholds are inferred from the first positive
+tabulated energy only for excitation, ionization, and attachment collisions.
+The selector-free `electron-collisions` layout keeps its legacy `Electron`
+identity and explicit root thresholds without resolving thermodynamic imports.
 """
-function read_eedf_model(path; phase=nothing)
+function read_eedf_model(path; phase=nothing, data_paths=String[])
+    data_paths isa AbstractVector || _eedf_error("data_paths must be a list")
+    all(p -> p isa AbstractString, data_paths) ||
+        _eedf_error("data_paths entries must be strings")
     root = YAML.load_file(path)
     root isa AbstractDict || _eedf_error("$(path): not a YAML mapping")
-    edges = _eedf_grid(_eedf_phase(root, phase), "read_eedf_model")
+    selected_phase = _eedf_phase(root, phase)
+    edges = _eedf_grid(selected_phase, "read_eedf_model")
+    legacy_root = !haskey(selected_phase, "reactions") &&
+                  haskey(root, "electron-collisions")
+    electron, compositions = legacy_root ? ("Electron", nothing) :
+        _eedf_species_context(root, selected_phase, path, data_paths)
 
     collisions = ElectronCollision[]
     targets = String[]
@@ -140,54 +269,73 @@ function read_eedf_model(path; phase=nothing)
               ElectronCollision(target, kind, thr, energy, cross, origin))
     end
 
-    entries = get(root, "electron-collisions", Any[])
-    entries isa AbstractVector ||
-        _eedf_error("electron-collisions must be a list")
-    for entry in entries
-        entry isa AbstractDict || _eedf_error("electron-collisions: entry must be a mapping")
-        ctx = "electron-collisions entry $(repr(get(entry, "target", nothing)))"
-        target = get(entry, "target", nothing)
-        target isa AbstractString && !isempty(strip(target)) && target != "Electron" ||
-            _eedf_error("electron-collisions entry: missing target")
-        ks = get(entry, "kind", nothing)
-        haskey(_EEDF_KINDS, ks) ||
-            _eedf_error("$ctx: explicit kind required, one of " *
-                        "$(join(sort(collect(keys(_EEDF_KINDS))), ", "))")
-        energy, cross = _eedf_table(entry, ctx)
-        add!(String(target), _EEDF_KINDS[ks], _eedf_threshold(entry, ctx),
-             energy, cross, :root)
-    end
+    for (entries, style, section_context) in
+            _eedf_selected_sections(root, selected_phase, path, data_paths)
+        entries isa AbstractVector || _eedf_error("$section_context must be a list")
+        for entry in entries
+            entry isa AbstractDict || _eedf_error("$section_context entry must be a mapping")
+            if style === :root
+                ctx = "$section_context entry $(repr(get(entry, "target", nothing)))"
+                target = get(entry, "target", nothing)
+                target isa AbstractString && !isempty(strip(target)) && target != electron ||
+                    _eedf_error("$section_context entry: missing or invalid target")
+                compositions === nothing || haskey(compositions, String(target)) ||
+                    _eedf_error("$ctx: target is not selected by the phase")
+                raw_kind = get(entry, "kind", nothing)
+                haskey(_EEDF_KINDS, raw_kind) ||
+                    _eedf_error("$ctx: explicit kind required, one of " *
+                                "$(join(sort(collect(keys(_EEDF_KINDS))), ", "))")
+                kind = _EEDF_KINDS[raw_kind]
+                energy, cross = _eedf_table(entry, ctx)
+                threshold = _eedf_threshold(entry, ctx)
+            else
+                get(entry, "type", nothing) == "electron-collision-plasma" || continue
+                eq = get(entry, "equation", nothing)
+                eq isa AbstractString ||
+                    _eedf_error("electron-collision-plasma reaction: missing equation")
+                ctx = "reaction '$eq'"
+                occursin("<=>", eq) &&
+                    _eedf_error("$ctx: reversible electron collisions are unsupported")
+                sides = split(eq, "=>")
+                length(sides) == 2 || _eedf_error("$ctx: malformed equation")
+                react = _eedf_side(sides[1], ctx)
+                prod = _eedf_side(sides[2], ctx)
+                if compositions !== nothing
+                    for name in union(keys(react), keys(prod))
+                        haskey(compositions, name) ||
+                            _eedf_error("$ctx: species $(repr(name)) is not selected by the phase")
+                    end
+                end
+                get(react, electron, 0) == 1 ||
+                    _eedf_error("$ctx: one incident $electron required")
+                target_names = filter(!=(electron), collect(keys(react)))
+                length(target_names) == 1 ||
+                    _eedf_error("$ctx: expected exactly one collision target besides " *
+                                "$electron, got $(join(target_names, ", "))")
+                target = only(target_names)
+                react[target] == 1 || _eedf_error("$ctx: one target particle required")
+                raw_kind = get(entry, "kind", nothing)
+                if raw_kind === nothing
+                    kind = _eedf_reaction_kind(react, prod, electron, compositions, ctx)
+                else
+                    haskey(_EEDF_KINDS, raw_kind) ||
+                        _eedf_error("$ctx: unsupported collision kind $(repr(raw_kind))")
+                    kind = _EEDF_KINDS[raw_kind]
+                end
+                energy, cross = _eedf_table(entry, ctx)
+                threshold = _eedf_threshold(entry, ctx)
+            end
 
-    reactions = get(root, "reactions", Any[])
-    reactions isa AbstractVector || _eedf_error("reactions must be a list")
-    for r in reactions
-        r isa AbstractDict || _eedf_error("reactions: entry must be a mapping")
-        get(r, "type", nothing) == "electron-collision-plasma" || continue
-        eq = get(r, "equation", nothing)
-        eq isa AbstractString ||
-            _eedf_error("electron-collision-plasma reaction: missing equation")
-        ctx = "reaction '$eq'"
-        occursin("<=>", eq) && _eedf_error("$ctx: reversible electron collisions are unsupported")
-        sides = split(eq, "=>")
-        length(sides) == 2 || _eedf_error("$ctx: malformed equation")
-        react = _eedf_side(sides[1], ctx)
-        prod = _eedf_side(sides[2], ctx)
-        get(react, "Electron", 0) == 1 || _eedf_error("$ctx: one incident Electron required")
-        neutral = filter(!=("Electron"), collect(keys(react)))
-        length(neutral) == 1 ||
-            _eedf_error("$ctx: expected exactly one collision target besides " *
-                        "Electron, got $(join(neutral, ", "))")
-        react[neutral[1]] == 1 || _eedf_error("$ctx: one target particle required")
-        energy, cross = _eedf_table(r, ctx)
-        thr = _eedf_threshold(r, ctx)
-        if thr == 0.0
-            idx = findfirst(>(0.0), energy)
-            idx === nothing &&
-                _eedf_error("$ctx: cannot infer threshold; no positive energy level")
-            thr = energy[idx]
+            if style === :reaction && threshold == 0.0 &&
+                    kind in (ExcitationCollision, IonizationCollision,
+                             AttachmentCollision)
+                idx = findfirst(>(0.0), energy)
+                idx === nothing &&
+                    _eedf_error("$ctx: cannot infer threshold; no positive energy level")
+                threshold = energy[idx]
+            end
+            add!(String(target), kind, threshold, energy, cross, style)
         end
-        add!(neutral[1], _eedf_reaction_kind(react, prod), thr,
-             energy, cross, :reaction)
     end
 
     isempty(targets) &&

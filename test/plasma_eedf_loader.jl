@@ -83,16 +83,16 @@ reactions:
         @test length(m.collisions) == 4
         kinds = [c.kind for c in m.collisions]
         @test kinds == [IonizationCollision, AttachmentCollision,
-                        ElasticCollision, ExcitationCollision]
+                        EffectiveCollision, ExcitationCollision]
         # reaction zero threshold -> first strictly positive energy level
         @test m.collisions[1].threshold == 15.6
         @test m.collisions[2].threshold == 0.06
-        @test m.collisions[3].threshold == 1.0
+        @test m.collisions[3].threshold == 0.0
         @test m.collisions[4].threshold == 0.977
         @test all(c.origin === :reaction for c in m.collisions)
         # ionic "+" preserved by spaced-" + " splitting
         @test m.target_names == ["N2", "O2"]
-        # duplicate elastic for O2 must be rejected
+        # duplicate background records for O2 must be rejected
         bad = write_tmp(BASE * """
 reactions:
 - equation: O2 + Electron => O2 + Electron
@@ -105,6 +105,110 @@ reactions:
   cross-sections: [1.0e-20, 1.0e-20, 1.0e-20]
 """)
         @test_throws ArgumentError read_eedf_model(bad)
+    end
+
+    @testset "phase sections, imports, and renamed electron" begin
+        mechanism_dir = mktempdir()
+        data_dir = mktempdir()
+        imported = joinpath(data_dir, "catalog.yaml")
+        write(imported, """
+species:
+- {name: carrier, composition: {E: 1}}
+- {name: N2, composition: {N: 2}}
+- {name: O2, composition: {O: 2}}
+- {name: N2+, composition: {N: 2, E: -1}}
+- {name: O2-, composition: {O: 2, E: 1}}
+reactions:
+- id: imported-attachment
+  equation: O2 + carrier => O2-
+  type: electron-collision-plasma
+  energy-levels: [0.0, 0.2, 1.0]
+  cross-sections: [0.0, 1.0e-22, 0.0]
+- id: imported-unused
+  equation: N2 + carrier => N2+ + 2 carrier
+  type: electron-collision-plasma
+  energy-levels: [0.0, 9.0, 10.0]
+  cross-sections: [0.0, 0.0, 1.0e-22]
+""")
+        path = joinpath(mechanism_dir, "case.yaml")
+        write(path, """
+phases:
+- name: selected
+  species:
+  - catalog.yaml/species: all
+  reactions:
+  - collisions: [elastic, ion]
+  - catalog.yaml/reactions: [imported-attachment]
+  electron-energy-distribution:
+    type: Boltzmann-two-term
+    energy-levels: [0.0, 1.0, 2.0, 3.0]
+- name: other
+  species:
+  - catalog.yaml/species: all
+  reactions:
+  - unused: all
+  electron-energy-distribution:
+    type: Boltzmann-two-term
+    energy-levels: [0.0, 2.0, 4.0]
+collisions:
+- id: elastic
+  equation: N2 + carrier => carrier + N2
+  type: electron-collision-plasma
+  kind: elastic
+  threshold: 0.0
+  energy-levels: [0.0, 1.0, 2.0]
+  cross-sections: [1.0e-20, 1.0e-20, 1.0e-20]
+- id: ion
+  equation: N2 + carrier => N2+ + 2 carrier
+  type: electron-collision-plasma
+  energy-levels: [0.0, 12.0, 13.0]
+  cross-sections: [0.0, 0.0, 1.0e-22]
+unused:
+- id: unused-local
+  equation: N2 + carrier => N2 + carrier
+  type: electron-collision-plasma
+  energy-levels: [0.0, 1.0]
+  cross-sections: [1.0e-20, 1.0e-20]
+electron-collisions:
+- target: O2
+  kind: effective
+  energy-levels: [0.0, 1.0]
+  cross-sections: [1.0e-20, 1.0e-20]
+""")
+
+        @test_throws ArgumentError read_eedf_model(path; phase="selected")
+        model = read_eedf_model(path; phase="selected", data_paths=[data_dir])
+        @test model.target_names == ["O2", "N2"]
+        @test [c.kind for c in model.collisions] ==
+            [EffectiveCollision, ElasticCollision, IonizationCollision, AttachmentCollision]
+        @test [c.threshold for c in model.collisions] == [0.0, 0.0, 12.0, 0.2]
+        @test [c.origin for c in model.collisions] == [:root, :reaction, :reaction, :reaction]
+        @test length(read_eedf_model(path; phase="other",
+                                     data_paths=[data_dir]).collisions) == 2
+
+        all_path = joinpath(mechanism_dir, "all.yaml")
+        write(all_path, replace(read(path, String),
+            "- collisions: [elastic, ion]\n  - catalog.yaml/reactions: [imported-attachment]" =>
+            "- collisions: all"))
+        @test length(read_eedf_model(all_path; phase="selected",
+                                     data_paths=[data_dir]).collisions) == 3
+
+        bad_selector = joinpath(mechanism_dir, "bad-selector.yaml")
+        write(bad_selector, replace(read(path, String),
+            "collisions: [elastic, ion]" => "collisions: elastic"))
+        @test_throws ArgumentError read_eedf_model(bad_selector; phase="selected",
+                                                   data_paths=[data_dir])
+
+        reversible = joinpath(mechanism_dir, "reversible.yaml")
+        write(reversible, replace(read(path, String),
+            "N2 + carrier => carrier + N2" => "N2 + carrier <=> carrier + N2"))
+        @test_throws ArgumentError read_eedf_model(reversible; phase="selected",
+                                                   data_paths=[data_dir])
+
+        write(imported, replace(read(imported, String), "species:\n" =>
+            "species:\n- {name: second-electron, composition: {E: 1}}\n"))
+        @test_throws ArgumentError read_eedf_model(path; phase="selected",
+                                                   data_paths=[data_dir])
     end
 
     @testset "validation failures" begin

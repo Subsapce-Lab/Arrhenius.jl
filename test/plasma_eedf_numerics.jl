@@ -127,4 +127,63 @@ end
     @test_throws ArgumentError EEDFWorkspace(duplicate, duplicate_state)
 end
 
+@testset "EEDF density and continuation contracts" begin
+    model = EEDFModel(collect(0.0:40.0), [_toy_collision(EffectiveCollision)], ["N2"])
+    common = (T=300.0, P=101325.0, mole_fractions=Dict("N2"=>1.0),
+        molecular_weights=Dict("N2"=>28.014))
+    low = EEDFState(model; common..., reduced_field=0.0)
+    density = low.number_density
+    @test density == low.P/(Arrhenius._EEDF_BOLTZMANN*low.T)
+    old_positional = EEDFState(low.T, low.P, low.mole_fractions, low.molecular_weights,
+        low.reduced_field, low.frequency)
+    @test old_positional.number_density == density
+    cold = solve_eedf(model, low)
+    # The original pulse grid at300K underflows in the Maxwellian tail.
+    @test any(iszero, cold.center_eedf)
+    @test all(cold.center_eedf .>= 0)
+    @test Arrhenius._eedf_norm(cold.center_eedf, cold.centers) ≈ 1.0 atol=1e-12
+    same = solve_eedf(model, EEDFState(model; common..., reduced_field=0.0, number_density=density))
+    doubled = solve_eedf(model, EEDFState(model; common..., reduced_field=0.0, number_density=2density))
+    @test same.center_eedf == cold.center_eedf
+    @test same.edge_eedf == cold.edge_eedf
+    @test same.mobility == cold.mobility
+    @test doubled.center_eedf == cold.center_eedf
+    @test doubled.mobility == cold.mobility/2
+    for invalid in (0.0, -1.0, Inf, NaN)
+        @test_throws ArgumentError EEDFState(model; common..., reduced_field=0.0, number_density=invalid)
+    end
+    malformed = EEDFState(low.T, low.P, low.mole_fractions, low.molecular_weights, 0.0, 0.0, NaN)
+    @test_throws ArgumentError solve_eedf(model, malformed)
+
+    # Holding frequency/N fixed must preserve the AC operator, including its field term.
+    ac = EEDFState(model; common..., reduced_field=2e-19, frequency=1e9, number_density=density)
+    ac2 = EEDFState(model; common..., reduced_field=2e-19, frequency=2e9, number_density=2density)
+    ws = EEDFWorkspace(model, ac); ws2 = EEDFWorkspace(model, ac2)
+    Arrhenius._assemble_operator!(ws, model, ac, cold.center_eedf, 1e-300)
+    Arrhenius._assemble_operator!(ws2, model, ac2, cold.center_eedf, 1e-300)
+    @test ws.operator == ws2.operator
+
+    # A deliberately different, normalized prior verifies low-field reset semantics.
+    prior = deepcopy(cold)
+    prior.center_eedf .= Arrhenius._maxwellian(prior.centers, 2.0)
+    saved = deepcopy(prior)
+    reset = solve_eedf(model, low; initial=prior)
+    @test reset.center_eedf == cold.center_eedf
+    @test reset.edge_eedf == cold.edge_eedf
+    @test reset.mobility == cold.mobility
+    @test prior.center_eedf == saved.center_eedf
+    @test reset.center_eedf !== prior.center_eedf
+    for change in (r->(r.center_eedf[1]=-1.0), r->(r.center_eedf[1]=NaN),
+                   r->(r.center_eedf .*= 2), r->pop!(r.center_eedf),
+                   r->(r.edges[end]+=1), r->(r.centers[end]+=1))
+        bad = deepcopy(prior); change(bad)
+        @test_throws ArgumentError solve_eedf(model, low; initial=bad)
+    end
+    # Finite edge samples cannot substitute for a compatible center distribution.
+    hot = EEDFState(model; common..., reduced_field=2e-19)
+    continued = solve_eedf(model, hot; initial=prior)
+    @test continued.converged
+    @test prior.center_eedf == saved.center_eedf
+    @test continued.center_eedf !== prior.center_eedf
+end
 end # module
