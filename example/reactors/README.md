@@ -7,7 +7,7 @@ julia --project=example/reactors -e 'using Pkg; Pkg.instantiate()'
 julia --project=example/reactors example/reactors/constant_pressure_ignition.jl
 ```
 
-This environment uses the local Arrhenius checkout. Mechanisms require a YAML
+This environment uses the local Arrhenius checkout. Ideal-gas mechanisms require a YAML
 file and its prepared `.npz` sidecar, as described in the main README.
 
 `ode_solver.jl` supplies the `native_bdf` integrator for `solve_reactor`.
@@ -48,3 +48,18 @@ julia --project=example/reactors example/reactors/preconditioned_integration.jl 
 
 The example reuses the loaded mechanism, starts a fresh reactor for each mode,
 and returns time, temperature, CO2 and fuel mass-fraction histories.
+
+`plasma.jl` solves an isothermal oxygen glow discharge with separate gas and
+electron temperatures. Its `PlasmaMechanism` reads the original plasma YAML
+and imported species YAML directly, without a sidecar:
+
+```sh
+julia --project=example/reactors example/reactors/plasma.jl /path/to/oxygen-plasma-itikawa.yaml /path/to/species-data
+```
+
+The second path locates `nasa_gas.yaml`; it may be omitted when that file is
+next to the mechanism. The callable `plasma(mechanism)` reuses the loaded
+mechanism and creates fresh state and solver storage on every call. It returns
+time and electron mole fraction together with the reactor and solution.
+`native_bdf` uses a dense automatic-differentiation Jacobian for this
+species-only plasma reactor. Gas and electron temperatures remain fixed.

@@ -6,6 +6,7 @@ using Test
 
 include("plasma_eedf_loader.jl")
 include("plasma_eedf_numerics.jl")
+include("plasma_native.jl")
 include("equilibrium_native.jl")
 include("condensed_equilibrium_native.jl")
 include("ideal_gas_states.jl")

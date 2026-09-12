@@ -1,5 +1,6 @@
 using SciMLBase
 using OrdinaryDiffEqBDF
+using LinearAlgebra
 
 # The optional environment pins the cache interfaces used by the structured
 # solver. Other environments retain the ordinary dense QNDF integration.
@@ -30,6 +31,18 @@ with QNDF's ordinary dense linear solver for supported reactors. The default
 function native_bdf(problem; linear_solver=:auto, kwargs...)
     linear_solver in (:auto, :dense) ||
         throw(ArgumentError("linear_solver must be :auto or :dense"))
+    if problem.f isa Arrhenius.PlasmaRHS
+        f = SciMLBase.ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad,
+            jac_prototype=zeros(length(problem.u0), length(problem.u0)))
+        ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
+        outside_domain = (u, p, t) -> !all(isfinite, u) ||
+            dot(problem.f.density_weights, u) <= 0
+        solution = SciMLBase.solve(ode, OrdinaryDiffEqBDF.QNDF();
+            isoutofdomain=outside_domain, kwargs...)
+        SciMLBase.successful_retcode(solution) ||
+            error("plasma integration failed: $(solution.retcode)")
+        return solution
+    end
     if isdefined(@__MODULE__, :StructuredReactorSolver)
         if linear_solver === :dense
             guard = StructuredReactorSolver.try_guarded_jacobian(problem)

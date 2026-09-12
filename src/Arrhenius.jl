@@ -24,6 +24,8 @@ module Arrhenius
     include("IdealGasStates.jl")
     include("IdealGasMixing.jl")
     include("Reactors.jl")
+    include("PlasmaKinetics.jl")
+    include("PlasmaIO.jl")
     include("ReactorNetworks.jl")
     include("MovingWallReactors.jl")
     include("SurfaceKinetics.jl")

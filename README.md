@@ -243,6 +243,23 @@ With the Phelps air dataset from Cantera's example data, run:
 julia --project=. example/thermodynamics/plasma_eedf.jl path/to/air-plasma-Phelps.yaml eedf.csv
 ```
 
+The [oxygen glow-discharge example](example/reactors/plasma.jl) integrates
+charged-species kinetics with fixed gas and electron temperatures.
+`PlasmaMechanism` reads isotropic plasma YAML and imported species compositions
+directly, including two-temperature rates and electron-collision cross sections.
+`PlasmaState` provides density-preserving electron-energy changes, and
+`PlasmaReactor` supplies a constant-pressure, species-only ODE and Jacobian.
+The optional reactor environment supplies its QNDF integrator. No mechanism
+sidecar is required for this plasma path:
+
+```bash
+julia --project=example/reactors example/reactors/plasma.jl path/to/oxygen-plasma-itikawa.yaml path/to/species-data
+```
+
+The species-data directory must contain `nasa_gas.yaml` referenced by the
+oxygen mechanism. The YAML files are read by Julia; Cantera is not required
+at runtime.
+
 ## Publication
 
 + [Arrhenius.jl: A Differentiable Combustion Simulation Package](https://arxiv.org/pdf/2107.06172.pdf): overview of Arrhenius.jl and applications in deep mechanism reduction, uncertainty quantification, mechanism tuning and model discovery. [Slides in NCM21](https://www.slideshare.net/WeiqiJi/arrheniusjl-a-differentiable-combustion-simulation-package-248457895), [Vedio for NCM21](https://www.youtube.com/watch?v=X1mwpW78NvA).
