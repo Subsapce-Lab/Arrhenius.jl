@@ -1,428 +1,301 @@
-"""Paired full-source ic_engine.py timing with independent physical validation.
+"""Pair the public complete QNDF engine with the unchanged pinned CT source.
 
-Run ic_engine_timing.jl first on the same otherwise idle host. This driver
-executes the calculation AST from the exact pinned Cantera source: mechanism
-and network construction, all eight revolutions, output quantities and source
-integral estimates. Imports, plotting, printing and artifact I/O are excluded.
-The native timer calls the shared solve_ic_engine and observable/summary APIs,
-including their converged accepted-state quadrature. The source's sparse heat
-integral is retained as a source estimate, never used as the physical reference.
-
-python validation/ic_engine_timing.py --julia-result native.npz --output paired.json \
-    --native-mechanism dodecane_IG.yaml --source-example /source/reactors/ic_engine.py \
-    --cantera-build-record build-record.json --target apple-m4 --repetitions 9
-Use --validate-only for one nonqualifying invocation. Controlled qualification
-requires both sides to record controlled mode and all environment/build checks.
+smoke = first + one warm on each side; controlled = first + nine warm.
+Run the Julia driver first. Source construction/solve/required output integrals
+are timed; replay, provenance, artifact I/O and independent refined references
+are outside timers. No prior trajectory is ever a solver initial condition.
 """
 from pathlib import Path
 import argparse
-import ast
-import copy
 import gc
 import hashlib
 import json
 import os
 import statistics
+import sys
 import time
 import tomllib
-from benchmark_environment import host_metadata, matches_target, cantera_library_hashes, verify_numerical_threads
+from types import SimpleNamespace
 
-_started = time.perf_counter()
+_imports_started=time.perf_counter()
 import numpy as np
 import cantera as ct
 import cantera._cantera as compiled
-IMPORT_SECONDS = time.perf_counter()-_started
-SOURCE_COMMIT = "726522be4e2a13454d8415b7ef799d621f665cf3"
-SOURCE_SHA256 = "43acf803aa5e4589bb1e718a480cbcc7db4558e49cdb97bb5b7ff67d928a68bb"
-MIN_REPETITIONS = 9
-REFINED_RTOL, REFINED_ATOL = 1e-13, 1e-24
-TRAPEZOID = getattr(np,"trapezoid",None) or np.trapz
+from ic_engine_source import (SOURCE_COMMIT,SOURCE_SHA256,source_programs,source_calculation,
+    output_replay,source_checks,verify_mechanisms,sha)
+import ic_engine_qndf_case as reference
+from benchmark_environment import host_metadata,matches_target,loaded_library_paths,verify_numerical_threads
+IMPORT_SECONDS=time.perf_counter()-_imports_started
 
+SOURCE_FILES=("Project.toml","example/reactors/ic_engine.jl","example/reactors/ic_engine_setup.jl",
+    "example/reactors/ic_engine_qndf_solver.jl","validation/ic_engine_timing.jl",
+    "validation/ic_engine_timing.py","validation/ic_engine_source.py","validation/ic_engine_qndf_case.jl",
+    "validation/ic_engine_qndf_case.py","validation/numerical_threads.jl","validation/benchmark_environment.py")
 
-def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def source_inventory(root):
+    files={p.relative_to(root).as_posix():sha(p) for folder in ("src","example/reactors/engine_qndf")
+           for p in (root/folder).rglob("*") if p.is_file()}
+    for name in SOURCE_FILES:files[name]=sha(root/name)
+    return files
 
-
-def require_source_checks(result, label):
-    if not source_checks(result):
-        raise RuntimeError(f"{label} failed source output checks")
+def require_inventory(actual,expected,label):
+    if actual!=expected:
+        missing=sorted(set(expected)-set(actual));added=sorted(set(actual)-set(expected))
+        changed=sorted(k for k in actual.keys()&expected.keys() if actual[k]!=expected[k])
+        raise ValueError(f"{label} membership/bytes changed: missing={missing}, added={added}, changed={changed}")
     return True
 
+def package_sources(module):
+    directory=Path(module.__file__).resolve().parent
+    return {p.relative_to(directory).as_posix():sha(p) for p in directory.rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts and p.suffix not in (".pyc",".pyo")}
 
-def require_source_replay(actual, expected, label):
-    if not output_replay(actual, expected):
-        raise RuntimeError(f"{label} differs from the checked first source trajectory")
+def prepare_reference_imports():
+    # NumPy unique() checks np.ma.is_masked in the independent comparator.
+    # Load these known modules before freezing dependency membership/timers.
+    import numpy.ma
+    import numpy.ma.core
+    import numpy.ma.extras
+
+def dependency_snapshot():
+    # Pin installed NumPy/Cantera package membership, interpreter, and loaded
+    # source modules. Package inventories also cover their extension modules.
+    modules={}
+    for name,module in list(sys.modules.items()):
+        path=getattr(module,"__file__",None)
+        if path and Path(path).is_file():modules[name]={"path":str(Path(path).resolve()),"sha256":sha(path)}
+    return dict(python_executable_sha256=sha(sys.executable),python_version=sys.version,
+                numpy_version=np.__version__,cantera_version=ct.__version__,
+                numpy_files=package_sources(np),cantera_files=package_sources(ct),loaded_module_files=modules)
+
+def mapped_snapshot():
+    paths=loaded_library_paths()
+    return {str(p):sha(p) for p in paths if p.is_file()}
+
+def verify_cantera_build(mapped,record):
+    if record.get("source",{}).get("commit")!=SOURCE_COMMIT or not ct.__version__.startswith("4.0."):
+        raise ValueError("pinned Cantera 4 source/build required")
+    extension=Path(compiled.__file__).resolve()
+    selected={p:h for p,h in mapped.items() if "libcantera" in Path(p).name or Path(p)==extension}
+    if str(extension) not in selected or not any("libcantera" in Path(p).name for p in selected):
+        raise ValueError("actual mapped Cantera extension/shared library absent")
+    expected={Path(p).name:h for p,h in record.get("library_hashes",{}).items()}
+    if not all(expected.get(Path(p).name)==h for p,h in selected.items()):
+        raise ValueError("mapped Cantera bytes differ from the build record")
+    return selected
+
+def full_mechanism_match(source,prepared):
+    original=ct.Solution(str(source),"nDodecane_IG");native=ct.Solution(str(prepared))
+    def equal(a,b,path):
+        if isinstance(a,dict) and isinstance(b,dict):
+            if set(a)!=set(b):raise ValueError(f"mechanism keys differ at {path}")
+            for key in a:equal(a[key],b[key],f"{path}.{key}")
+        elif isinstance(a,(list,tuple,np.ndarray)) and isinstance(b,(list,tuple,np.ndarray)):
+            if len(a)!=len(b):raise ValueError(f"mechanism dimensions differ at {path}")
+            for i,(x,y) in enumerate(zip(a,b)):equal(x,y,f"{path}[{i}]")
+        elif isinstance(a,(float,int,np.number)) and isinstance(b,(float,int,np.number)):
+            # Match the existing preparation tolerance, across every numerical
+            # species/reaction datum, allowing YAML's decimal serialization.
+            if not np.isclose(a,b,rtol=2e-12,atol=0.,equal_nan=False):
+                raise ValueError(f"mechanism number differs at {path}")
+        elif a!=b:raise ValueError(f"mechanism metadata differs at {path}")
+    if original.species_names!=native.species_names or original.n_reactions!=native.n_reactions:
+        raise ValueError("source/prepared mechanism membership differs")
+    for i,(a,b) in enumerate(zip(original.species(),native.species())):equal(dict(a.input_data),dict(b.input_data),f"species[{i}]")
+    for i,(a,b) in enumerate(zip(original.reactions(),native.reactions())):equal(dict(a.input_data),dict(b.input_data),f"reaction[{i}]")
     return True
 
+def native_dependency_files(directory):
+    directory=Path(directory)
+    files={p.relative_to(directory).as_posix():sha(p) for folder in ("src","ext","deps","lib")
+           for p in (directory/folder).rglob("*") if p.is_file()}
+    for name in ("Project.toml","Artifacts.toml"):
+        if (directory/name).is_file():files[name]=sha(directory/name)
+    return files
 
-def require_native_replay_flags(native):
-    lengths={len(native[key]) for key in ("warm_seconds","warm_matches_first","warm_checked")}
-    if (len(lengths)!=1 or not native["first_checked"][0] or not native["source_hashes_unchanged"][0]
-            or not all(native["warm_matches_first"]) or not all(native["warm_checked"])):
-        raise RuntimeError("native artifact contains failed or incomplete first/warm checks")
+def require_native_files(record):
+    inputs=record["input_before"]
+    for name,path in inputs["file_paths"].items():
+        if sha(path)!=inputs[name+"_sha256"]:raise ValueError(f"current native {name} bytes changed")
+    for identity,package in inputs["dependencies"].items():
+        require_inventory(native_dependency_files(package["path"]),package["files"],f"native dependency {identity}")
+    pins=record["library_pins"]
+    require_inventory({path:sha(path) for path in pins},pins,"native pre-pinned libraries")
+    prior=record["runtime_before"]
+    for index,run in enumerate(record["runs"]):
+        before,after=run["runtime_before"],run["runtime_after"]
+        require_inventory(before,prior,"native between-call runtime")
+        if before["environment"]!=after["environment"] or not all(v==1 for v in after["settings"].values()):
+            raise ValueError("native actual thread settings changed")
+        initial,final=set(before["mapped"]),set(after["mapped"])
+        if not (initial<=final if index==0 else initial==final):raise ValueError("native mapped membership changed")
+        for snapshot in (before,after):
+            if set(snapshot["mapped_sha256"])!=set(snapshot["mapped"]):raise ValueError("native mapped hash membership differs")
+            if any(pins.get(path)!=value for path,value in snapshot["mapped_sha256"].items()):
+                raise ValueError("native mapped bytes differ from pre-run pins")
+        prior=after
+    require_inventory(record["runtime_after"],prior,"native final runtime")
     return True
 
+def require_native_timing(record,mode,repeats,root,native):
+    if not record.get("complete") or record.get("mode")!=mode or record.get("warm_repetitions")!=repeats:
+        raise ValueError("native first/warm sequence is incomplete or uses a different mode")
+    if record.get("public_callable")!="NativeEngineQNDF.solve_ic_engine_qndf":
+        raise ValueError("validated public QNDF callable required")
+    if record.get("wall_clock_exclusions")!=["seconds_including_first_specialization"]:
+        raise ValueError("unexpected exact-replay exclusion")
+    if len(record.get("runs",[]))!=repeats+1 or len(record.get("warm_seconds",[]))!=repeats:
+        raise ValueError("missing native first/warm calls")
+    if [r["label"] for r in record["runs"]]!=["first"]+[f"warm-{i}" for i in range(1,repeats+1)]:
+        raise ValueError("native repetition order differs")
+    durations=[record["first_seconds"]]+record["warm_seconds"]
+    if not all(np.isfinite(t) and t>0 for t in durations) or durations!=[r["seconds"] for r in record["runs"]]:
+        raise ValueError("native durations are invalid or differ from individual calls")
+    current=source_inventory(root)
+    require_inventory(record["input_before"],record["input_after"],"native before/after inputs")
+    require_inventory(record["input_before"]["source_inventory"],current,"native/current source")
+    for run in record["runs"]:
+        if not run.get("checks_pass") or not run.get("replay_pass"):
+            raise ValueError("native physical/replay check failed")
+        require_inventory(run["inputs"],record["input_before"],"native repetition inputs")
+        if sha(run["archive"])!=run["archive_sha256"] or sha(run["archive"]+".replay.jls")!=run["payload_sha256"]:
+            raise ValueError("native saved repetition bytes changed")
+        if sha(Path(run["archive"]).with_suffix(".toml"))!=run["metadata_sha256"]:
+            raise ValueError("native saved repetition metadata changed")
+    if Path(record["runs"][0]["archive"]).resolve()!=native.resolve():raise ValueError("wrong native first artifact")
+    require_native_files(record)
+    return True
 
-def decode_metadata(archive):
-    return {key[:-5]:bytes(archive[key]).decode() for key in archive.files if key.endswith("_utf8")}
+def save_source(result,directory,label):
+    directory.mkdir(parents=True,exist_ok=True)
+    path=directory/(label+".npz")
+    if path.exists():raise ValueError("preserve previous source artifact")
+    np.savez(path,**{k:v for k,v in result.items() if isinstance(v,np.ndarray)})
+    metadata={k:v for k,v in result.items() if not isinstance(v,np.ndarray)}
+    metadata.update(archive_sha256=sha(path))
+    path.with_suffix(".json").write_text(json.dumps(metadata,indent=2,allow_nan=False)+"\n")
+    return {"array_path":str(path.resolve()),"array_sha256":sha(path),"metadata_sha256":sha(path.with_suffix(".json"))}
 
+def exact_source_equal(actual,expected):
+    if type(actual) is not type(expected):return False
+    if isinstance(actual,np.ndarray):
+        return actual.shape==expected.shape and actual.dtype==expected.dtype and actual.tobytes()==expected.tobytes()
+    if isinstance(actual,dict):
+        return set(actual)==set(expected) and all(exact_source_equal(actual[k],expected[k]) for k in actual)
+    if isinstance(actual,(list,tuple)):
+        return len(actual)==len(expected) and all(exact_source_equal(a,b) for a,b in zip(actual,expected))
+    return actual==expected
 
-def source_programs(path,mechanism):
-    """Select original calculation statements without rewriting its physics."""
-    if sha(path) != SOURCE_SHA256:
-        raise ValueError("ic_engine.py does not match the pinned source SHA256")
-    tree = ast.parse(Path(path).read_text())
-    setup,loop = [],None
-    for original in tree.body:
-        node = copy.deepcopy(original)
-        if isinstance(node,(ast.Import,ast.ImportFrom)) or (isinstance(node,ast.Expr) and
-                isinstance(node.value,ast.Constant) and isinstance(node.value.value,str)):
-            continue
-        if isinstance(node,ast.FunctionDef) and node.name=="ca_ticks":
-            break
-        if isinstance(node,ast.While):
-            loop = node
-            continue
-        if loop is None:
-            if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=="reaction_mechanism" for t in node.targets):
-                node.value = ast.Constant(str(mechanism))
-            setup.append(node)
-    # Integral assignments occur after plots, so find their section separately.
-    integrals=[]
-    in_integrals=False
-    for original in tree.body:
-        if isinstance(original,ast.Assign) and any(isinstance(t,ast.Name) and t.id=="Q" for t in original.targets):
-            in_integrals=True
-        if in_integrals and isinstance(original,(ast.Assign,ast.AugAssign)):
-            integrals.append(copy.deepcopy(original))
-    if loop is None or not integrals:
-        raise ValueError("pinned source calculation/integral sections were not found")
-    def code(nodes):
-        return compile(ast.fix_missing_locations(ast.Module(body=nodes,type_ignores=[])),str(path),"exec")
-    return code(setup),code([loop]),code(ast.parse("t = states.t").body+integrals)
+def require_source_result(actual,expected=None):
+    if not source_checks(actual):raise ValueError("source physical/output checks failed")
+    if expected is not None and not (output_replay(actual,expected) and exact_source_equal(actual,expected)):
+        raise ValueError("source warm output/counter replay failed")
+    return True
 
-
-def new_source_state(programs):
-    namespace={"ct":ct,"np":np,"trapezoid":TRAPEZOID}
-    exec(programs[0],namespace)
-    return namespace
-
-
-def source_calculation(programs):
-    namespace=new_source_state(programs)
-    exec(programs[1],namespace)
-    exec(programs[2],namespace)
-    states=namespace["states"]
-    return {
-        "time":states.t.copy(),"crank_angle":states.ca.copy(),"temperature":states.T.copy(),
-        "pressure":states.P.copy(),"volume":states.V.copy(),"mass":states.m.copy(),
-        "entropy_mass":states.entropy_mass.copy(),"mean_molecular_weight":states.mean_molecular_weight.copy(),
-        "mdot_in":states.mdot_in.copy(),"mdot_out":states.mdot_out.copy(),
-        "work_rate":states.dWv_dt.copy(),"heat_release_rate":(states.heat_release_rate*states.V).copy(),
-        "X":states.X.copy(),"Y":states.Y.copy(),
-        "integrals":dict(heat_J=float(namespace["Q"]),work_J=float(namespace["W"]),
-                         efficiency=float(namespace["eta"]),CO_ppm=float(1e6*namespace["CO_emission"])),
-        "solver_stats":namespace["sim"].solver_stats,
-        "rtol":namespace["sim"].rtol,"atol":namespace["sim"].atol,
-    }
-
-
-def output_replay(actual,expected):
-    return all(np.array_equal(actual[key],expected[key]) for key in expected
-               if isinstance(expected[key],np.ndarray)) and actual["integrals"]==expected["integrals"] \
-        and actual["solver_stats"]==expected["solver_stats"] and actual["rtol"]==expected["rtol"] \
-        and actual["atol"]==expected["atol"]
-
-
-def source_checks(result):
-    return (result["rtol"]==1e-12 and result["atol"]==1e-16 and len(result["time"])>2880
-        and .16 <= result["time"][-1] < .16+1/(360*50)
-        and all(np.isfinite(value).all() for value in result.values() if isinstance(value,np.ndarray))
-        and np.all(np.diff(result["time"])>0) and np.min(result["Y"])>=-1e-12)
-
-
-def source_snapshot(namespace,time_offset=0.):
-    gas=namespace["cyl"].phase
-    cylinder=namespace["cyl"]
-    t=namespace["sim"].time+time_offset
-    work=-(gas.P-namespace["ambient_air"].phase.P)*namespace["A_piston"]*namespace["piston_speed"](t)
-    return dict(time=t,temperature=gas.T,pressure=gas.P,volume=cylinder.volume,mass=cylinder.mass,
-        entropy_mass=gas.entropy_mass,mean_molecular_weight=gas.mean_molecular_weight,
-        mdot_in=namespace["inlet_valve"].mass_flow_rate,mdot_out=namespace["outlet_valve"].mass_flow_rate,
-        mdot_fuel=namespace["injector_mfc"].mass_flow_rate,work_rate=work,
-        heat_release_rate=gas.heat_release_rate*cylinder.volume,CO_X=gas["co"].X[0])
-
-
-def reference_segments(namespace):
-    """Independent tight reference on continuous, local-time source segments."""
-    network=namespace["sim"]
-    network.rtol,network.atol=REFINED_RTOL,REFINED_ATOL
-    network.max_steps=1000000
-    network.max_time_step=1/(360*50)
-    stops=np.unique(np.r_[0.,[(720*cycle+angle)/(360*50) for cycle in range(4)
-        for angle in (18,198,350,365,522,702)],.16])
-    for start,stop in zip(stops[:-1],stops[1:]):
-        midpoint=(start+stop)/2
-        for device,opening,delta in (("inlet_valve","inlet_open","inlet_delta"),
-                ("outlet_valve","outlet_open","outlet_delta"),
-                ("injector_mfc","injector_open","injector_delta")):
-            value=np.mod(namespace["crank_angle"](midpoint)-namespace[opening],4*np.pi)<namespace[delta]
-            namespace[device].time_function=lambda t,value=value:value
-        namespace["piston"].velocity=lambda t,start=start:namespace["piston_speed"](t+start)
-        network.initial_time=0.
-        network.initialize()
-        yield float(start),float(stop)
-
-
-def refined_reference(programs,times):
-    namespace=new_source_state(programs)
-    network=namespace["sim"]
-    rows,mass_fractions=[],[]
-    for start,stop in reference_segments(namespace):
-        selected=times[(times>start)&(times<=stop)]
-        if start==0:
-            rows.append(source_snapshot(namespace))
-            mass_fractions.append(namespace["cyl"].phase.Y.copy())
-        for t in selected:
-            network.advance(float(t-start),apply_limit=False)
-            rows.append(source_snapshot(namespace,start))
-            mass_fractions.append(namespace["cyl"].phase.Y.copy())
-        network.advance(stop-start,apply_limit=False)
-    result={key:np.array([row[key] for row in rows]) for key in rows[0]}
-    result["Y"]=np.asarray(mass_fractions)
-    return result
-
-
-def integral_terms(output,indices=None):
-    ix=np.arange(len(output["time"])) if indices is None else indices
-    t=output["time"][ix]
-    heat=TRAPEZOID(output["heat_release_rate"][ix],t)
-    work=TRAPEZOID(output["work_rate"][ix],t)
-    weights=output["mean_molecular_weight"][ix]*output["mdot_out"][ix]
-    return np.array([heat,work,TRAPEZOID(weights*output["CO_X"][ix],t),TRAPEZOID(weights,t)])
-
-
-def integral_values(terms):
-    heat,work,numerator,denominator=terms
-    return dict(heat_J=float(heat),work_J=float(work),efficiency=float(work/heat),CO_ppm=float(1e6*numerator/denominator))
-
-
-def refined_integrals(programs):
-    # Preserve the published ODE tolerances and resolve its quadrature on every
-    # accepted step. The independent pointwise reference above separately uses
-    # tighter ODE tolerances and exact continuous-regime restarts.
-    namespace=new_source_state(programs)
-    network=namespace["sim"]
-    network.max_time_step=1/(360*50)
-    network.initialize()
-    rows=[source_snapshot(namespace)]
-    while network.time<.16:
-        if .16-network.time<=1/(360*50):
-            # End exactly at eight revolutions, retaining dense observations
-            # of the final interval instead of one long quadrature panel.
-            for t in np.linspace(network.time,.16,17)[1:]:
-                network.advance(float(t),apply_limit=False)
-                rows.append(source_snapshot(namespace))
-        else:
-            network.step()
-            rows.append(source_snapshot(namespace))
-    output={key:np.array([row[key] for row in rows]) for key in rows[0]}
-    selected=np.unique(np.r_[np.arange(0,len(rows),2),len(rows)-1])
-    integral=integral_values(integral_terms(output))
-    coarse=integral_values(integral_terms(output,selected))
-    convergence={key:abs(coarse[key]/value-1) for key,value in integral.items()}
-    return output,integral,convergence
-
-
-def compare_native(native,summary,reference,reference_integrals):
-    actual={key[len("output_"):]:native[key] for key in native.files if key.startswith("output_")}
-    errors={
-        "temperature_K":float(np.max(np.abs(actual["temperature"]-reference["temperature"]))),
-        "pressure_relative":float(np.max(np.abs(actual["pressure"]/reference["pressure"]-1))),
-        "volume_m3":float(np.max(np.abs(actual["volume"]-reference["volume"]))),
-        "mass_relative":float(np.max(np.abs(actual["mass"]/reference["mass"]-1))),
-        "mass_fraction":float(np.max(np.abs(actual["Y"]-reference["Y"]))),
-        "entropy_J_per_kg_K":float(np.max(np.abs(actual["entropy_mass"]-reference["entropy_mass"]))),
-    }
-    limits=dict(temperature_K=.5,pressure_relative=2e-4,volume_m3=2e-10,mass_relative=5e-5,
-                mass_fraction=1e-4,entropy_J_per_kg_K=.5)
-    switches=np.array([(720*cycle+angle)/(360*50) for cycle in range(4)
-        for angle in (18,198,350,365,522,702)])
-    continuous=np.min(np.abs(actual["time"][:,None]-switches),axis=1)>1e-11
-    rate_errors={key:float(np.max(np.abs(actual[key][continuous]-reference[key][continuous]))/
-        max(np.max(np.abs(reference[key][continuous])),1e-30))
-        for key in ("mdot_in","mdot_out","mdot_fuel","work_rate","heat_release_rate")}
-    rate_limits=dict(mdot_in=2e-3,mdot_out=2e-3,mdot_fuel=1e-13,work_rate=2e-3,heat_release_rate=5e-3)
-    integral_errors={key:abs(summary["integrals"][key]/value-1) for key,value in reference_integrals.items()}
-    integral_limits=dict(heat_J=1e-4,work_J=1e-5,efficiency=1e-4,CO_ppm=1e-4)
-    return dict(correctness_pass=all(errors[k]<v for k,v in limits.items()) and
-        all(integral_errors[k]<v for k,v in integral_limits.items()) and
-        all(rate_errors[k]<v for k,v in rate_limits.items()),trajectory_errors=errors,
-        trajectory_limits=limits,rate_peak_scaled_errors=rate_errors,rate_limits=rate_limits,
-        integral_relative_errors=integral_errors,integral_limits=integral_limits)
-
-
-def verify_mechanisms(source,native_path,native_meta):
-    if sha(native_path)!=native_meta["mechanism_sha256"] or sha(str(native_path)+".npz")!=native_meta["sidecar_sha256"]:
-        raise ValueError("native mechanism/sidecar files differ from the timed Julia artifact")
-    sidecar_meta=decode_metadata(np.load(str(native_path)+".npz"))
-    if sidecar_meta.get("source_sha256")!=sha(native_path):
-        raise ValueError("native sidecar provenance does not match its YAML")
-    original,prepared=ct.Solution(str(source),"nDodecane_IG"),ct.Solution(str(native_path))
-    if original.species_names!=prepared.species_names or original.n_species!=100 or not original.n_reactions==prepared.n_reactions==553:
-        raise ValueError("source/prepared phases do not contain the required 100 species and 553 reactions")
-    for T in (300.,1000.,2500.):
-        original.TPX=prepared.TPX=T,1.3e5,"o2:1,n2:3.76"
-        for key in ("molecular_weights","standard_enthalpies_RT","standard_cp_R","standard_entropies_R",
-                    "forward_rate_constants","reverse_rate_constants"):
-            np.testing.assert_allclose(getattr(original,key),getattr(prepared,key),rtol=2e-12,atol=1e-20,
-                                       err_msg=f"prepared phase differs in {key} at {T} K")
-    return sidecar_meta
-
+def require_saved_source(saved):
+    path=Path(saved["array_path"])
+    if sha(path)!=saved["array_sha256"] or sha(path.with_suffix(".json"))!=saved["metadata_sha256"]:
+        raise ValueError("saved source output bytes changed")
+    return True
 
 def main():
-    parser=argparse.ArgumentParser()
-    parser.add_argument("--julia-result",type=Path,required=True)
-    parser.add_argument("--output",type=Path,required=True)
-    parser.add_argument("--native-mechanism",type=Path,required=True)
-    parser.add_argument("--source-example",type=Path,required=True)
-    parser.add_argument("--source-mechanism",type=Path)
-    parser.add_argument("--cantera-build-record",type=Path)
-    parser.add_argument("--repetitions",type=int,default=9)
-    parser.add_argument("--qualification",choices=("informational","controlled"),default="informational")
-    parser.add_argument("--target",choices=("wsl","apple-m4"),default="wsl")
-    parser.add_argument("--validate-only",action="store_true")
-    args=parser.parse_args()
-    if args.repetitions<MIN_REPETITIONS:
-        parser.error("at least nine warm repetitions required")
-    native=np.load(args.julia_result)
-    require_native_replay_flags(native)
-    meta=decode_metadata(native)
-    summary=tomllib.loads(meta["summary_toml"])
-    if meta["scope"]!="full_source_eight_revolutions":
-        raise ValueError("full eight-revolution native calculation required")
-    mechanism=args.source_mechanism or next((Path(d)/"nDodecane_Reitz.yaml" for d in ct.get_data_directories()
-        if (Path(d)/"nDodecane_Reitz.yaml").is_file()),None)
-    if mechanism is None:
-        raise FileNotFoundError("provide --source-mechanism")
-    sidecar_meta=verify_mechanisms(mechanism,args.native_mechanism,meta)
-    programs=source_programs(args.source_example,mechanism)
-    hardware=host_metadata()
-    hardware["load_average_start"]=os.getloadavg()
-    thread_checks={"before_first":verify_numerical_threads(set_accelerate=True)}
-    started=time.perf_counter()
-    first=source_calculation(programs)
-    first_seconds=time.perf_counter()-started
-    first_checked=require_source_checks(first,"first invocation")
-    thread_checks["before_warm"]=verify_numerical_threads(set_accelerate=True)
-    print("Cantera source first calculation:",first_seconds,"s; checks",first_checked,flush=True)
-    samples,matches,checks=[],[],[]
-    if not args.validate_only:
-        gc.collect()
-        for repetition in range(args.repetitions):
-            started=time.perf_counter()
-            repeated=source_calculation(programs)
-            samples.append(time.perf_counter()-started)
-            thread_checks[f"after_warm_{repetition+1}"]=verify_numerical_threads()
-            matches.append(require_source_replay(repeated,first,f"warm repetition {repetition+1}"))
-            checks.append(require_source_checks(repeated,f"warm repetition {repetition+1}"))
-            print("Cantera source warm repetition",repetition+1,samples[-1],"s; checks",matches[-1] and checks[-1],flush=True)
-    started=time.perf_counter()
-    reference=refined_reference(programs,native["output_time"])
-    integral_output,integrals,convergence=refined_integrals(programs)
-    validation_seconds=time.perf_counter()-started
-    thread_checks["after_all"]=verify_numerical_threads()
-    accuracy=compare_native(native,summary,reference,integrals)
-    reference_converged=max(convergence.values())<1e-4
-    reference_path=args.output.with_suffix(".reference.npz")
-    np.savez(reference_path,**{"pointwise_"+k:v for k,v in reference.items()},
-             **{"accepted_"+k:v for k,v in integral_output.items()},
-             **{"source_"+k:v for k,v in first.items() if isinstance(v,np.ndarray)})
-    record=json.loads(args.cantera_build_record.read_text()) if args.cantera_build_record else None
-    source_commit=record["source"]["commit"] if record else getattr(ct,"__git_commit__","unknown")
-    libraries=cantera_library_hashes(ct.__file__)
-    extension_sha=sha(compiled.__file__)
-    recorded={Path(k).name:v for k,v in (record or {}).get("library_hashes",{}).items()}
-    build_matches=bool(libraries and recorded and all(recorded.get(k)==v for k,v in libraries.items())
-        and recorded.get(Path(compiled.__file__).name)==extension_sha)
-    thread_keys=("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS")+(("VECLIB_MAXIMUM_THREADS",) if hardware["system"]=="Darwin" else ())
-    threads={key:os.environ.get(key) for key in thread_keys}
-    native_threads=tomllib.loads(meta["thread_environment_toml"])
-    native_thread_checks=tomllib.loads(meta.get("thread_checks_toml",""))
-    native_host={key:meta.get(key,"") for key in ("cpu","system","kernel_release")}
-    native_samples=native["warm_seconds"].tolist()
-    native_matches=native["warm_matches_first"].astype(bool).tolist()
-    native_checks=native["warm_checked"].astype(bool).tolist()
-    source_hashes=tomllib.loads(meta["source_hashes_toml"])
+    parser=argparse.ArgumentParser(description=__doc__)
+    for name in ("native","native-mechanism","source-example","source-mechanism","cantera-build-record","output"):
+        parser.add_argument("--"+name,type=Path,required=True)
+    parser.add_argument("--mode",choices=("smoke","controlled"),default="smoke")
+    parser.add_argument("--target",choices=("wsl","apple-m4"),required=True)
+    args=parser.parse_args();repeats=1 if args.mode=="smoke" else 9
+    if args.output.exists():raise ValueError("preserve earlier paired receipt")
+    args.output.parent.mkdir(parents=True,exist_ok=True)
+    artifact_dir=args.output.with_suffix(".artifacts")
+    if artifact_dir.exists():raise ValueError("preserve earlier source artifacts")
+    artifact_dir.mkdir()
+    native_record_path=Path(str(args.native)+".timing.toml")
+    record=tomllib.loads(native_record_path.read_text())
     root=Path(__file__).resolve().parents[1]
-    code_matches=all((root/path).is_file() and sha(root/path)==digest for path,digest in source_hashes.items())
-    native_thread_helper_matches=meta.get("thread_helper_sha256")==sha(root/"validation"/"numerical_threads.jl")
-    expected_native_checks={"before_first","before_warm","after_all"}|{f"after_warm_{i+1}" for i in range(len(native_samples))}
-    required_native_getters={"julia_threads","blas_threads"}|({"accelerate_threading_mode"} if native_host["system"]=="Darwin" else set())
-    native_actual_threads_valid=(set(native_thread_checks)==expected_native_checks and
-        all(required_native_getters<=values.keys() and all(value==1 for value in values.values())
-            for values in native_thread_checks.values()))
-    all_repetitions_checked=(len(samples)==len(matches)==len(checks)>=MIN_REPETITIONS and
-        len(native_samples)==len(native_matches)==len(native_checks)>=MIN_REPETITIONS and
-        all(matches) and all(checks) and all(native_matches) and all(native_checks))
-    correct=bool(accuracy["correctness_pass"] and reference_converged and first_checked
-        and all(matches) and all(checks) and all(native_matches) and all(native_checks)
-        and native["first_checked"][0] and native["source_hashes_unchanged"][0])
-    controlled=bool(not args.validate_only and args.qualification==meta["qualification"]=="controlled"
-        and matches_target(hardware,args.target) and matches_target(native_host,args.target)
-        and all(hardware[k]==native_host[k] for k in ("cpu","kernel_release"))
-        and ct.__version__.startswith("4.0") and source_commit==SOURCE_COMMIT and build_matches and code_matches
-        and int(native["julia_threads"][0])==int(native["blas_threads"][0])==1
-        and all(v=="1" for v in threads.values()) and all(v=="1" for v in native_threads.values())
-        and native_actual_threads_valid and native_thread_helper_matches
-        and all_repetitions_checked)
-    ratio=statistics.median(samples)/statistics.median(native_samples) if samples and native_samples else None
-    report=dict(example="reactors/ic_engine.py",scope=meta["scope"],benchmark_target=args.target,
-        numerical_thread_checks=thread_checks,native_numerical_thread_checks=native_thread_checks,
-        native_actual_threads_valid=native_actual_threads_valid,native_thread_helper_matches=native_thread_helper_matches,
-        python_thread_helper_sha256=sha(root/"validation"/"benchmark_environment.py"),
-        source_commit=SOURCE_COMMIT,source_example_sha256=sha(args.source_example),
-        source_mechanism_sha256=sha(mechanism),native_mechanism_sha256=sha(args.native_mechanism),
-        native_sidecar_sha256=sha(str(args.native_mechanism)+".npz"),sidecar_provenance=sidecar_meta,
-        cantera_version=ct.__version__,cantera_source_sha=source_commit,
-        cantera_build_record_sha256=sha(args.cantera_build_record) if record else None,
-        cantera_shared_libraries_sha256=libraries,cantera_extension_sha256=extension_sha,
-        loaded_libraries_match_build_record=build_matches,harness_sha256=sha(__file__),
-        native_artifact_sha256=sha(args.julia_result),reference_artifact_sha256=sha(reference_path),
-        native_metadata=meta,native_source_hashes=source_hashes,native_code_matches_current_files=code_matches,
-        hardware=dict(hardware,load_average_end=os.getloadavg()),thread_settings=threads,
-        native_thread_settings=native_threads,timestamp_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime()),
-        timed_scope="fresh mechanism/network construction, complete eight-revolution solve, output properties and integrals; imports, plotting, printing, reference validation and artifact I/O excluded",
-        native_scope_note="actual shared solve_ic_engine, ic_engine_observables and ic_engine_summary calls, including converged accepted-state heat/CO quadrature and pressure-work ledger",
-        source_scope_note="AST-selected original pinned calculation with its SolutionArray output, default tolerances, 20 K advance limit, one-degree requests and sampled integral estimates",
-        qualification_timing_baseline="source-default Cantera calculation; refined reference is excluded from speed ratio",
-        refined_reference_note="pointwise reference: tighter ODE tolerances with local-time restarts at exact switches; integral reference: published ODE tolerances with every accepted state and a separate sampling-convergence check",
-        cantera_tolerances=dict(rtol=1e-12,atol=1e-16),refined_tolerances=dict(rtol=REFINED_RTOL,atol=REFINED_ATOL),
-        integral_reference_tolerances=dict(rtol=1e-12,atol=1e-16),
-        native_tolerances=dict(rtol=1e-13,species_atol_kg=1e-26,temperature_atol_K=1e-10,volume_atol_m3=1e-20),
-        cantera_import_seconds=IMPORT_SECONDS,julia_import_seconds=float(native["import_seconds"][0]),
-        cantera_first_seconds=first_seconds,julia_first_seconds=float(native["first_seconds"][0]),
-        first_call_note="full first invocation in each process; Julia includes JIT; all warm runs create fresh states",
-        cantera_warm_seconds=samples,julia_warm_seconds=native_samples,
-        cantera_warm_matches_first=matches,cantera_warm_checked=checks,
-        native_warm_matches_first=native_matches,native_warm_checked=native_checks,
-        all_repetitions_checked=all_repetitions_checked,source_solver_stats=first["solver_stats"],
-        source_output_points=len(first["time"]),source_end_time_s=float(first["time"][-1]),
-        source_maximum_output_temperature_change_K=float(np.max(np.abs(np.diff(first["temperature"])))),
-        source_maximum_output_interval_s=float(np.max(np.diff(first["time"]))),
-        mechanism_species=100,mechanism_reactions=553,
-        source_sampled_integrals=first["integrals"],native_summary=summary,
-        refined_integrals=integrals,refined_integral_points=len(integral_output["time"]),
-        refined_quadrature_change=convergence,refined_quadrature_converged=reference_converged,
-        accuracy=accuracy,correctness_pass=correct,reference_validation_seconds=validation_seconds,
-        speed_ratio=ratio,minimum_speed_ratio=.95,speed_ratio_definition="median Cantera seconds / median Julia seconds",
-        qualification="controlled" if controlled else "not_qualified",
-        performance_pass=bool(controlled and correct and ratio is not None and ratio>=.95))
-    args.output.write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
-    print("Engine correctness",correct,"speed ratio",ratio,"controlled",controlled,flush=True)
-    if not correct:
-        raise SystemExit("native engine failed independent refined-reference checks")
+    require_native_timing(record,args.mode,repeats,root,args.native)
+    if sha(args.source_example)!=SOURCE_SHA256 or sha(args.source_mechanism)!=reference.SOURCE_MECHANISM_SHA256:
+        raise ValueError("pinned source example and mechanism required")
+    native=np.load(args.native,allow_pickle=False);native_meta=tomllib.loads(args.native.with_suffix(".toml").read_text())
+    reference.require_native(native,native_meta)
+    verify_mechanisms(args.source_mechanism,args.native_mechanism,native_meta)
+    full_mechanism_match(args.source_mechanism,args.native_mechanism)
+    programs=source_programs(args.source_example,args.source_mechanism)
+    hardware=host_metadata()
+    if not matches_target(hardware,args.target):raise ValueError("wrong physical benchmark target")
+    if hardware["cpu"]!=record["cpu"] or hardware["kernel_release"]!=record["kernel_release"]:
+        raise ValueError("native and CT must run on the same host/kernel")
+    thread_keys=("OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS")+(("VECLIB_MAXIMUM_THREADS",) if hardware["system"]=="Darwin" else ())
+    if any(os.environ.get(k)!="1" for k in thread_keys):raise ValueError("one thread must be requested on every backend")
+    # Exercise serialization/import paths before freezing loaded-module and
+    # library membership, without constructing or stepping an engine.
+    prepare_reference_imports()
+    np.savez(artifact_dir/"serialization-preflight.npz",empty=np.zeros(0))
+    thread_before=verify_numerical_threads(set_accelerate=True)
+    build=json.loads(args.cantera_build_record.read_text())
+    dependencies=dependency_snapshot();libraries=mapped_snapshot();verify_cantera_build(libraries,build)
+    named={"native":args.native,"native_record":native_record_path,"native_metadata":args.native.with_suffix(".toml"),
+           "native_mechanism":args.native_mechanism,"native_sidecar":Path(str(args.native_mechanism)+".npz"),
+           "source_example":args.source_example,"source_mechanism":args.source_mechanism,"build_record":args.cantera_build_record}
+    inputs={name:sha(path) for name,path in named.items()};sources=source_inventory(root)
+    report=dict(complete=False,performance_qualified=False,mode=args.mode,target=args.target,hardware=hardware,
+        source_commit=SOURCE_COMMIT,source_example_sha256=SOURCE_SHA256,source_mechanism_sha256=reference.SOURCE_MECHANISM_SHA256,
+        inputs_before=inputs,source_before=sources,dependencies_before=dependencies,libraries_before=libraries,
+        thread_before=thread_before,cantera_import_seconds=IMPORT_SECONDS,runs=[],cantera_warm_seconds=[],
+        julia_first_seconds=record["first_seconds"],julia_warm_seconds=record["warm_seconds"],
+        timed_scope="fresh source construction, eight-revolution solve, original output properties and sampled integrals",
+        native_scope=record["scope"],accuracy_reference="independent full accepted-history 25-segment endpoint/quadrature oracle; excluded from timing ratio")
+    def checkpoint():args.output.write_text(json.dumps(report,indent=2,allow_nan=False)+"\n")
+    def guard():
+        require_inventory({name:sha(path) for name,path in named.items()},inputs,"input files")
+        require_inventory(source_inventory(root),sources,"source inventory")
+        require_inventory(dependency_snapshot(),dependencies,"Python dependency inventory")
+        observed=mapped_snapshot();require_inventory(observed,libraries,"mapped-library inventory")
+        verify_cantera_build(observed,build)
+        return verify_numerical_threads()
+    checkpoint();first=None
+    try:
+        gc.collect()
+        for index in range(repeats+1):
+            label="first" if index==0 else f"warm-{index}"
+            before_threads=guard()
+            started=time.perf_counter();result=source_calculation(programs);seconds=time.perf_counter()-started
+            saved=save_source(result,artifact_dir,label)
+            run=dict(label=label,seconds=seconds,saved=saved,checks_pass=False,replay_pass=False,threads_before=before_threads)
+            report["runs"].append(run);checkpoint()
+            run["threads_after"]=guard()
+            require_source_result(result,first)
+            run["checks_pass"]=run["replay_pass"]=True
+            if index==0:first=result;report["cantera_first_seconds"]=seconds
+            else:report["cantera_warm_seconds"].append(seconds)
+            checkpoint();print(f"CT engine {label}: {seconds} s; full source replay passes",flush=True)
+        # Reuse the exact corrected reference implementation, without import
+        # cycles or copied integrator/reference equations.
+        comparison={"checks_pass":False}
+        comparison_path=artifact_dir/"independent.json"
+        started=time.perf_counter()
+        try:
+            reference.compare(SimpleNamespace(native=args.native,native_mechanism=args.native_mechanism,
+                source_example=args.source_example,source_mechanism=args.source_mechanism,output=comparison_path),comparison)
+        finally:
+            report["reference_seconds"]=time.perf_counter()-started
+            comparison_path.write_text(json.dumps(comparison,indent=2,allow_nan=False)+"\n")
+        if not comparison["checks_pass"]:raise ValueError("independent accepted-history/integral gates failed")
+        report["thread_after"]=guard()
+        require_native_timing(tomllib.loads(native_record_path.read_text()),args.mode,repeats,root,args.native)
+        for run in report["runs"]:
+            require_saved_source(run["saved"])
+            if not np.isfinite(run["seconds"]) or run["seconds"]<=0:raise ValueError("invalid source duration")
+        report["inputs_after"]={name:sha(path) for name,path in named.items()}
+        report["source_after"]=source_inventory(root);report["libraries_after"]=mapped_snapshot()
+        report["dependencies_after"]=dependency_snapshot();report["accuracy"]=comparison
+        ratio=statistics.median(report["cantera_warm_seconds"])/statistics.median(record["warm_seconds"])
+        report.update(complete=True,correctness_pass=True,speed_ratio=ratio,minimum_speed_ratio=.95,
+                      performance_qualified=args.mode=="controlled" and ratio>=.95,
+                      speed_ratio_definition="median source-default CT / median public QNDF complete-call seconds")
+        checkpoint()
+    except BaseException as error:
+        report["error"]=str(error);checkpoint();raise
+    print("Engine paired checks complete; ratio",report["speed_ratio"],"qualified",report["performance_qualified"])
 
-
-if __name__=="__main__":
-    main()
+if __name__=="__main__":main()

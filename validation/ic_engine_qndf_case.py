@@ -20,7 +20,7 @@ import tomllib
 import numpy as np
 import cantera as ct
 import cantera._cantera as compiled
-from ic_engine_timing import (source_programs,new_source_state,source_snapshot,reference_segments,
+from ic_engine_source import (source_programs,new_source_state,source_snapshot,reference_segments,
     integral_terms,compare_native,verify_mechanisms,sha,SOURCE_COMMIT,SOURCE_SHA256,
     REFINED_RTOL,REFINED_ATOL)
 from benchmark_environment import cantera_library_hashes,verify_numerical_threads
