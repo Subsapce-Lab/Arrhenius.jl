@@ -23,11 +23,22 @@ include("guarded_jacobian.jl")
 include("klu_structured_solver.jl")
 include("qndf_structured_adapter.jl")
 
-function try_structured_adapter(problem)
+function try_guarded_jacobian(problem)
     problem.f isa Arrhenius.ReactorRHS || return nothing
     eltype(problem.u0) === Float64 || return nothing
     try
-        return qndf_structured_adapter(guarded_structured_jacobian(problem.f.reactor))
+        return guarded_structured_jacobian(problem.f.reactor)
+    catch err
+        err isa UnsupportedStructuredReactor && return nothing
+        rethrow()
+    end
+end
+
+function try_structured_adapter(problem)
+    guard = try_guarded_jacobian(problem)
+    guard === nothing && return nothing
+    try
+        return qndf_structured_adapter(guard)
     catch err
         err isa UnsupportedStructuredReactor && return nothing
         rethrow()

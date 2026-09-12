@@ -240,7 +240,9 @@ end
     iso = IdealGasReactor(gas;temperature=1200.0,pressure=one_atm,mass_fractions=Y,
         constraint=:constant_pressure,energy=:isothermal)
     @test SRS.try_structured_adapter(reactor_problem(cp,(0.0,1e-8))) !== nothing
+    @test SRS.try_guarded_jacobian(reactor_problem(cp,(0.0,1e-8))) !== nothing
     @test SRS.try_structured_adapter(reactor_problem(cv,(0.0,1e-8))) === nothing
+    @test SRS.try_guarded_jacobian(reactor_problem(cv,(0.0,1e-8))) === nothing
     @test SRS.try_structured_adapter(reactor_problem(iso,(0.0,1e-8))) === nothing
     @test SRS.try_structured_adapter(merge(reactor_problem(cp,(0.0,1e-8)),
         (u0=Float32.(reactor_state(cp)),))) === nothing
@@ -290,8 +292,12 @@ end
         IdealGasReactor(out_of_bounds;temperature=1200.0,pressure=one_atm,mass_fractions=Y))
     malformed = one_reaction_gas(gas,reactant,product;
         orders=spzeros(Float64,gas.n_species,0))
-    @test_throws DimensionMismatch SRS.structured_trial_jacobian(
-        IdealGasReactor(malformed;temperature=1200.0,pressure=one_atm,mass_fractions=Y))
+    malformed_reactor = IdealGasReactor(
+        malformed;temperature=1200.0,pressure=one_atm,mass_fractions=Y)
+    @test_throws DimensionMismatch SRS.structured_trial_jacobian(malformed_reactor)
+    malformed_problem = reactor_problem(malformed_reactor,(0.0,1e-8))
+    @test_throws DimensionMismatch SRS.try_guarded_jacobian(malformed_problem)
+    @test_throws DimensionMismatch SRS.try_structured_adapter(malformed_problem)
 end
 
 @testset "KLU fixed-pattern and singular-core recovery" begin
@@ -332,6 +338,8 @@ end
     cp = IdealGasReactor(gas;temperature=1400.0,pressure=3one_atm,
         mole_fractions=mixture,constraint=:constant_pressure,energy=:adiabatic)
     problem = reactor_problem(cp,(0.0,1e-8))
+    initial_problem_state = copy(problem.u0)
+    @test_throws ArgumentError native_bdf(problem;linear_solver=:invalid)
     public_solution = native_bdf(problem;reltol=1e-9,abstol=1e-15,
         saveat=[0.0,1e-8],maxiters=100_000)
     @test SciMLBase.successful_retcode(public_solution)
@@ -356,6 +364,36 @@ end
     @test report["jacobian_generations"] == adapter.guard.generation
     @test public_solution.u == structured_solution.u
 
+    dense_W_observed = Ref(false)
+    dense_algorithm_type = Ref("")
+    dense_algorithm_enum = Ref("")
+    dense_qr_fallback = Ref(false)
+    dense_callback = SciMLBase.DiscreteCallback(
+        (u,t,integrator)->true,
+        integrator->begin
+            cache = integrator.cache.nlsolver.cache.linsolve
+            dense_W_observed[] = cache.A isa Matrix{Float64} &&
+                size(cache.A) == (length(problem.u0),length(problem.u0))
+            dense_algorithm_type[] = string(typeof(cache.alg))
+            hasproperty(cache.alg,:alg) &&
+                (dense_algorithm_enum[] = string(getproperty(cache.alg,:alg)))
+            hasproperty(cache.cacheval,:fell_back_to_qr) &&
+                (dense_qr_fallback[] |= cache.cacheval.fell_back_to_qr)
+            SciMLBase.u_modified!(integrator,false)
+        end;save_positions=(false,false))
+    dense_solution = native_bdf(problem;linear_solver=:dense,reltol=1e-9,abstol=1e-15,
+        saveat=[0.0,1e-8],maxiters=100_000,callback=dense_callback)
+    @test SciMLBase.successful_retcode(dense_solution)
+    dense_guard = dense_solution.prob.f.jac
+    @test dense_guard isa SRS.GuardedStructuredJacobian
+    @test dense_guard.generation == dense_solution.destats.njacs > 0
+    @test dense_guard.analytic_calls + dense_guard.fallback_calls == dense_guard.generation
+    @test dense_solution.destats.nnonlinconvfail == 0
+    @test dense_W_observed[]
+    @test !occursin("KLU",dense_algorithm_type[])
+    @test problem.u0 == initial_problem_state == reactor_state(cp)
+    @info "native_bdf dense backend" algorithm_type=dense_algorithm_type[] algorithm_enum=dense_algorithm_enum[] qr_fallback_observed=dense_qr_fallback[] dense_W=dense_W_observed[] jacobians=dense_guard.generation
+
     initial = reactor_properties(cp,problem.u0)
     final = reactor_properties(cp,structured_solution.u[end])
     @test abs(final.mass_fraction_sum-1) < 5e-10
@@ -363,6 +401,12 @@ end
     final_elements = gas.ele_matrix*(structured_solution.u[end][1:end-1]./gas.MW)
     @test norm(final_elements-initial_elements,Inf) < 5e-11
     @test abs(final.enthalpy/initial.enthalpy-1) < 1e-6
+    dense_final = reactor_properties(cp,dense_solution.u[end])
+    @test abs(dense_final.mass_fraction_sum-1) < 5e-10
+    dense_elements = gas.ele_matrix*(dense_solution.u[end][1:end-1]./gas.MW)
+    @test norm(dense_elements-initial_elements,Inf) < 5e-11
+    @test abs(dense_final.enthalpy/initial.enthalpy-1) < 1e-6
+    @test minimum(dense_solution.u[end][1:end-1]) > -1e-12
 
     for (constraint,energy) in ((:constant_volume,:adiabatic),(:constant_pressure,:isothermal))
         reactor = IdealGasReactor(gas;temperature=1200.0,pressure=one_atm,
@@ -373,6 +417,11 @@ end
             saveat=[0.0,1e-8],maxiters=100_000)
         @test SciMLBase.successful_retcode(solution)
         @test all(isfinite,reduce(vcat,solution.u))
+        dense_fallback = native_bdf(fallback_problem;linear_solver=:dense,
+            reltol=1e-8,abstol=1e-14,saveat=[0.0,1e-8],maxiters=100_000)
+        @test SciMLBase.successful_retcode(dense_fallback)
+        @test all(isfinite,reduce(vcat,dense_fallback.u))
+        @test !(dense_fallback.prob.f.jac isa SRS.GuardedStructuredJacobian)
     end
     @test benchmark_julia_thread_settings(enforce=false) == STRUCTURED_THREAD_SETTINGS
 end

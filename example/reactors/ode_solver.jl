@@ -22,25 +22,49 @@ Integrate an Arrhenius reactor problem with Julia's adaptive QNDF solver.
 The optional reactor environment enables an analytic Jacobian and sparse
 bordered solve for supported constant-pressure, adiabatic ideal-gas reactors.
 Other reactors use the dense Jacobian supplied by `reactor_problem`.
+
+Set `linear_solver=:dense` to use the guarded analytic Jacobian and signed RHS
+with QNDF's ordinary dense linear solver for supported reactors. The default
+`linear_solver=:auto` retains automatic structured selection.
 """
-function native_bdf(problem; kwargs...)
+function native_bdf(problem; linear_solver=:auto, kwargs...)
+    linear_solver in (:auto, :dense) ||
+        throw(ArgumentError("linear_solver must be :auto or :dense"))
     if isdefined(@__MODULE__, :StructuredReactorSolver)
-        adapter = StructuredReactorSolver.try_structured_adapter(problem)
-        if adapter !== nothing
-            integrator_ref = Ref{Any}(nothing)
-            precs = StructuredReactorSolver.adapter_precs(adapter, integrator_ref)
-            linsolve = StructuredReactorSolver.adapter_linsolve(adapter, integrator_ref)
-            f = SciMLBase.ODEFunction(adapter.guard.analytic.float_rhs; jac=adapter, tgrad=problem.tgrad)
-            ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
-            outside_domain = (u, p, t) -> !all(isfinite, u) || u[end] <= 0
-            integrator = SciMLBase.init(ode, OrdinaryDiffEqBDF.QNDF(precs=precs, linsolve=linsolve);
-                isoutofdomain=outside_domain, kwargs...)
-            integrator_ref[] = integrator
-            solution = SciMLBase.solve!(integrator)
-            SciMLBase.successful_retcode(solution) || error("reactor integration failed: $(solution.retcode)")
-            StructuredReactorSolver._lifecycle_valid(adapter) ||
-                error("structured reactor solver cache lifecycle failed")
-            return solution
+        if linear_solver === :dense
+            guard = StructuredReactorSolver.try_guarded_jacobian(problem)
+            if guard !== nothing
+                f = SciMLBase.ODEFunction(
+                    guard.analytic.float_rhs; jac=guard, tgrad=problem.tgrad)
+                ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
+                outside_domain = (u, p, t) -> !all(isfinite, u) || u[end] <= 0
+                solution = SciMLBase.solve(
+                    ode, OrdinaryDiffEqBDF.QNDF(); isoutofdomain=outside_domain, kwargs...)
+                SciMLBase.successful_retcode(solution) ||
+                    error("reactor integration failed: $(solution.retcode)")
+                return solution
+            end
+        else
+            adapter = StructuredReactorSolver.try_structured_adapter(problem)
+            if adapter !== nothing
+                integrator_ref = Ref{Any}(nothing)
+                precs = StructuredReactorSolver.adapter_precs(adapter, integrator_ref)
+                linsolve = StructuredReactorSolver.adapter_linsolve(adapter, integrator_ref)
+                f = SciMLBase.ODEFunction(
+                    adapter.guard.analytic.float_rhs; jac=adapter, tgrad=problem.tgrad)
+                ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
+                outside_domain = (u, p, t) -> !all(isfinite, u) || u[end] <= 0
+                integrator = SciMLBase.init(
+                    ode, OrdinaryDiffEqBDF.QNDF(precs=precs, linsolve=linsolve);
+                    isoutofdomain=outside_domain, kwargs...)
+                integrator_ref[] = integrator
+                solution = SciMLBase.solve!(integrator)
+                SciMLBase.successful_retcode(solution) ||
+                    error("reactor integration failed: $(solution.retcode)")
+                StructuredReactorSolver._lifecycle_valid(adapter) ||
+                    error("structured reactor solver cache lifecycle failed")
+                return solution
+            end
         end
     end
     f = SciMLBase.ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad)
