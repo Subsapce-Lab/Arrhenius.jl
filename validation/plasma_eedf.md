@@ -62,4 +62,5 @@ current gas-temperature Maxwellian, including valid underflowed zero tails.
 
 [Pulse EEDF checks](results/cantera4_wsl_pulse_eedf_primitives.json) cover all
 34 collision tables and the original methane-discharge example's initial and
-190 Td states. The complete pulse chemistry and trajectory remain unvalidated.
+190 Td states. [Full mechanism thermochemistry](plasma_thermochemistry.md) is validated separately;
+the complete pulse trajectory remains unvalidated.

@@ -26,6 +26,8 @@ module Arrhenius
     include("Reactors.jl")
     include("PlasmaKinetics.jl")
     include("PlasmaIO.jl")
+    include("PlasmaRateIO.jl")
+    include("PlasmaThermochemistry.jl")
     include("ReactorNetworks.jl")
     include("MovingWallReactors.jl")
     include("SurfaceKinetics.jl")

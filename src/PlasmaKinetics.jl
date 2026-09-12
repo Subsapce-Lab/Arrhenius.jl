@@ -1,12 +1,29 @@
 import ForwardDiff
 
+# Native gas thermochemistry composed with the fixed Boltzmann collision model.
+struct _PlasmaThermalData
+    thermo::IdealGasThermo{Float64}
+    reaction::Reaction{Float64}
+    chebyshev_indices::Vector{Int}
+    chebyshev_coefficients::Vector{Matrix{Float64}}
+    chebyshev_temperature_ranges::Vector{Tuple{Float64,Float64}}
+    chebyshev_pressure_ranges::Vector{Tuple{Float64,Float64}}
+    eedf_model::EEDFModel
+    reverse_plan::_ReversibleRatePlan{Reaction{Float64},Vector{Bool}}
+end
+function _PlasmaThermalData(thermo,reaction,indices,coefficients,tranges,pranges,model)
+    _PlasmaThermalData(thermo,reaction,indices,coefficients,tranges,pranges,model,
+        _ReversibleRatePlan(reaction))
+end
+
 """
     PlasmaMechanism(path; phase=nothing, data_paths=String[], atomic_weights=Dict())
 
-Read an isotropic, ideal plasma mechanism directly from Cantera-style YAML.
+Read an ideal plasma mechanism directly from Cantera-style YAML.
 Imported species files are searched beside the mechanism and in `data_paths`.
-Supports irreversible Arrhenius, two-temperature and electron-collision rates,
-mass-action third bodies and nonnegative integer reaction orders. Rates use
+Supports isotropic rates and Boltzmann two-term distributions. Boltzmann phases
+also support imported gas thermodynamics, reversible Arrhenius reactions, falloff
+and Chebyshev rates. Reaction orders are nonnegative integers. Rates use
 kmol, m, s, K and J; electron energies are in eV.
 """
 struct PlasmaMechanism
@@ -34,6 +51,14 @@ struct PlasmaMechanism
     initial_pressure::Float64
     initial_mean_electron_energy::Float64
     initial_mole_fractions::Vector{Float64}
+    thermal::Union{Nothing,_PlasmaThermalData}
+end
+
+# Preserve construction of the original isotropic mechanism.
+function PlasmaMechanism(name,ns,nr,names,elements,mw,em,electron,react,prod,orders,S,
+        third,eff,kinds,params,energies,cross,grid,shape,T,P,E,X)
+    PlasmaMechanism(name,ns,nr,names,elements,mw,em,electron,react,prod,orders,S,
+        third,eff,kinds,params,energies,cross,grid,shape,T,P,E,X,nothing)
 end
 
 _plasma_electron_temperature(E) = (2.0 / 3.0) * E * _EEDF_ELECTRON_CHARGE / _EEDF_BOLTZMANN
@@ -110,7 +135,11 @@ mutable struct PlasmaState
     density::Float64
     mean_electron_energy::Float64
     mass_fractions::Vector{Float64}
+    electric_field::Float64
+    eedf::Union{Nothing,EEDFResult}
 end
+PlasmaState(m,T,rho,E,Y) = PlasmaState(m,T,rho,E,Y,0.0,nothing)
+
 function _plasma_mass_fractions(m, X, Y)
     if X === nothing
         return _reactor_composition(m, Y, Float64)
@@ -148,8 +177,16 @@ function plasma_properties(s::PlasmaState)
     X = Y ./ m.MW ./ inverse_mw
     Te = _plasma_electron_temperature(s.mean_electron_energy)
     P = R * s.density * inverse_mw * (s.temperature + X[m.electron_index] * (Te - s.temperature))
-    return (T=s.temperature, Te, P, rho=s.density, X, Y,
+    basic = (T=s.temperature, Te, P, rho=s.density, X, Y,
         mean_electron_energy=s.mean_electron_energy)
+    m.thermal === nothing && return basic
+    N = s.density * inverse_mw * _EEDF_AVOGADRO_KMOL
+    mobility = s.eedf === nothing ? nothing : s.eedf.mobility
+    joule = mobility === nothing ? nothing :
+        _EEDF_ELECTRON_CHARGE * N * X[m.electron_index] * mobility * s.electric_field^2
+    return merge(basic, (electric_field=s.electric_field,
+        reduced_electric_field=s.electric_field/N, electron_mobility=mobility,
+        joule_heating=joule))
 end
 
 """
@@ -208,6 +245,7 @@ end
 "Return native rate coefficients, progress/production rates and isotropic EEDF at a state."
 function plasma_rates(s::PlasmaState)
     m = s.mechanism
+    m.thermal === nothing || return _plasma_thermal_rates(s)
     kf, f = _plasma_rate_coefficients(m, s.temperature, s.mean_electron_energy)
     C = s.mass_fractions .* s.density ./ m.MW
     q = similar(kf)
@@ -236,6 +274,7 @@ struct PlasmaReactor
     mass_fractions::Vector{Float64}
 end
 function PlasmaReactor(s::PlasmaState)
+    s.mechanism.thermal === nothing || throw(ArgumentError("Boltzmann plasma requires an energy-coupled reactor; PlasmaReactor fixes both temperatures"))
     properties = plasma_properties(s)
     return PlasmaReactor(s.mechanism, s.temperature, properties.Te, properties.P,
         s.mean_electron_energy, copy(s.mass_fractions))
@@ -252,6 +291,7 @@ mutable struct PlasmaRHS
 end
 function reactor_rhs(r::PlasmaReactor)
     m = r.mechanism
+    m.thermal === nothing || throw(ArgumentError("Boltzmann plasma requires an energy-coupled reactor"))
     kf, _ = _plasma_rate_coefficients(m, r.temperature, r.mean_electron_energy)
     a = r.temperature ./ m.MW
     a[m.electron_index] = r.electron_temperature / m.MW[m.electron_index]
