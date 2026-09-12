@@ -657,6 +657,26 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     return band
 end
 
+"""Populate node and adjacent face active regions for conservative flame derivatives."""
+function _flame_active_region!(region::BitMatrix,u::AbstractMatrix)
+    n_species = size(u, 1) - 2
+    n_nodes = size(u, 2)
+    size(region) == (n_species, 2n_nodes - 1) ||
+        throw(DimensionMismatch("active region must have size ($(n_species), $(2n_nodes - 1))"))
+    @inbounds for j in 1:n_nodes
+        for k in 1:n_species
+            region[k,j] = u[k+1,j] >= 0
+        end
+        if j < n_nodes
+            face = n_nodes + j
+            for k in 1:n_species
+                region[k,face] = u[k+1,j] + u[k+1,j+1] >= 0
+            end
+        end
+    end
+    return region
+end
+
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         require_positive=false,minimum_iterations=0,loglevel=0)
     u = f.state
@@ -670,6 +690,10 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
     previous_enthalpy = _conservative_flame(f) && previous !== nothing ?
         _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
     residual_valid = false
+    region_enabled = _conservative_flame(f)
+    current_region = falses(size(u,1)-2,2size(u,2)-1)
+    factored_region = similar(current_region)
+    region_valid = false
     for iteration in 1:maxiters
         if !residual_valid
             flame_residual!(r,f,u,w; previous,dt,previous_enthalpy)
@@ -682,11 +706,20 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 minimum(@view(u[2:end-1,:])) > -1e-12)
             return true
         end
-        refresh = age >= 5 || last_contraction > .7
+        region_changed = false
+        if region_enabled
+            _flame_active_region!(current_region,u)
+            region_changed = region_valid && current_region != factored_region
+        end
+        refresh = age >= 5 || last_contraction > .7 || region_changed
         step = try
             if refresh
                 J = _flame_jacobian(f,u,w,r; previous,dt,previous_enthalpy)
                 _,pivots = LinearAlgebra.LAPACK.gbtrf!(bandwidth,bandwidth,length(u),J)
+                if region_enabled
+                    copyto!(factored_region,current_region)
+                    region_valid = true
+                end
                 age = 0
             end
             correction = -vec(copy(r))
