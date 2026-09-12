@@ -530,12 +530,20 @@
     {
       "id": "reactors/plasma",
       "url": "https://cantera.org/dev/examples/python/reactors/plasma.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/plasma.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_plasma.json",
+        "scope": "Complete native YAML/state/reactor example; all1002 times and species trajectories, independent fixed-state and signed-Jacobian checks, conservation and local CI."
+      },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_plasma.json",
+        "case": "reactors/plasma",
+        "speed_ratio": 15.336798373385658,
+        "scope": "Three32-run batches of complete fresh calculations with one loaded mechanism; setup, solve and required time/electron-mole-fraction outputs included."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "reactors/porous_media_burner",
