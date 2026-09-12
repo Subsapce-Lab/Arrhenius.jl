@@ -550,12 +550,20 @@
     {
       "id": "reactors/preconditioned_integration",
       "url": "https://cantera.org/dev/examples/python/reactors/preconditioned_integration.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/preconditioned_integration.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_preconditioned_integration.json",
+        "scope": "Both native modes for the complete 1268-species source example; all adaptive saved states independently checked at exact times against tighter Cantera, with conservation, negative-state and solver-work checks."
+      },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_preconditioned_integration.json",
+        "case": "reactors/preconditioned_integration",
+        "speed_ratio": 1.8055484046884154,
+        "scope": "One warmup and two measured complete two-mode pairs, one reused mechanism per language, fresh reactor/solver setup + default adaptive solve + four source outputs; load/JIT, validation and I/O excluded. Individual structured mode is below target and is reported separately."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "reactors/preconditioned_network",
