@@ -91,6 +91,8 @@ conservative flames. Enabling Soret restores those knots and interpolates the
 existing state. Restart snapshots retain this policy. The fixed-temperature
 example first solves a coarse mixture grid, then refines it using the final
 multicomponent criteria before saving either transport stage.
+See [complete premixed-flame validation](validation/premixed_flames.md) for
+accuracy checks and measured runtimes.
 
 See [premixed flames](example/flames/adiabatic_flame.jl),
 [burner flames](example/flames/burner_flame.jl),
