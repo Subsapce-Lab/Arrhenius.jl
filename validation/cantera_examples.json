@@ -814,12 +814,26 @@
     {
       "id": "thermo/plasma-eedf",
       "url": "https://cantera.org/dev/examples/python/thermo/plasma-eedf.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
-      "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "status": "calculation_validated",
+      "julia_example": "example/thermodynamics/plasma_eedf.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_plasma_eedf.json",
+        "additional_report": "validation/results/cantera4_m4_plasma_eedf.json",
+        "scope": "Original 43-collision air EEDF, all 41 edge values and every complete repetition; independent mathematical tests and BOLOS reference discrepancy reported."
+      },
+      "m4_timing_evidence": {
+        "report": "validation/results/cantera4_m4_plasma_eedf.json",
+        "case": "thermo/plasma-eedf",
+        "speed_ratio": 0.9805862340774717,
+        "scope": "Nine warm complete fresh model-to-EEDF calls, first call separate; all outputs checked."
+      },
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_plasma_eedf.json",
+        "case": "thermo/plasma-eedf",
+        "speed_ratio": 1.3873059403023973,
+        "scope": "Nine warm complete fresh model-to-EEDF calls, first call separate; all outputs checked."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "thermo/plasma_equilibrium",

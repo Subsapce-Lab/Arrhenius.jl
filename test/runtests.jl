@@ -4,6 +4,8 @@ using LinearAlgebra
 using SHA
 using Test
 
+include("plasma_eedf_loader.jl")
+include("plasma_eedf_numerics.jl")
 include("equilibrium_native.jl")
 include("condensed_equilibrium_native.jl")
 include("ideal_gas_states.jl")

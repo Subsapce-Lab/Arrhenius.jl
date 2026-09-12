@@ -226,6 +226,18 @@ surface rates and coverage integration. The [Blowers–Masel example](example/ki
 evaluates reaction rates and activation energies as temperature and enthalpy change.
 
 
+The [electron-energy distribution example](example/thermodynamics/plasma_eedf.jl)
+solves the temporal two-term Boltzmann equation on a prescribed energy grid.
+`read_eedf_model` reads elastic/effective, excitation, ionization and attachment
+cross sections directly from a Cantera-style plasma YAML file. `EEDFState`
+supplies gas conditions and target molecular weights; `solve_eedf` returns
+center and edge distributions, electron mobility and convergence diagnostics.
+With the Phelps air dataset from Cantera's example data, run:
+
+```bash
+julia --project=. example/thermodynamics/plasma_eedf.jl path/to/air-plasma-Phelps.yaml eedf.csv
+```
+
 ## Publication
 
 + [Arrhenius.jl: A Differentiable Combustion Simulation Package](https://arxiv.org/pdf/2107.06172.pdf): overview of Arrhenius.jl and applications in deep mechanism reduction, uncertainty quantification, mechanism tuning and model discovery. [Slides in NCM21](https://www.slideshare.net/WeiqiJi/arrheniusjl-a-differentiable-combustion-simulation-package-248457895), [Vedio for NCM21](https://www.youtube.com/watch?v=X1mwpW78NvA).

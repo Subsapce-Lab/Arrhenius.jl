@@ -6,6 +6,11 @@ module Arrhenius
     using SparseArrays
 
     include("Constants.jl")
+    include("PlasmaEEDFTypes.jl")
+    include("PlasmaEEDFIO.jl")
+    include("PlasmaEEDF.jl")
+    export EEDFModel, EEDFState, TwoTermOptions, EEDFResult, read_eedf_model, solve_eedf
+
     include("BlowersMasel.jl")
     include("DataStructure.jl")
     include("Solution.jl")
