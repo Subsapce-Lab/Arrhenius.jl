@@ -189,8 +189,11 @@ end
 
 Evaluate a dense finite-difference Jacobian of a prepared `ReactorRHS`.
 Second-order central differences are used inside the physical domain and
-second-order forward differences at zero mass fractions. This callback avoids
-passing automatic-differentiation scalars through the fixed-type workspace.
+second-order forward differences at zero mass fractions. Negative trial mass
+fractions use second-order backward differences, sampling the RHS at
+`u[j] - step` and `u[j] - 2 * step` so no positive perturbation crosses the
+clipped concentration branch of the RHS. This callback avoids passing
+automatic-differentiation scalars through the fixed-type workspace.
 The input state is unchanged.
 """
 function reactor_jacobian!(J, u, rhs::ReactorRHS, t=0)
@@ -210,6 +213,18 @@ function reactor_jacobian!(J, u, rhs::ReactorRHS, t=0)
         step = relative_step * max(abs(u[j]), scale)
         rhs.jac_state[j] = u[j] + step
         step = rhs.jac_state[j] - u[j]
+        if j < n && u[j] < 0
+            rhs.jac_state[j] = u[j] - step
+            rhs(rhs.jac_plus, rhs.jac_state, nothing, t)
+            rhs.jac_state[j] = u[j] - 2 * step
+            rhs(rhs.jac_minus, rhs.jac_state, nothing, t)
+            for i in 1:n
+                J[i, j] = (3 * rhs.jac_base[i] - 4 * rhs.jac_plus[i] +
+                           rhs.jac_minus[i]) / (2 * step)
+            end
+            rhs.jac_state[j] = u[j]
+            continue
+        end
         rhs(rhs.jac_plus, rhs.jac_state, nothing, t)
         if u[j] >= step
             rhs.jac_state[j] = u[j] - step

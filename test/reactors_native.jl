@@ -1,6 +1,21 @@
 using Arrhenius
+using ForwardDiff
 using LinearAlgebra
 using Test
+
+struct _NegativeTrialReactorTag end
+
+function _negative_trial_ad_column(reactor, gas, u, column)
+    D = ForwardDiff.Dual{_NegativeTrialReactorTag,Float64,1}
+    workspace = Arrhenius.ReactorWorkspace(gas, D)
+    scratch = ntuple(_ -> zeros(D, length(u)), 4)
+    rhs = Arrhenius.ReactorRHS(reactor, workspace, scratch...)
+    dual_u = [ForwardDiff.Dual{_NegativeTrialReactorTag}(
+        u[k], k == column ? 1.0 : 0.0) for k in eachindex(u)]
+    dual_du = similar(dual_u)
+    rhs(dual_du, dual_u, nothing, 0.0)
+    return [ForwardDiff.partials(value)[1] for value in dual_du]
+end
 
 @testset "closed native ideal-gas reactors" begin
     gas = CreateSolution(joinpath(@__DIR__, "..", "mechanism", "h2o2.yaml"))
@@ -114,4 +129,51 @@ using Test
     end
     @test solve_reactor(reactor, (0.0, 0.001); integrator=inspect_problem, marker=true) === :caller_owned_result
     @test received[]
+end
+
+@testset "negative trial-state reactor Jacobian columns" begin
+    gas = CreateSolution(joinpath(@__DIR__, "..", "mechanism", "h2o2.yaml"))
+    mixture = Dict("H2" => 2.0, "O2" => 1.0, "AR" => 4.0)
+    column = findfirst(==("H"), gas.species_names)
+    @test !isnothing(column)
+    column = something(column)
+    base_step = cbrt(eps(Float64)) * 1.0e-6
+
+    for constraint in (:constant_pressure, :constant_volume)
+        reactor = IdealGasReactor(gas; temperature=1400.0, pressure=3one_atm,
+                                  mole_fractions=mixture, constraint)
+        initial = reactor_state(reactor)
+        @test initial[column] == 0.0
+        for (regime, negative_fraction) in ((:within_one_step, -0.5 * base_step),
+                                             (:between_one_and_two_steps, -1.5 * base_step),
+                                             (:farther_negative, -1.0e-7))
+            u = copy(initial)
+            u[column] = negative_fraction
+            raw_step = cbrt(eps(eltype(u))) * max(abs(u[column]), 1.0e-6)
+            step = (u[column] + raw_step) - u[column]
+            if regime === :within_one_step
+                @test -step < u[column] < 0
+            elseif regime === :between_one_and_two_steps
+                @test -2 * step < u[column] < -step
+            else
+                @test u[column] < -2 * step
+            end
+
+            before = copy(u)
+            rhs = reactor_rhs(reactor)
+            value = similar(u)
+            rhs(value, u, nothing, 0.0)
+            J = zeros(length(u), length(u))
+            reactor_jacobian!(J, u, rhs)
+            oracle = _negative_trial_ad_column(reactor, gas, u, column)
+            @test u == before
+            @test all(isfinite, value)
+            @test all(isfinite, @view J[:, column])
+            @test all(isfinite, oracle)
+
+            column_scale = max(norm(oracle, Inf), 1.0)
+            tolerance = 2.0e-3 .* abs.(oracle) .+ 5.0e-7 * column_scale
+            @test all(abs.(@view(J[:, column]) .- oracle) .<= tolerance)
+        end
+    end
 end
