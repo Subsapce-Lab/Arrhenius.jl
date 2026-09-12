@@ -495,7 +495,7 @@
         "speed_ratio": null,
         "scope": "Native first plus seven warm replays completed; Cantera stopped at its first warm trajectory replay guard. No qualified paired timing."
       },
-      "performance_status": "below_target"
+      "performance_status": "not_validated"
     },
     {
       "id": "reactors/periodic_cstr",
@@ -1025,19 +1025,18 @@
       "performance_status": "validated"
     }
   ],
-  "performance_target": "WSL and Apple M4 Mac mini",
+  "performance_target": "WSL",
   "performance_targets": [
-    "wsl",
-    "apple-m4"
+    "wsl"
   ],
   "performance_status_legend": {
-    "not_validated": "No complete performance qualification on either required host.",
-    "partially_validated": "Performance qualified on one required host; the other remains outstanding.",
-    "validated": "Performance qualified on both WSL and Apple M4 Mac mini.",
-    "below_target": "A complete paired measurement on a required host falls below the minimum speed ratio; evidence for the other host is reported separately."
+    "not_validated": "No complete WSL performance measurement with source calculation validation.",
+    "validated": "Performance meets the minimum speed ratio on WSL and the source calculation is validated.",
+    "below_target": "A complete WSL measurement is below the minimum speed ratio; historical M4 evidence, if present, remains reported separately."
   },
   "status_legend": {
     "not_validated": "Complete per-example calculation validation remains outstanding.",
     "calculation_validated": "Source calculation outputs validated; performance tracked separately for the target host."
-  }
+  },
+  "repeated_run_timing_contract": "Warm repeated calculations reuse the loaded mechanism in both Arrhenius and Cantera. Each reactor repetition starts from fresh state and includes reactor and solver setup, calculation, and required numerical output extraction. Imports, compilation, one-time mechanism/sidecar loading, file I/O, and validation checks are separate. Historical per-case evidence retains its recorded boundary and is not relabeled."
 }

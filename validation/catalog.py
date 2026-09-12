@@ -46,8 +46,9 @@ def snapshot(html: bytes):
         "index_sha256": hashlib.sha256(html).hexdigest(),
         "minimum_speed_ratio": 0.95,
         "speed_ratio_definition": "Cantera elapsed / Arrhenius elapsed",
-        "performance_target": "WSL and Apple M4 Mac mini",
-        "performance_targets": ["wsl", "apple-m4"],
+        "repeated_run_timing_contract": "Warm repeated calculations reuse the loaded mechanism in both Arrhenius and Cantera. Each reactor repetition starts from fresh state and includes reactor and solver setup, calculation, and required numerical output extraction. Imports, compilation, one-time mechanism/sidecar loading, file I/O, and validation checks are separate. Historical per-case evidence retains its recorded boundary and is not relabeled.",
+        "performance_target": "WSL",
+        "performance_targets": ["wsl"],
         "examples": [
             {"id": url.split("/examples/python/")[1][:-5], "url": url,
              "status": "not_validated", "julia_example": None,
