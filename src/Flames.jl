@@ -35,6 +35,7 @@ mutable struct BurnerFlame{G<:Solution} <: AbstractPremixedFlame
     profile_positions::Vector{Float64}
     profile_temperatures::Vector{Float64}
     imposed_temperature::Vector{Float64}
+    profile_grid_policy::Symbol
     transport_model::Symbol
     soret_enabled::Bool
     multicomponent_data::Union{Nothing,MultiTransportData}
@@ -123,7 +124,7 @@ function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=noth
     end
     return BurnerFlame(base.gas,base.grid,base.pressure,base.inlet_temperature,
         base.inlet_Y,base.state,base.anchor,base.fixed_temperature,
-        base.dependent_species,false,Float64(mdot),Float64[],Float64[],Float64[],
+        base.dependent_species,false,Float64(mdot),Float64[],Float64[],Float64[],:full_knots,
         base.transport_model,base.soret_enabled,base.multicomponent_data,base.flux_gradient_basis,base.discretization)
 end
 
@@ -135,6 +136,9 @@ diffusion and either model's Soret diffusion require `MultiTransportData`
 exported for the same mechanism. `soret=true` includes thermal diffusion.
 Use `flux_gradient_basis=:mass` or `:mole` for mixture-averaged diffusion.
 An existing solution is retained as the initial guess for the next `solve!`.
+Enabling Soret on an adaptive prescribed-temperature grid first inserts all
+profile knots and interpolates the state, changing its policy to `:full_knots`.
+Invalid transport arguments leave the flame unchanged.
 """
 function set_transport!(f::AbstractPremixedFlame,model;data=f.multicomponent_data,soret=false,
         flux_gradient_basis=f.flux_gradient_basis)
@@ -143,10 +147,17 @@ function set_transport!(f::AbstractPremixedFlame,model;data=f.multicomponent_dat
     flux_gradient_basis = Symbol(flux_gradient_basis)
     flux_gradient_basis in (:mole,:mass) || throw(ArgumentError("flux gradient basis must be :mole or :mass"))
     soret isa Bool || throw(ArgumentError("soret must be true or false"))
+    data === nothing || data isa MultiTransportData ||
+        throw(ArgumentError("transport data must be MultiTransportData or nothing"))
     if model == :multicomponent || soret
         data isa MultiTransportData || throw(ArgumentError("multicomponent transport requires MultiTransportData"))
         data.species_names == f.gas.species_names && data.molecular_weights ≈ f.gas.MW ||
             throw(ArgumentError("multicomponent data must match the flame mechanism"))
+    end
+    if soret && f isa BurnerFlame && f.profile_grid_policy == :adaptive
+        # Validate transport first; profile/state transfer then preserves every knot.
+        set_temperature_profile!(f,f.profile_positions,f.profile_temperatures;
+            relative=false,grid_policy=:full_knots)
     end
     f.transport_model,f.soret_enabled,f.multicomponent_data = model,soret,data
     f.flux_gradient_basis = flux_gradient_basis
@@ -161,14 +172,31 @@ function _interpolate_profile(positions,values,z)
 end
 
 """
-    set_temperature_profile!(flame::BurnerFlame, positions, temperatures; relative=true)
+    set_temperature_profile!(flame::BurnerFlame, positions, temperatures;
+                             relative=true, grid_policy=:full_knots)
 
 Prescribe temperature [K] using piecewise-linear interpolation. Relative positions
 span 0–1; absolute positions are in meters. The profile must cover the domain and
-match the burner temperature at its inlet. Grid refinement preserves this profile.
+match the burner temperature at its inlet. All supplied pairs are copied and
+retained when the solution grid changes.
+
+For conservative flames, `grid_policy=:full_knots` inserts every interior profile
+knot. `:adaptive` retains the current grid and adds cells during `solve!` wherever
+the exact profile-to-cell-chord error exceeds 1% of the largest supplied temperature,
+in addition to species and spacing refinement. Adaptive profiles require conservative
+discretization and no Soret diffusion. Enabling Soret later restores full knots.
+Finite-difference flames retain their historical profile sampling behavior.
 """
-function set_temperature_profile!(f::BurnerFlame,positions,temperatures;relative=true)
+function set_temperature_profile!(f::BurnerFlame,positions,temperatures;
+        relative=true,grid_policy=:full_knots)
+    grid_policy in (:full_knots,:adaptive) ||
+        throw(ArgumentError("profile grid policy must be :full_knots or :adaptive"))
+    relative isa Bool || throw(ArgumentError("relative must be true or false"))
+    grid_policy == :adaptive && (!_conservative_flame(f) || f.soret_enabled) &&
+        throw(ArgumentError("adaptive profiles require conservative discretization without Soret"))
     z,T = Float64.(positions),Float64.(temperatures)
+    z isa AbstractVector && T isa AbstractVector ||
+        throw(ArgumentError("profile positions and temperatures must be vectors"))
     length(z) == length(T) && length(z) >= 2 || throw(DimensionMismatch("at least two position/temperature pairs required"))
     all(isfinite,z) && all(>(0),diff(z)) && all(t->isfinite(t)&&200<=t<=6000,T) ||
         throw(ArgumentError("profile requires increasing positions and temperatures in 200–6000 K"))
@@ -178,24 +206,50 @@ function set_temperature_profile!(f::BurnerFlame,positions,temperatures;relative
     z[1] <= f.grid[1] && z[end] >= f.grid[end] || throw(ArgumentError("profile must cover the entire domain"))
     isapprox(_interpolate_profile(z,T,f.grid[1]),f.inlet_temperature;atol=1e-6,rtol=0) ||
         throw(ArgumentError("profile inlet must match burner temperature"))
+    # Prepare the entire transfer before mutating the flame.
+    oldz,oldu = f.grid,f.state
+    newz = _conservative_flame(f) && grid_policy == :full_knots ?
+        sort!(unique(vcat(oldz,filter(x->oldz[1]<x<oldz[end],z)))) : oldz
+    newu = length(newz) == length(oldz) ? copy(oldu) :
+        [_interpolate_profile(oldz,@view(oldu[k,:]),x) for k in axes(oldu,1), x in newz]
+    anchor = findfirst(==(oldz[f.anchor]),newz)
+    imposed = [_interpolate_profile(z,T,x) for x in newz]
+    newu[1,:] .= imposed ./ 1000
     f.profile_positions,f.profile_temperatures = z,T
-    if _conservative_flame(f)
-        # Resolve prescribed derivative discontinuities exactly. Thermal
-        # diffusion can produce matching jumps in species gradients here.
-        oldz,oldu = f.grid,f.state
-        newz = sort!(unique(vcat(oldz,filter(x->oldz[1]<x<oldz[end],z))))
-        if length(newz) != length(oldz)
-            anchor_z = oldz[f.anchor]
-            f.state = [_interpolate_profile(oldz,@view(oldu[k,:]),x)
-                for k in axes(oldu,1), x in newz]
-            f.grid = newz
-            f.anchor = findfirst(==(anchor_z),newz)
-        end
-    end
-    f.imposed_temperature = [_interpolate_profile(z,T,x) for x in f.grid]
-    f.state[1,:] .= f.imposed_temperature ./ 1000
+    f.grid,f.state,f.anchor = newz,newu,anchor
+    f.imposed_temperature = imposed
+    f.profile_grid_policy = grid_policy
     f.converged = false
     return f
+end
+
+# The difference of two piecewise-linear functions attains its extrema at knots.
+function _profile_chord_defects(grid,positions,temperatures)
+    errors=zeros(length(grid)-1)
+    for j in eachindex(errors)
+        left,right=grid[j],grid[j+1]
+        Tl=_interpolate_profile(positions,temperatures,left)
+        Tr=_interpolate_profile(positions,temperatures,right)
+        lo=searchsortedfirst(positions,left)
+        hi=searchsortedlast(positions,right)
+        for k in lo:hi
+            q=(positions[k]-left)/(right-left)
+            errors[j]=max(errors[j],abs(temperatures[k]-((1-q)*Tl+q*Tr)))
+        end
+    end
+    return errors
+end
+
+function _mark_profile_chord_defects!(insert,f,spacing)
+    f isa BurnerFlame && f.profile_grid_policy == :adaptive || return nothing
+    _conservative_flame(f) && !f.soret_enabled ||
+        throw(ArgumentError("adaptive profiles require conservative discretization without Soret"))
+    errors=_profile_chord_defects(f.grid,f.profile_positions,f.profile_temperatures)
+    marks=errors .> .01*maximum(f.profile_temperatures)
+    any(marks .& (spacing .< 2e-10)) &&
+        error("profile error exceeds its temperature budget at minimum grid spacing")
+    insert .|= marks
+    return nothing
 end
 
 "Temperature [K] at each grid point."
@@ -760,6 +814,7 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
         left > ratio*right && (insert[j] = true)
         right > ratio*left && (insert[j+1] = true)
     end
+    _mark_profile_chord_defects!(insert,f,spacing)
     count(insert) == 0 && return false
     N+count(insert) <= max_points || error("flame refinement exceeds max_points=$max_points")
     newz = Float64[]

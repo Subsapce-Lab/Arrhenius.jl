@@ -55,13 +55,18 @@ function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,a
                         mdot=fixed ? .04 : .06,width=fixed ? .01 : .5)
                 f.discretization==:conservative || error("source example requires the conservative discretization")
                 if fixed
-                    set_temperature_profile!(f,vec(profile["positions"]),vec(profile["temperatures"]);relative=false)
+                    set_temperature_profile!(f,vec(profile["positions"]),vec(profile["temperatures"]);relative=false,grid_policy=:adaptive)
                 end
             end
             set_transport!(f,multi ? :multicomponent : :mixture_averaged;data,soret=endswith(mode,"soret"),
                 flux_gradient_basis=free ? :mass : :mole)
-            slope=free ? .06 : fixed ? (multi ? .1 : .3) : .05
-            curve=free ? .12 : fixed ? (multi ? .2 : 1.) : .1
+            slope=free ? .06 : fixed ? .1 : .05
+            curve=free ? .12 : fixed ? .2 : .1
+            if fixed && stage == 1
+                # Continue the source's coarse mixture solve to the final
+                # resolution before saving it; both solves remain timed.
+                solve!(f;ratio=3.,slope=.3,curve=1.)
+            end
             solve!(f;ratio=3.,slope,curve)
         end
         f.converged || error("$case $mode failed")

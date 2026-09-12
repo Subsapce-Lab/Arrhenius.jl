@@ -82,6 +82,16 @@ set_transport!(flame, :multicomponent; data, soret=true)
 solve!(flame; slope=.02, curve=.04)
 ```
 
+For a prescribed burner temperature, `set_temperature_profile!(burner, z, T;
+relative=false, grid_policy=:adaptive)` stores every supplied pair and lets a
+conservative, no-Soret flame refine its solution grid. Refinement also bounds the
+piecewise-linear temperature's deviation from each cell chord to 1% of the largest
+supplied temperature. The default `:full_knots` inserts all profile knots for
+conservative flames. Enabling Soret restores those knots and interpolates the
+existing state. Restart snapshots retain this policy. The fixed-temperature
+example first solves a coarse mixture grid, then refines it using the final
+multicomponent criteria before saving either transport stage.
+
 See [premixed flames](example/flames/adiabatic_flame.jl),
 [burner flames](example/flames/burner_flame.jl),
 [counterflow diffusion flames](example/flames/counterflow_diffusion.jl),
