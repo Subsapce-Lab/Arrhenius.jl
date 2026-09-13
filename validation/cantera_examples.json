@@ -476,7 +476,7 @@
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_nanosecond_pulse_repeated.json",
         "case": "reactors/nanosecond_pulse_discharge",
-        "speed_ratio": 0.6568669236394354,
+        "speed_ratio": 0.6333903433481649,
         "scope": "Three batches of three complete fresh pulse calculations with one loaded mechanism; initialization, setup, solve and required numerical outputs included. Accuracy passes; speed is below the 0.95 target."
       },
       "performance_status": "below_target"
