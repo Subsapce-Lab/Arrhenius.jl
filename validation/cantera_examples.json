@@ -135,9 +135,9 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/adiabatic_flame.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/adiabatic_flame",
-        "scope": "Complete published transport sequence on both required hosts, all stages checked against independently refined references with first/warm numerical replay."
+        "scope": "Complete published transport sequence; every stage checked against independently refined Cantera references, with every first/warm result replayed."
       },
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_flames_5ca6641.json",
@@ -146,12 +146,14 @@
         "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/adiabatic_flame",
-        "speed_ratio": 0.7379227829446948,
-        "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
+        "speed_ratio": 1.1119679084003797,
+        "conservative_speed_ratio": 1.057414541024273,
+        "verdict": "inconclusive",
+        "scope": "Three fixed batches of 32 warm complete public sequences, reusing loaded mechanisms with fresh flame state and solver setup; includes required numerical profiles. Imports/JIT, loading, explicit warmup collection, validation and file I/O excluded; automatic GC included."
       },
-      "performance_status": "below_target"
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/burner_flame",
@@ -159,9 +161,9 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/burner_flame.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/burner_flame",
-        "scope": "Complete published transport sequence on both required hosts, all stages checked against independently refined references with first/warm numerical replay."
+        "scope": "Complete published transport sequence; every stage checked against independently refined Cantera references, with every first/warm result replayed."
       },
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_flames_5ca6641.json",
@@ -170,12 +172,14 @@
         "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/burner_flame",
-        "speed_ratio": 2.2395215727940405,
-        "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
+        "speed_ratio": 2.071698281546164,
+        "conservative_speed_ratio": 1.8970235728135003,
+        "verdict": "inconclusive",
+        "scope": "Three fixed batches of 32 warm complete public sequences, reusing loaded mechanisms with fresh flame state and solver setup; includes required numerical profiles. Imports/JIT, loading, explicit warmup collection, validation and file I/O excluded; automatic GC included."
       },
-      "performance_status": "validated"
+      "performance_status": "not_validated"
     },
     {
       "id": "onedim/catalytic_combustion",
@@ -233,9 +237,9 @@
       "status": "calculation_validated",
       "julia_example": "example/flames/flame_fixed_T.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/flame_fixed_T",
-        "scope": "Complete published transport sequence on both required hosts, all stages checked against independently refined references with first/warm numerical replay."
+        "scope": "Complete published transport sequence; every stage checked against independently refined Cantera references, with every first/warm result replayed."
       },
       "m4_timing_evidence": {
         "report": "validation/results/cantera4_flames_5ca6641.json",
@@ -244,10 +248,12 @@
         "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
       },
       "wsl_timing_evidence": {
-        "report": "validation/results/cantera4_flames_5ca6641.json",
+        "report": "validation/results/cantera4_flames_4d09446.json",
         "case": "onedim/flame_fixed_T",
-        "speed_ratio": 1.4764191389968704,
-        "scope": "Nine formal warm complete public calculation sequences; model preparation, snapshots and file output excluded; first measured sequence separate and not whole-process cold latency."
+        "speed_ratio": 1.735532319636744,
+        "conservative_speed_ratio": 1.7088898330157007,
+        "verdict": "qualified",
+        "scope": "Three fixed batches of 32 warm complete public sequences, reusing loaded mechanisms with fresh flame state and solver setup; includes required numerical profiles. Imports/JIT, loading, explicit warmup collection, validation and file I/O excluded; automatic GC included."
       },
       "performance_status": "validated"
     },

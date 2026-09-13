@@ -3,32 +3,39 @@
 The complete free, burner and prescribed-temperature examples were checked with
 Julia 1.12.7 and Cantera 4.0.0a2 at revision
 [726522be](https://github.com/Cantera/cantera/tree/726522be4e2a13454d8415b7ef799d621f665cf3).
-[Results and all timing samples](results/cantera4_flames_5ca6641.json) identify
-native revision 5ca6641 and the source, mechanism and reference hashes.
+[Results and all timing samples](results/cantera4_flames_4d09446.json) identify
+native revision 4d09446 and the source, mechanism and reference hashes.
 
-| Complete source calculation | WSL speed ratio | Apple M4 speed ratio | Both hosts ≥0.95 |
+| Complete source calculation | WSL speed ratio | Conservative ratio | Speed qualification |
 | --- | ---: | ---: | --- |
-| Free flame, four transport stages | 0.738 | 0.660 | No |
-| Burner flame, two transport stages | 2.240 | 2.159 | Yes |
-| Prescribed-temperature flame, two transport stages | 1.476 | 1.932 | Yes |
+| Free flame, four transport stages | 1.112 | 1.057 | Inconclusive: timing spread exceeds 5% |
+| Burner flame, two transport stages | 2.072 | 1.897 | Inconclusive: timing spread exceeds 5% |
+| Prescribed-temperature flame, two transport stages | 1.736 | 1.709 | Passed |
 
-Ratios are median Cantera time divided by median Julia time, with nine warm
-complete sequences and one numerical thread per implementation. Each repetition's
-stage times are summed before taking the median. Timers include flame construction,
-initialization, continuation and adaptive solves; mechanism/sidecar preparation,
-profile snapshots and file output are outside them. The first measured sequence is
-reported separately. Its internal stage timers exclude startup/imports and some
-specialization, so those first times are not whole-process cold latency.
+Each implementation performs 96 warm complete calculations, grouped into three
+consecutive batches of 32. The speed ratio divides the median Cantera batch mean
+by the median Julia batch mean. The conservative ratio divides the smallest
+Cantera batch mean by the largest Julia batch mean. Both ratios must reach 0.95,
+and each implementation's batch-mean spread must remain within 5%.
 
-Every transport stage passes the existing full-profile and elemental-conservation
-checks against independently refined Cantera references. The acceptance limits are
-1% for temperature profiles and free-flame speed, 5% for species profiles with a
-1e-7 reference-peak floor, and 1e-6 for elemental conservation. Numerical replay
-checks all first and warm results at relative tolerance 1e-12 and absolute tolerance
-1e-14. Accuracy-reference refinement is outside every timed calculation.
+Each repetition reuses its loaded mechanism and starts from fresh flame state.
+Timers include construction, initialization, solver setup, continuation, adaptive
+solves and required numerical profiles. Imports, compilation, mechanism/sidecar
+loading, validation and file I/O are excluded. One complete warmup and one explicit
+collection follow loading; both are excluded from the warm samples. Automatic
+garbage collection remains enabled and included in measured calculations. All
+samples are retained, with one numerical thread per implementation.
+
+Every transport stage passes the full-profile and elemental-conservation checks
+against independently refined Cantera references. Acceptance limits are 1% for
+temperature profiles and free-flame speed, 5% for species profiles with a 1e-7
+reference-peak floor, and 1e-6 for elemental conservation. Numerical replay checks
+every first and warm result at relative tolerance 1e-12 and absolute tolerance
+1e-14. Local tests pass 2,901 assertions at the measured native revision.
 
 The [shared Julia calculation](../example/flames/source_flame_sequence.jl) is used
-by the runnable examples and the [paired benchmark](conservative_source_bench.py).
-Run the benchmark with `--help` for its required provenance and reference inputs.
-These results cover the listed source conditions and transport sequences; the free
-flame still needs performance improvement.
+by the examples and the [paired benchmark](conservative_source_bench.py). Run the
+benchmark with `--help` for its provenance and reference inputs. These results
+cover the listed source conditions and transport sequences.
+[Earlier measurements](results/cantera4_flames_5ca6641.json) retain their original
+source revision and timing scope.
