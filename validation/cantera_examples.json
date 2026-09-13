@@ -214,12 +214,23 @@
     {
       "id": "onedim/diffusion_flame_continuation",
       "url": "https://cantera.org/dev/examples/python/onedim/diffusion_flame_continuation.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/flames/diffusion_flame_continuation.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_counterflow_continuation_d512dbc.json",
+        "case": "onedim/diffusion_flame_continuation",
+        "scope": "Complete fresh H2/O2 two-point controlled counterflow continuation through both branches to the source termination condition. All 133 native profiles are validated against independently solved Cantera flames at matching control points. Adaptive paths differ: 132 native rows and 134 stock Cantera rows."
+      },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_counterflow_continuation_d512dbc.json",
+        "case": "onedim/diffusion_flame_continuation",
+        "speed_ratio": 0.03577497503008666,
+        "conservative_speed_ratio": 0.035203432170826936,
+        "verdict": "below_target",
+        "scope": "Initialization, solver setup, solve, required numeric outputs and automatic GC are timed; mechanism loading, JIT, validation, file I/O and explicit collection after warmup are excluded. Native also captures every profile for replay; the pinned Cantera source extractor excludes save calls. These cost observations do not qualify final speed."
+      },
+      "performance_status": "below_target"
     },
     {
       "id": "onedim/diffusion_flame_extinction",
