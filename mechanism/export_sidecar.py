@@ -174,10 +174,13 @@ def export(mechanism: Path, output: Path) -> None:
             plog_group_offsets.append(len(plog_pressures) + 1)
 
     transport = {}
-    if gas.transport_model in {"mixture-averaged", "multicomponent", "unity-Lewis-number"}:
+    if gas.transport_model in {"mixture-averaged", "multicomponent", "unity-Lewis-number", "ionized-gas"}:
         # Cantera's native degree-four fits in log(T), in ascending order.
         # Julia evaluates the fits and mixture rules; no Python runtime is used.
+        # Keep the active ionized model: its binary fits include ion-neutral
+        # collision corrections and the O2/O2- resonant-collision override.
         transport = {
+            "transport_model_utf8": np.frombuffer(gas.transport_model.encode(), dtype=np.uint8),
             "species_viscosities_poly": np.array([
                 gas.get_viscosity_polynomial(k) for k in range(gas.n_species)
             ]).T,

@@ -276,6 +276,23 @@ The [methane nanosecond-pulse example](example/reactors/nanosecond_pulse_dischar
 integrates the coupled gas energy and charged-species equations through the full
 pulse, retaining its prescribed field-update schedule.
 
+For mechanisms with `transport: ionized-gas`, preprocess with
+`mechanism/export_sidecar.py`, then evaluate native ionized transport:
+
+```julia
+gas = CreateSolution("gri30_ion.yaml")
+data = IonTransportData(gas)
+workspace = IonTransportWorkspace(data)
+X = mole_fractions(gas, Dict("CH4"=>1.0, "O2"=>2.0, "N2"=>7.52))
+viscosity, conductivity, electrical = ionized_transport!(workspace, data, one_atm, 1200.0, X)
+# workspace.diffusion: m²/s; workspace.mobility: m²/(V s)
+```
+
+`ionized_flux!` evaluates diffusion and electric-field drift from midpoint
+transport and endpoint mass fractions. This model uses gas-temperature
+transport and a fixed electron mobility of 0.4 m²/(V s). Electric-field
+flame solves are not yet supported.
+
 ## Publication
 
 + [Arrhenius.jl: A Differentiable Combustion Simulation Package](https://arxiv.org/pdf/2107.06172.pdf): overview of Arrhenius.jl and applications in deep mechanism reduction, uncertainty quantification, mechanism tuning and model discovery. [Slides in NCM21](https://www.slideshare.net/WeiqiJi/arrheniusjl-a-differentiable-combustion-simulation-package-248457895), [Vedio for NCM21](https://www.youtube.com/watch?v=X1mwpW78NvA).

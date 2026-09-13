@@ -344,6 +344,12 @@ function CreateSolution(mech; data_paths=String[])
 
     #### Transport data
 
+    ionized = get(yaml["phases"][1],"transport","") == "ionized-gas"
+    if ionized && haskey(npz,"species_viscosities_poly")
+        haskey(npz,"transport_model_utf8") &&
+            _sidecar_string(npz,"transport_model_utf8") == "ionized-gas" ||
+            throw(ArgumentError("ionized transport requires model-specific fits; regenerate the sidecar"))
+    end
     if haskey(npz, "species_viscosities_poly")
         species_viscosities_poly =
             Matrix{Float64}(npz["species_viscosities_poly"])
@@ -362,7 +368,8 @@ function CreateSolution(mech; data_paths=String[])
     trans = Transport(poly_order,
                       species_viscosities_poly, 
                       thermal_conductivity_poly, 
-                      binary_diff_coeffs_poly)
+                      binary_diff_coeffs_poly,
+                      ionized ? :ionized_gas : :mixture_averaged)
 
     gas = Solution(
         n_species,

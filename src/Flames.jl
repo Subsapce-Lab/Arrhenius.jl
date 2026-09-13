@@ -61,6 +61,7 @@ function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothin
         throw(ArgumentError("discretization must be :finite_difference or :conservative"))
     isfinite(T) && 200 <= T <= 6000 && isfinite(P) && P > 0 ||
         throw(ArgumentError("finite inlet temperature in 200–6000 K and positive pressure required"))
+    gas.trans.model == :ionized_gas && throw(ArgumentError("ionized gas requires a flame model with electric-field equations"))
     gas.trans.poly_order == 5 || throw(ArgumentError("regenerate the sidecar to include native transport fits"))
     x = mole_fractions(gas,X)
     eq = equilibrate(gas; T, P, X=x, mode=:HP)

@@ -20,6 +20,7 @@ Test this module in _transport_test.jl
 See also implementations in ReacTorch
 """
 function mix_trans(gas::A, P, T, X, mean_MW) where {A <: Arrhenius.Solution}
+    gas.trans.model == :ionized_gas && throw(ArgumentError("use ionized_transport! for ionized-gas transport"))
 
     if gas.trans.poly_order == 5
         workspace = TransportWorkspace(gas)
@@ -100,6 +101,7 @@ Return viscosity [Pa s] and conductivity [W/(m K)], and fill
 polynomials from `mechanism/export_sidecar.py`.
 """
 function mixture_transport!(w::TransportWorkspace, gas::Solution, P, T, X; basis=:mole)
+    gas.trans.model == :ionized_gas && throw(ArgumentError("use ionized_transport! for ionized-gas transport"))
     n = gas.n_species
     basis in (:mole,:mass) || throw(ArgumentError("diffusion gradient basis must be :mole or :mass"))
     length(X) == n || throw(DimensionMismatch("one mole fraction per species required"))

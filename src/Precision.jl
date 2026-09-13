@@ -92,6 +92,7 @@ function _convert_precision(transport::Transport, ::Type{T}) where {T<:AbstractF
         _precision_array(transport.species_viscosities_poly, T, "viscosity coefficients"),
         _precision_array(transport.thermal_conductivity_poly, T, "thermal-conductivity coefficients"),
         _precision_array(transport.binary_diff_coeffs_poly, T, "binary-diffusion coefficients"),
+        transport.model,
     )
 end
 
