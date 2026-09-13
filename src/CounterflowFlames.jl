@@ -31,6 +31,20 @@ end
 # Scales only condition the algebraic system; physical values are returned below.
 const _counterflow_Vscale = 100.0
 const _counterflow_Lscale = 10000.0
+_flame_refine_threshold(f::CounterflowDiffusionFlame,k) =
+    k == 1 ? sqrt(eps(Float64))/1000 :
+    k == size(f.state,1)-2 ? sqrt(eps(Float64))/_counterflow_Vscale : sqrt(eps(Float64))
+_flame_refine_active(f::CounterflowDiffusionFlame,k) =
+    k != size(f.state,1)-1 && (isnothing(f.control_points) || k != f.gas.n_species+2)
+function _flame_refine_protect!(keep,f::CounterflowDiffusionFlame)
+    isnothing(f.control_points) && return nothing
+    for z in (f.control_points[1],f.control_points[3])
+        j=findfirst(==(z),f.grid)
+        isnothing(j) && throw(ArgumentError("control coordinate must remain on the grid"))
+        keep[j]=1
+    end
+    nothing
+end
 const _counterflow_stefan_boltzmann = 2*pi^5*(1.380649e-23)^4 /
     (15*(6.62607015e-34)^3*(299792458.)^2)
 _counterflow_erf(x) = ccall((:erf,Base.Math.libm),Float64,(Float64,),x)
@@ -415,6 +429,26 @@ function _counterflow_jacobian!(f,u,w,r;previous=nothing,dt=Inf)
     return w.band
 end
 
+function _counterflow_residual_scales!(scales,J,u,bw)
+    fill!(scales,0.)
+    n=length(u)
+    for j in 1:n, i in max(1,j-bw):min(n,j+bw)
+        scales[i]+=abs(J[2bw+1+i-j,j])*abs(u[j])
+    end
+    for i in eachindex(scales)
+        scales[i]=max(1.,scales[i])
+    end
+    scales
+end
+
+function _counterflow_constraints_converged(f,r,tol)
+    B,N=size(r)
+    maximum(abs,@view(r[B-1:B,:]))<=tol || return false
+    maximum(abs,@view(r[f.dependent_species+1,:]))<=min(tol,1e-9) || return false
+    maximum(abs,@view(r[:,1]))<=tol && maximum(abs,@view(r[:,N]))<=tol || return false
+    isnothing(f.control_points) || maximum(abs,@view(r[f.gas.n_species+2,:]))<=tol
+end
+
 function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=1e-8,loglevel=0)
     u=f.state; r=similar(u); trial=similar(u); rt=similar(u)
     n=f.gas.n_species; bandwidth=2*size(u,1)-1
@@ -423,6 +457,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
     correction_enabled && (age=21)
     weights=correction_enabled ? _flame_correction_weights(u,previous!==nothing) : Float64[]
     trial_correction=correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
+    residual_scales=correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     for iteration in 1:maxiters
         counterflow_residual!(r,f,u,w;previous,dt)
         residualnorm=norm(r,Inf)
@@ -432,6 +467,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
         step=try
             if refresh
                 J=_counterflow_jacobian!(f,u,w,r;previous,dt)
+                correction_enabled && _counterflow_residual_scales!(residual_scales,J,u,bandwidth)
                 _,pivots=LinearAlgebra.LAPACK.gbtrf!(bandwidth,bandwidth,length(u),J)
                 age=0
             end
@@ -444,6 +480,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
         end
         all(isfinite,step) || return false
         alpha=1.
+        within_bounds=true
         for j in axes(u,2),k in axes(u,1)
             # Cantera permits -1e-7 trace species during damped Newton steps.
             # Enforcing strict positivity stalls initially absent hydrocarbon radicals.
@@ -458,6 +495,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
                 k==n+2 && (low=0.)
                 k==size(u,1)-2 && (low=-1e-5/_counterflow_Vscale)
             end
+            within_bounds &= low<=u[k,j]<=high
             if step[k,j]<0
                 alpha=min(alpha,.99*(u[k,j]-low)/(-step[k,j]))
             elseif step[k,j]>0
@@ -465,7 +503,15 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
             end
         end
         step_merit=correction_enabled ? _flame_correction_norm(step,weights) : 0.
+        # A fresh small correction and componentwise backward error can certify
+        # a root when the absolute residual is limited by state resolution.
+        if correction_enabled && refresh && within_bounds && step_merit<1 &&
+                _counterflow_constraints_converged(f,r,tolerance) &&
+                all(i->abs(r[i])<=tolerance*residual_scales[i],eachindex(r))
+            return true
+        end
         accepted=false
+        trial_merit=Inf
         for backtrack in 1:24
             @. trial=u+alpha*step
             counterflow_residual!(rt,f,trial,w;previous,dt)
@@ -474,7 +520,8 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
                 if correction_enabled
                     copyto!(trial_correction,vec(rt))
                     LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(u),w.band,pivots,trial_correction)
-                    contracts=_flame_correction_norm(reshape(trial_correction,size(u)),weights)<step_merit
+                    trial_merit=_flame_correction_norm(reshape(trial_correction,size(u)),weights)
+                    contracts=trial_merit<1 || trial_merit<step_merit
                 else
                     contracts=norm(rt)<norm(r)*(1-1e-4*alpha)
                 end
@@ -489,7 +536,8 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
             refresh && return false
             age=correction_enabled ? 21 : 5; continue
         end
-        contraction=norm(rt)/norm(r); age+=1
+        contraction=norm(rt)/norm(r)
+        age=correction_enabled && trial_merit<1 ? 21 : age+1
     end
     return false
 end
@@ -536,9 +584,10 @@ With `auto=false`, a converged extinguished state is returned for extinction
 continuation. Two-point control always retains the current branch and disables
 automatic reinitialization; call `set_two_point_control!` to choose new targets.
 """
-function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,curve=.3,
+function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,curve=.3,prune=0.,
         max_points=1200,max_time_steps=800,loglevel=0,initial_time_step=1e-6,auto=true)
     isfinite(ratio) && ratio>1 && 0<slope<=1 && 0<curve<=1 || throw(ArgumentError("invalid refinement criteria"))
+    isfinite(prune) && prune<=min(slope,curve) || throw(ArgumentError("invalid pruning criterion"))
     isfinite(initial_time_step) && initial_time_step>0 || throw(ArgumentError("positive finite initial time step required"))
     if !isnothing(f.control_points)
         isempty(f.fixed_temperature) || throw(ArgumentError("two-point control conflicts with fixed_temperature"))
@@ -576,7 +625,7 @@ function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,
     burning || error(auto ? "native counterflow solver did not find a burning solution" :
         "native counterflow continuation solver did not converge")
     for pass in 1:40
-        if !refine_grid || !_refine_flame!(f;ratio,slope,curve,max_points)
+        if !refine_grid || !_refine_flame!(f;ratio,slope,curve,prune,max_points)
             if !isnothing(f.control_points)
                 f.fuel_mass_flux=f.state[end,1]
                 f.oxidizer_mass_flux=-f.state[end,end]

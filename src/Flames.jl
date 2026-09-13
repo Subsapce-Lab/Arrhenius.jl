@@ -865,12 +865,23 @@ function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6))
     return false
 end
 
-function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
+_flame_refine_active(f,k) = true
+_flame_refine_protect!(keep,f) = nothing
+
+function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,prune=0.,max_points=1000)
+    isfinite(prune) && prune <= min(slope,curve) ||
+        throw(ArgumentError("prune must be finite and no greater than slope or curve"))
     u,z = f.state,f.grid
     B,N = size(u)
     insert = falses(N-1)
+    pruning = prune > 0
+    # UNSET points survive unless an active component requests removal. KEEP
+    # wins across components; a constant component must not force removal.
+    keep = zeros(Int8,N)
+    keep[1] = keep[end] = keep[f.anchor] = 1
     spacing = diff(z)
     for k in 1:B
+        pruning && !_flame_refine_active(f,k) && continue
         # An imposed piecewise-linear profile has slope discontinuities that
         # cannot be removed by refinement. Its shape is supplied, not solved.
         if k in (1,B) && f isa BurnerFlame && !isempty(f.imposed_temperature)
@@ -885,6 +896,14 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
             for j in 1:N-1
                 abs(values[j+1]-values[j]) > slope*span+threshold &&
                     spacing[j]>=2e-10 && (insert[j] = true)
+                if pruning
+                    change = abs(values[j+1]-values[j])/(slope*span+threshold)
+                    if change >= prune
+                        keep[j] = keep[j+1] = 1
+                    elseif keep[j] == 0
+                        keep[j] = -1
+                    end
+                end
             end
         end
         gradients = diff(values) ./ spacing
@@ -906,6 +925,14 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
                     insert[j] = true
                     insert[j+1] = true
                 end
+                if pruning
+                    change = abs(gradients[j+1]-gradients[j])/(curve*gspan+threshold/spacing[j])
+                    if change >= prune
+                        keep[j+1] = 1
+                    elseif keep[j+1] == 0
+                        keep[j+1] = -1
+                    end
+                end
             end
         end
     end
@@ -913,14 +940,30 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
         left,right = z[j+1]-z[j],z[j+2]-z[j+1]
         left > ratio*right && (insert[j] = true)
         right > ratio*left && (insert[j+1] = true)
+        if pruning
+            left > ratio*right && (keep[max(1,j-1):min(N,j+2)] .= 1)
+            right > ratio*left && (keep[j:min(N,j+3)] .= 1)
+            # Removing the middle point must not violate either outer ratio.
+            j > 1 && z[j+2]-z[j] > ratio*spacing[j-1] && (keep[j+1] = 1)
+            j < N-2 && z[j+2]-z[j] > ratio*spacing[j+2] && (keep[j+1] = 1)
+        end
     end
     _mark_profile_chord_defects!(insert,f,spacing)
-    count(insert) == 0 && return false
-    N+count(insert) <= max_points || error("flame refinement exceeds max_points=$max_points")
+    if pruning
+        _flame_refine_protect!(keep,f)
+        for j in 3:N-1
+            keep[j] == -1 && keep[j-1] == -1 && (keep[j] = 1)
+        end
+    end
+    removed = count(==(-1),keep)
+    added = count(j->insert[j] && keep[j] != -1,1:N-1)
+    added+removed == 0 && return false
+    N-removed+added <= max_points || error("flame refinement exceeds max_points=$max_points")
     newz = Float64[]
     columns = Vector{Float64}[]
     anchor_z = z[f.anchor]
     for j in 1:N
+        keep[j] == -1 && continue
         push!(newz,z[j]); push!(columns,u[:,j])
         if j < N && insert[j]
             push!(newz,(z[j]+z[j+1])/2)

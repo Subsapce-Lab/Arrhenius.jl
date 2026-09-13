@@ -102,10 +102,56 @@ end
             @test maximum(abs.(J.-ref)./(1e-5.+abs.(ref)))<1e-4
             @test J[(N-1)*B+B,(N-1)*B+n+2]≈1 atol=1e-6
             @test J[B-1,B]==0
+            @testset "fresh correction convergence guards" begin
+                scales=fill(NaN,length(cf.state))
+                Arrhenius._counterflow_residual_scales!(scales,band,cf.state,bw)
+                @test scales ≈ max.(1.,abs.(J)*abs.(vec(cf.state))) rtol=1e-14
+                Arrhenius._counterflow_residual_scales!(scales,band,zero(cf.state),bw)
+                @test all(==(1.),scales)
+
+                guards=zeros(size(cf.state)); tol=1e-8
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                for (row,col) in ((1,1),(1,N),(B-1,3),(B,3),(n+2,3),
+                                  (cf.dependent_species+1,3))
+                    guards[row,col]=2tol
+                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                    guards[row,col]=0.
+                end
+                guards[cf.dependent_species+1,3]=2e-9
+                @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                guards .= 0.; guards[B-2,3]=1.
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                guards .= 0.
+                for value in (NaN,Inf)
+                    guards[n+2,3]=value
+                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                end
+            end
             cp=cf.control_points
             @test Arrhenius._refine_flame!(cf;ratio=4.,slope=.1,curve=.2,max_points=100)
             @test cf.control_points==cp
             @test cp[1] in cf.grid && cp[3] in cf.grid
+            @testset "optional pruning" begin
+                flat=CounterflowDiffusionFlame(cgas;fuel="H2:1",oxidizer="O2:1",mdot_fuel=.5,mdot_oxidizer=3.,
+                    grid=collect(range(0.,.018;length=9)))
+                flat.state .= flat.state[:,1]
+                flat_grid=copy(flat.grid); flat_state=copy(flat.state)
+                @test !Arrhenius._refine_flame!(flat;prune=0.)
+                @test flat.grid==flat_grid && flat.state==flat_state
+                @test !Arrhenius._refine_flame!(flat;prune=.05)
+                @test flat.grid==flat_grid && flat.state==flat_state
+                flat.state[1,:]=[.3,.3,.3,.3,1.,1.,.3,.3,.3]
+                flat_state=copy(flat.state)
+                @test Arrhenius._refine_flame!(flat;slope=1.,curve=1.,prune=.5)
+                @test length(flat.grid)<length(flat_grid)
+                @test flat.grid[[1,end]]==flat_grid[[1,end]] && all(diff(flat.grid).>0)
+                @test all(z->z in flat_grid,flat.grid)
+                @test flat.state==flat_state[:,[findfirst(==(z),flat_grid) for z in flat.grid]]
+                removed=findall(z->!(z in flat.grid),flat_grid)
+                @test all(diff(removed).>1)
+                Arrhenius._refine_flame!(cf;ratio=4.,slope=.1,curve=.2,prune=.05,max_points=150)
+                @test cf.control_points==cp && cp[1] in cf.grid && cp[3] in cf.grid
+            end
             premixed=CounterflowPremixedFlame(cgas;reactants="H2:2,O2:1,AR:7",
                 mdot_reactants=.12,mdot_products=.06)
             @test isnothing(premixed.flow.control_points)

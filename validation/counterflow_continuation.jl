@@ -44,10 +44,10 @@ function _row(f, step, decrement, errors, success, strain, amax, spacing)
 end
 
 """Run the canonical two-point counterflow continuation on a fresh native flame."""
-function calculate(gas; slope=.1, curve=.2, capture=false, maxsteps=1000)
+function calculate(gas; slope=.1, curve=.2, prune=0., capture=false, maxsteps=1000)
     f=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1",mdot_fuel=.5,
         mdot_oxidizer=3.,T_fuel=300.,T_oxidizer=500.,P=1e5,width=.018)
-    solve!(f;ratio=4.,slope,curve,loglevel=0)
+    solve!(f;ratio=4.,slope,curve,prune,loglevel=0)
     profiles=capture ? NamedTuple[_profile(f)] : NamedTuple[]
     strain=amax=_strain(f); increment=20.; errors=0; source_success=false
     reason="step_cap"; records=NamedTuple[]
@@ -68,7 +68,7 @@ function calculate(gas; slope=.1, curve=.2, capture=false, maxsteps=1000)
         set_two_point_control!(f;temperature=target,decrement=increment)
         converged=false
         try
-            solve!(f;auto=false,ratio=4.,slope,curve,max_time_steps=100,loglevel=0)
+            solve!(f;auto=false,ratio=4.,slope,curve,prune,max_time_steps=100,loglevel=0)
             converged=true
         catch e
             e isa ErrorException || rethrow()
