@@ -80,7 +80,7 @@ const A=Arrhenius
         @test all(iszero,w.flux[3:4,:])
         @test res[end-1,:]==u[end-1,:]
         @test_throws ArgumentError FreeFlame(gas;X="Ar:1",soret=true)
-        @test_throws ArgumentError FreeFlame(gas;X="Ar:1",discretization=:conservative)
+        @test_throws ArgumentError FreeFlame(gas;X="Ar:1",discretization=:unsupported)
     end
 end
 end

@@ -3,6 +3,7 @@
 Construct through FreeFlame or BurnerFlame with an ionized-gas mechanism.
 The initial stage freezes charged diffusion. Enable it with
 set_electric_field!(flame, true) before the second solve!.
+Conservative flames first initialize with a frozen finite-difference solve.
 """
 mutable struct IonizedFlame{G<:Solution} <: AbstractPremixedFlame
     gas::G
@@ -18,6 +19,8 @@ mutable struct IonizedFlame{G<:Solution} <: AbstractPremixedFlame
     mass_flux::Float64
     field_enabled::Bool
     ion_data::IonTransportData
+    discretization::Symbol
+    initialized::Bool
 end
 
 const _ION_FLAME_FARADAY = _ION_QE*6.02214076e26
@@ -25,7 +28,9 @@ const _ION_FLAME_EPS0 = inv(299792458.0^2 *
     (2*7.2973525693e-3*6.62607015e-34/(_ION_QE^2*299792458.0)))
 
 function IonizedFlame(gas::Solution;kind=:free,T=300.0,P=one_atm,X,
-        width=.05,grid=nothing,mdot=nothing)
+        width=.05,grid=nothing,mdot=nothing,discretization=:finite_difference)
+    discretization=Symbol(discretization)
+    discretization in (:finite_difference,:conservative) || throw(ArgumentError("invalid ionized discretization"))
     kind in (:free,:burner) || throw(ArgumentError("kind must be :free or :burner"))
     isfinite(T) && 200<=T<=6000 && isfinite(P) && P>0 ||
         throw(ArgumentError("finite temperature in 200-6000 K and positive pressure required"))
@@ -62,7 +67,7 @@ function IonizedFlame(gas::Solution;kind=:free,T=300.0,P=one_atm,X,
     end
     anchor=clamp(argmin(abs.(u[1,:].-(.75*T+.25*eq.T)/1000)),2,length(z)-1)
     IonizedFlame(gas,z,Float64(P),Float64(T),y,u,anchor,1000*u[1,anchor],
-        false,kind,massflux,false,data)
+        false,kind,massflux,false,data,discretization,false)
 end
 
 """Enable or freeze charged diffusion and the electric-field equation for the next solve."""
@@ -75,6 +80,7 @@ electric_field(f::IonizedFlame)=1000 .* vec(f.state[end-1,:])
 mass_fractions(f::IonizedFlame)=copy(f.state[2:f.gas.n_species+1,:])
 velocity(f::IonizedFlame)=copy(vec(f.state[end,:]))
 
+include("IonConservativeFlames.jl")
 include("IonFlameProperties.jl")
 include("IonFlameResidual.jl")
 
@@ -96,6 +102,9 @@ function set_transport!(f::IonizedFlame,model;data=nothing,soret=false,flux_grad
 end
 
 
+_flame_node_mass_flux(f::IonizedFlame,u,w,j)=w.rho[j]*u[end,j]
+_flame_previous_enthalpy(f::IonizedFlame,w,previous)=w.conservative===nothing ? nothing :
+    _flame_previous_enthalpy!(w.conservative,f,previous)
 _flame_correction_enabled(f::IonizedFlame)=true
 _flame_needs_correction_check(f::IonizedFlame)=true
 _flame_checkpoint_steady(f::IonizedFlame)=true
@@ -125,6 +134,27 @@ function _flame_bounds(f::IonizedFlame,k,B)
     k-1==f.ion_data.electron && return (-1e-14,1.0)
     f.ion_data.charges[k-1]!=0 && return (-1e-10,1.0)
     return (-1e-7,1e5)
+end
+
+function solve!(f::IonizedFlame;kwargs...)
+    if f.discretization==:conservative && !f.initialized
+        requested_discretization=f.discretization
+        requested_field=f.field_enabled
+        try
+            f.discretization=:finite_difference
+            f.field_enabled=false
+            invoke(solve!,Tuple{AbstractPremixedFlame},f;kwargs...)
+            # Preserve an accepted seed if the subsequent conservative solve fails.
+            f.initialized=true
+        finally
+            f.discretization=requested_discretization
+            f.field_enabled=requested_field
+            f.converged=false
+        end
+    end
+    invoke(solve!,Tuple{AbstractPremixedFlame},f;kwargs...)
+    f.initialized=true
+    return f
 end
 
 export IonizedFlame, set_electric_field!, electric_field

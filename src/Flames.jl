@@ -63,9 +63,9 @@ function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothin
     isfinite(T) && 200 <= T <= 6000 && isfinite(P) && P > 0 ||
         throw(ArgumentError("finite inlet temperature in 200–6000 K and positive pressure required"))
     if gas.trans.model == :ionized_gas
-        Symbol(transport_model)==:ionized_gas && !soret && discretization==:finite_difference ||
-            throw(ArgumentError("ionized flames require ionized transport and finite differences without Soret"))
-        return IonizedFlame(gas;kind=:free,T,P,X,width,grid)
+        Symbol(transport_model)==:ionized_gas && !soret && multicomponent_data===nothing && flux_gradient_basis==:mole ||
+            throw(ArgumentError("ionized flames require ionized transport with mole gradients and no Soret or external transport data"))
+        return IonizedFlame(gas;kind=:free,T,P,X,width,grid,discretization)
     end
     gas.trans.poly_order == 5 || throw(ArgumentError("regenerate the sidecar to include native transport fits"))
     x = mole_fractions(gas,X)
@@ -105,9 +105,9 @@ function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=noth
         discretization=gas.trans.model==:ionized_gas ? :finite_difference : :conservative)
     isfinite(mdot) && mdot > 0 || throw(ArgumentError("mass flux must be finite and positive"))
     if gas.trans.model == :ionized_gas
-        Symbol(transport_model)==:ionized_gas && !soret && Symbol(discretization)==:finite_difference ||
-            throw(ArgumentError("ionized flames require ionized transport and finite differences without Soret"))
-        return IonizedFlame(gas;kind=:burner,T,P,X,width,grid,mdot)
+        Symbol(transport_model)==:ionized_gas && !soret && multicomponent_data===nothing && flux_gradient_basis==:mole ||
+            throw(ArgumentError("ionized flames require ionized transport with mole gradients and no Soret or external transport data"))
+        return IonizedFlame(gas;kind=:burner,T,P,X,width,grid,mdot,discretization)
     end
     initial_grid = isnothing(grid) ? width .* [0,.1,.2,.3,.5,.7,1] : grid
     base = FreeFlame(gas; T,P,X,width,grid=initial_grid,transport_model,multicomponent_data,soret,flux_gradient_basis,discretization)
@@ -459,6 +459,8 @@ const _flame_timescale = 1e-4
 # shared by every species and total enthalpy, preserving elemental balances.
 _flame_face_centering(Pe) = Pe < 1e-4 ? 1-Pe/6+Pe^3/360 : 1+2/Pe-1/tanh(Pe/2)
 
+_flame_node_mass_flux(f,u,w,j) = u[end,j]
+
 function _conservative_flame_fluxes!(c,f,u,w)
     n,N = f.gas.n_species,length(f.grid)
     MW = f.gas.MW
@@ -479,7 +481,7 @@ function _conservative_flame_fluxes!(c,f,u,w)
         end
         density_diffusion = min(density_diffusion,w.conductivity[j]/cpface)
         dz = f.grid[j+1]-f.grid[j]
-        mdot = .5*(u[end,j]+u[end,j+1])
+        mdot = .5*(_flame_node_mass_flux(f,u,w,j)+_flame_node_mass_flux(f,u,w,j+1))
         Pe = abs(mdot)*dz/density_diffusion
         right_weight = .5*_flame_face_centering(Pe)
         mdot < 0 && (right_weight = 1-right_weight)
@@ -495,9 +497,9 @@ function _conservative_flame_fluxes!(c,f,u,w)
     # Natural outflow: zero diffusive/conductive boundary flux. Reactions and
     # accumulation in the final half-cell remain in the finite-volume balance.
     @inbounds for k in 1:n
-        c.species_flux[k,N] = u[end,N]*u[k+1,N]
+        c.species_flux[k,N] = _flame_node_mass_flux(f,u,w,N)*u[k+1,N]
     end
-    c.enthalpy_flux[N] = u[end,N]*c.enthalpy[N]
+    c.enthalpy_flux[N] = _flame_node_mass_flux(f,u,w,N)*c.enthalpy[N]
     return c
 end
 
@@ -629,6 +631,8 @@ function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameW
 end
 
 # Model-specific state contracts share the same banded Newton engine.
+_flame_previous_enthalpy(f,w,previous) = _conservative_flame(f) ?
+    _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
 _flame_perturbation(f,u,k,j)=1e-7*max(abs(u[k,j]),k==1 ? .1 : 1e-5)
 _flame_correction_weights(f,u,transient)=_flame_correction_weights(u,transient)
 _flame_needs_correction_check(f)=false
@@ -733,8 +737,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
     last_contraction = Inf
     # `previous` is immutable throughout this Newton solve. Cache its enthalpy
     # once per solve, never across successive pseudo-time states.
-    previous_enthalpy = _conservative_flame(f) && previous !== nothing ?
-        _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
+    previous_enthalpy = previous !== nothing ? _flame_previous_enthalpy(f,w,previous) : nothing
     residual_valid = false
     region_enabled = _conservative_flame(f)
     correction_enabled = _flame_correction_enabled(f)

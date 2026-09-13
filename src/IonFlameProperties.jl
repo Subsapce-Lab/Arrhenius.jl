@@ -1,4 +1,4 @@
-struct IonizedFlameWorkspace{K}
+struct IonizedFlameWorkspace{K,C}
     kinetics::K
     transports::Vector{IonTransportWorkspace}
     X::Matrix{Float64}
@@ -19,6 +19,7 @@ struct IonizedFlameWorkspace{K}
     steps::Vector{Float64}
     rate_caches::Vector{_KineticsTemperatureCache}
     excess::Vector{Int}
+    conservative::C
 end
 
 function FlameWorkspace(f::IonizedFlame)
@@ -43,7 +44,8 @@ function FlameWorkspace(f::IonizedFlame)
         zeros(B, N),
         zeros(B, N),
         zeros(N),
-        [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],zeros(Int,2))
+        [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],zeros(Int,2),
+        f.discretization==:conservative ? IonizedConservativeWorkspace(f.ion_data,N) : nothing)
 end
 
 function _ion_flame_properties!(w::IonizedFlameWorkspace, f::IonizedFlame, u;
@@ -138,6 +140,12 @@ function _ion_flame_properties!(w::IonizedFlameWorkspace, f::IonizedFlame, u;
             _, lambda, _ = ionized_transport!(w.transports[j], f.ion_data, f.pressure, Tmid, w.xmid;
                 mean_molecular_weight=meanMW)
             w.conductivity[j] = lambda
+            if w.conservative !== nothing
+                rhomid=f.pressure*meanMW/(R*Tmid)
+                for k in 1:n
+                    w.conservative.density_diffusion[k,j]=rhomid*w.transports[j].diffusion[k]
+                end
+            end
         end
 
         for k in 1:n
@@ -146,6 +154,11 @@ function _ion_flame_properties!(w::IonizedFlameWorkspace, f::IonizedFlame, u;
         ionized_flux!(@view(w.flux[:, j]), w.transports[j], f.ion_data, w.gradient,
             @view(u[2:n+1, j]), @view(u[2:n+1, j + 1]);
             density=w.rho[j], electric_field=1000 * u[n + 2, j], frozen=frozen)
+    end
+    if update_transport && w.conservative !== nothing
+        ionized_transport!(w.conservative.outlet_transport,f.ion_data,f.pressure,
+            1000*u[1,N],@view(w.X[:,N]);
+            mean_molecular_weight=inv(sum(u[k+1,N]/MW[k] for k in 1:n)))
     end
     return w
 end

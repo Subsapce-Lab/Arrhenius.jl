@@ -39,6 +39,13 @@ function flame_residual!(residual,f::IonizedFlame,u,w::IonizedFlameWorkspace;
     previous===nothing || size(previous)==size(u) || throw(DimensionMismatch("previous state size mismatch"))
     dt>0 || throw(ArgumentError("positive time step required"))
     _ion_flame_properties!(w,f,u;update_transport,nodes)
+    c=w.conservative
+    if c !== nothing
+        _ion_conservative_fluxes!(c,f,u,w)
+        if previous !== nothing && previous_enthalpy === nothing
+            previous_enthalpy=_flame_previous_enthalpy!(c,f,previous)
+        end
+    end
     z,MW,q=f.grid,f.gas.MW,f.ion_data.charges
     mdotin=f.kind==:free ? w.rho[1]*u[end,1] : f.mass_flux
     @inbounds for j in 1:N
@@ -57,7 +64,8 @@ function flame_residual!(residual,f::IonizedFlame,u,w::IonizedFlameWorkspace;
         if j==1
             residual[1,j]=u[1,j]-f.inlet_temperature/1000
             for k in 1:n
-                residual[k+1,j]=mdotin*f.inlet_Y[k]-mdot*u[k+1,j]-w.flux[k,1]
+                residual[k+1,j]=c===nothing ?
+                    mdotin*f.inlet_Y[k]-mdot*u[k+1,j]-w.flux[k,1] : mdotin*f.inlet_Y[k]-c.species_flux[k,1]
             end
             residual[w.excess[1]+1,j]=1-sum(@view(u[2:n+1,j]))
             if f.field_enabled
@@ -68,12 +76,14 @@ function flame_residual!(residual,f::IonizedFlame,u,w::IonizedFlameWorkspace;
                     end
                 end
             end
-        elseif j==N
+        elseif j==N && c===nothing
             residual[1,j]=u[1,j]-u[1,j-1]
             for k in 1:n
                 residual[k+1,j]=u[k+1,j]-u[k+1,j-1]
             end
             residual[w.excess[2]+1,j]=1-sum(@view(u[2:n+1,j]))
+        elseif c !== nothing
+            _ion_conservative_cell!(residual,f,u,w,j;previous,dt,previous_enthalpy)
         else
             left=z[j]-z[j-1];right=z[j+1]-z[j];cell=(left+right)/2
             up=u[end,j]>0 ? j : j+1

@@ -297,7 +297,8 @@ transport and a fixed electron mobility of 0.4 m²/(V s).
 Solve first with charged diffusion frozen, then enable the electric field:
 
 ```julia
-flame = FreeFlame(gas; T=300.0, X="CH4:1,O2:2,N2:7.52", width=0.05)
+flame = FreeFlame(gas; T=300.0, X="CH4:1,O2:2,N2:7.52", width=0.05,
+                  discretization=:conservative)
 solve!(flame; ratio=3.0, slope=0.05, curve=0.1)
 set_electric_field!(flame, true)
 solve!(flame; ratio=3.0, slope=0.05, curve=0.1)
@@ -305,8 +306,11 @@ E = electric_field(flame)  # V/m at each grid point
 ```
 
 The planar model solves species, energy, continuity, and Gauss's law with
-signed charged-species states. It uses ionized-gas transport and finite
-differences; Soret diffusion, prescribed temperature profiles, and restart
+signed charged-species states and ionized-gas transport. Select
+`discretization=:conservative` for conservative species and total-enthalpy
+balances, or use the default `:finite_difference` formulation. Conservative
+calculations initialize through a native frozen finite-difference solve.
+Soret diffusion, prescribed temperature profiles, and restart
 snapshots are not supported for this flame type.
 
 ## Publication
