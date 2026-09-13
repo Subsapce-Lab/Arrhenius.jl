@@ -153,3 +153,18 @@ end
         end
     end
 end
+
+@testset "correction merit selector" begin
+    mechanism=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas=CreateSolution(mechanism)
+    grid=collect(range(0.,.03;length=5))
+    free=FreeFlame(gas;X="H2:1.1,O2:1,AR:5",grid)
+    burner=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.07)
+    imposed=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.07)
+    set_temperature_profile!(imposed,grid,temperature(imposed);relative=false)
+    @test Arrhenius._flame_correction_enabled(free)
+    @test Arrhenius._flame_correction_enabled(burner)
+    @test !Arrhenius._flame_correction_enabled(imposed)
+    legacy=FreeFlame(gas;X="H2:1.1,O2:1,AR:5",grid,discretization=:finite_difference)
+    @test !Arrhenius._flame_correction_enabled(legacy)
+end

@@ -693,6 +693,10 @@ function _flame_correction_norm(step,weights)
     end
     return sqrt(total/length(step))
 end
+# Prescribed-temperature systems retain residual merit; correction merit helps
+# the coupled species and energy solve.
+_flame_correction_enabled(f) = _conservative_flame(f) &&
+    !(f isa BurnerFlame && !isempty(f.imposed_temperature))
 
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         require_positive=false,minimum_iterations=0,loglevel=0)
@@ -708,8 +712,9 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
     residual_valid = false
     region_enabled = _conservative_flame(f)
-    correction_weights = region_enabled ? _flame_correction_weights(u,previous !== nothing) : Float64[]
-    trial_correction = region_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
+    correction_enabled = _flame_correction_enabled(f)
+    correction_weights = correction_enabled ? _flame_correction_weights(u,previous !== nothing) : Float64[]
+    trial_correction = correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     current_region = falses(size(u,1)-2,2size(u,2)-1)
     factored_region = similar(current_region)
     region_valid = false
@@ -761,14 +766,15 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 alpha = min(alpha,.99*(high-u[k,j])/step[k,j])
             end
         end
-        step_merit = region_enabled ? _flame_correction_norm(step,correction_weights) : 0.0
+        # Trial correction merit uses the already factored (lagged) Newton J.
+        step_merit = correction_enabled ? _flame_correction_norm(step,correction_weights) : 0.0
         accepted = false
         for backtrack in 1:24
             @. trial = u + alpha*step
             flame_residual!(rt,f,trial,w; previous,dt,previous_enthalpy)
             trial_contracts = false
             if all(isfinite,rt)
-                if region_enabled
+                if correction_enabled
                     copyto!(trial_correction,vec(rt))
                     LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(u),w.band,pivots,trial_correction)
                     trial_contracts = _flame_correction_norm(reshape(trial_correction,size(u)),correction_weights) < step_merit
