@@ -85,10 +85,10 @@ def cantera_sequence(gas,case,profile,save_profiles=False):
         # Preserve the published default tolerances and Jacobian mode here.
         # Refined accuracy-reference solves are entirely outside this runner.
         flame.solve(loglevel=0,auto=stage==0 and not fixed)
-        seconds.append(time.perf_counter()-start);points.append(len(flame.grid))
         if save_profiles:
             snapshots[mode]=dict(grid=flame.grid.copy(),T=flame.T.copy(),Y=flame.Y.copy(),velocity=flame.velocity.copy(),
                 inlet_Y=flame.inlet.Y.copy() if free else flame.burner.Y.copy(),P=[flame.P])
+        seconds.append(time.perf_counter()-start);points.append(len(flame.grid))
     return seconds,points,snapshots
 
 def main():
@@ -136,7 +136,7 @@ def main():
     if a.case=="fixed":input_paths.append(a.parameters/"fixed-profile.npz")
     input_hashes={str(path.resolve()):digest(path) for path in input_paths}
     report=dict(case=a.case,formal=a.formal,passed=False,performance_pass=False,date=time.strftime("%Y-%m-%d %H:%M:%S %z"),host=host,target=a.target,
-        scope="Sum of construction/initialization/adaptive-solve stages in the complete published transport sequence. Mechanism/sidecar loading, snapshots and output excluded. No refined-reference solve is timed.",
+        scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published transport sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
         compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
         cantera_build_record_sha256=digest(a.build_record),mechanism_sha256=digest(mechanism),

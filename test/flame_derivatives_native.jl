@@ -25,6 +25,20 @@ function flame_test_automatic_jacobian(f,w;previous=nothing,dt=Inf)
     end
 end
 
+@testset "trial correction metric finite trace and units" begin
+    state=zeros(5,5); state[1,:].=1.2; state[2,:].=.1; state[3,:].=-1e-12; state[5,:].=.07
+    initial=copy(state); step=fill(.003,size(state))
+    for transient in (false,true)
+        weights=Arrhenius._flame_correction_weights(state,transient)
+        atol=transient ? 1e-11 : 1e-9
+        physical=copy(state); physical[1,:].*=1000
+        pstep=copy(step); pstep[1,:].*=1000
+        expected=sqrt(sum((pstep[k,j]/(1e-4*sum(abs,physical[k,:])/5+atol))^2 for k in 1:5,j in 1:5)/25)
+        @test Arrhenius._flame_correction_norm(step,weights) ≈ expected rtol=1e-14
+        @test all(isfinite,weights) && all(>(0),weights) && isequal(state,initial)
+    end
+end
+
 @testset "conservative flame local Jacobian" begin
     mechanism=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
     gas=CreateSolution(mechanism)

@@ -1,5 +1,5 @@
 # Shared calculation for the three published premixed-flame examples.
-# Prepare mechanism data and profiles before calling; stage output runs after timers.
+# Prepare mechanism data before calling; requested numerical profiles are timed, file output is not.
 using Arrhenius
 
 "Temperature profile from the original flame_fixed_T.py example, in metres and kelvin."
@@ -68,13 +68,13 @@ function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,a
                 solve!(f;ratio=3.,slope=.3,curve=1.)
             end
             solve!(f;ratio=3.,slope,curve)
+            if save_profiles
+                snapshots[mode]=Dict("grid"=>copy(f.grid),"T"=>temperature(f),"Y"=>mass_fractions(f),
+                    "velocity"=>velocity(f),"inlet_Y"=>copy(f.inlet_Y),"state"=>copy(f.state),"P"=>[f.pressure])
+            end
         end
         f.converged || error("$case $mode failed")
         points[stage]=length(f.grid)
-        if save_profiles
-            snapshots[mode]=Dict("grid"=>copy(f.grid),"T"=>temperature(f),"Y"=>mass_fractions(f),
-                "velocity"=>velocity(f),"inlet_Y"=>copy(f.inlet_Y),"state"=>copy(f.state),"P"=>[f.pressure])
-        end
         after_stage === nothing || after_stage(f,mode)
     end
     return seconds,points,snapshots

@@ -677,6 +677,23 @@ function _flame_active_region!(region::BitMatrix,u::AbstractMatrix)
     return region
 end
 
+# Frozen outer-state component weights; temperature is stored as T/1000.
+function _flame_correction_weights(u,transient)
+    absolute=transient ? 1e-11 : 1e-9
+    weights=Vector{Float64}(undef,size(u,1))
+    for k in axes(u,1)
+        weights[k]=1e-4*sum(abs,@view(u[k,:]))/size(u,2)+(k==1 ? absolute/1000 : absolute)
+    end
+    return weights
+end
+function _flame_correction_norm(step,weights)
+    total=0.0
+    for j in axes(step,2),k in axes(step,1)
+        total += (step[k,j]/weights[k])^2
+    end
+    return sqrt(total/length(step))
+end
+
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         require_positive=false,minimum_iterations=0,loglevel=0)
     u = f.state
@@ -691,6 +708,8 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
     residual_valid = false
     region_enabled = _conservative_flame(f)
+    correction_weights = region_enabled ? _flame_correction_weights(u,previous !== nothing) : Float64[]
+    trial_correction = region_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     current_region = falses(size(u,1)-2,2size(u,2)-1)
     factored_region = similar(current_region)
     region_valid = false
@@ -742,11 +761,22 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 alpha = min(alpha,.99*(high-u[k,j])/step[k,j])
             end
         end
+        step_merit = region_enabled ? _flame_correction_norm(step,correction_weights) : 0.0
         accepted = false
         for backtrack in 1:24
             @. trial = u + alpha*step
             flame_residual!(rt,f,trial,w; previous,dt,previous_enthalpy)
-            if all(isfinite,rt) && norm(rt) < norm(r)*(1-1e-4*alpha)
+            trial_contracts = false
+            if all(isfinite,rt)
+                if region_enabled
+                    copyto!(trial_correction,vec(rt))
+                    LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(u),w.band,pivots,trial_correction)
+                    trial_contracts = _flame_correction_norm(reshape(trial_correction,size(u)),correction_weights) < step_merit
+                else
+                    trial_contracts = norm(rt) < norm(r)*(1-1e-4*alpha)
+                end
+            end
+            if trial_contracts
                 u .= trial
                 accepted = true
                 break
