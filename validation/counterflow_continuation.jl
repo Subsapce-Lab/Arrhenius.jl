@@ -43,11 +43,14 @@ function _row(f, step, decrement, errors, success, strain, amax, spacing)
         integrated_heat_release=integral, flame_width=width, spacing=spacing)
 end
 
-"""Run the canonical two-point counterflow continuation on a fresh native flame."""
-function calculate(gas; slope=.1, curve=.2, prune=0., capture=false, maxsteps=1000)
+"""Run the canonical two-point counterflow continuation on a fresh native flame.
+`initial_slope`/`initial_curve`/`initial_prune` apply only to the first solve;
+`max_points` bounds the grid size of every solve."""
+function calculate(gas; slope=.1, curve=.2, prune=0., capture=false, maxsteps=1000,
+        initial_slope=slope, initial_curve=curve, initial_prune=prune, max_points=1200)
     f=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1",mdot_fuel=.5,
         mdot_oxidizer=3.,T_fuel=300.,T_oxidizer=500.,P=1e5,width=.018)
-    solve!(f;ratio=4.,slope,curve,prune,loglevel=0)
+    solve!(f;ratio=4.,slope=initial_slope,curve=initial_curve,prune=initial_prune,max_points,loglevel=0)
     profiles=capture ? NamedTuple[_profile(f)] : NamedTuple[]
     strain=amax=_strain(f); increment=20.; errors=0; source_success=false
     reason="step_cap"; records=NamedTuple[]
@@ -68,7 +71,7 @@ function calculate(gas; slope=.1, curve=.2, prune=0., capture=false, maxsteps=10
         set_two_point_control!(f;temperature=target,decrement=increment)
         converged=false
         try
-            solve!(f;auto=false,ratio=4.,slope,curve,prune,max_time_steps=100,loglevel=0)
+            solve!(f;auto=false,ratio=4.,slope,curve,prune,max_points,max_time_steps=100,loglevel=0)
             converged=true
         catch e
             e isa ErrorException || rethrow()
