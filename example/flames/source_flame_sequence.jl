@@ -36,7 +36,7 @@ function source_flame_temperature_profile()
 end
 
 "Run every published transport stage; return stage seconds, grid sizes and optional snapshots."
-function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,after_stage::F=nothing) where {F}
+function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,after_stage::F=nothing,clock_ns::C=time_ns) where {F,C}
     case in ("free","burner","fixed") || throw(ArgumentError("unknown source flame case"))
     free=case=="free";fixed=case=="fixed"
     expected=fixed ? (53,325) : (10,29)
@@ -47,7 +47,8 @@ function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,a
     f=nothing
     for (stage,mode) in enumerate(modes)
         multi=startswith(mode,"multi")
-        seconds[stage]=@elapsed begin
+        stage_start_ns=clock_ns()
+        begin
             if stage==1
                 X=free ? "H2:1.1,O2:1,AR:5" : fixed ? "CH4:.65,O2:1,N2:3.76" : "H2:1.5,O2:1,AR:7"
                 f=free ? FreeFlame(gas;T=300.,P=one_atm,X,width=.03) :
@@ -73,6 +74,7 @@ function run_source_sequence(gas,data,case,profile=nothing;save_profiles=false,a
                     "velocity"=>velocity(f),"inlet_Y"=>copy(f.inlet_Y),"state"=>copy(f.state),"P"=>[f.pressure])
             end
         end
+        seconds[stage]=(clock_ns()-stage_start_ns)/1e9
         f.converged || error("$case $mode failed")
         points[stage]=length(f.grid)
         after_stage === nothing || after_stage(f,mode)

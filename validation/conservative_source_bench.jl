@@ -13,10 +13,21 @@ reps=parse(Int,ARGS[4]);reps>=5 || error("at least five warm repetitions require
 Threads.nthreads()==1 && BLAS.get_num_threads()==1 || error("single-thread benchmark required")
 clock_diagnostics=length(ARGS)>=5 && ARGS[5]=="clock-diagnostics"
 clock_diagnostics && !(Sys.islinux() && Sys.WORD_SIZE==64) && error("clock diagnostics require 64-bit Linux")
+const on_linux64=Sys.islinux() && Sys.WORD_SIZE==64
+const elapsed_clock=on_linux64 ? "CLOCK_MONOTONIC_RAW" : "monotonic"
+function benchmark_elapsed_ns()::UInt64
+    if Sys.islinux() && Sys.WORD_SIZE==64
+        spec=Ref{NTuple{2,Clong}}()
+        ccall(:clock_gettime,Cint,(Cint,Ref{NTuple{2,Clong}}),4,spec)==0 ||
+            error("clock_gettime(CLOCK_MONOTONIC_RAW) failed")
+        return UInt64(spec[][1])*UInt64(1_000_000_000)+UInt64(spec[][2])
+    end
+    return time_ns()
+end
 function flame_clock_observation()
     cpu=ccall(:sched_getcpu,Cint,())
     cpu>=0 || error("sched_getcpu failed")
-    return (time_ns(),ccall(:clock,Clong,())/1e6,cpu)
+    return (benchmark_elapsed_ns(),ccall(:clock,Clong,())/1e6,cpu)
 end
 mkpath(output)
 mechanism=joinpath(parameters,case=="fixed" ? "gri30.yaml" : "h2o2.yaml")
@@ -41,7 +52,7 @@ clock_observations=zeros(clock_diagnostics ? reps+1 : 0,4)
 for repetition in 0:reps
     gc_start_ns=Base.gc_time_ns()
     clock_before=clock_diagnostics ? flame_clock_observation() : nothing
-    elapsed,nodes,saved=run_source_sequence(gas,data,case,profile;save_profiles=true)
+    elapsed,nodes,saved=run_source_sequence(gas,data,case,profile;save_profiles=true,clock_ns=benchmark_elapsed_ns)
     if clock_diagnostics
         after=flame_clock_observation()
         clock_observations[repetition+1,:].=((after[1]-clock_before[1])/1e9,after[2]-clock_before[2],clock_before[3],after[3])
@@ -80,6 +91,7 @@ library_hashes=Dict(realpath(path)=>bytes2hex(sha256(read(path))) for path in Li
 npzwrite(joinpath(output,"timings.npz"),Dict("stage_seconds"=>seconds,"stage_points"=>points,
     "automatic_gc_seconds"=>automatic_gc_seconds,"warmup_gc_seconds"=>[warmup_gc_seconds[]],
     "clock_diagnostics"=>[clock_diagnostics],"clock_observations"=>clock_observations,
+    "elapsed_clock_utf8"=>collect(codeunits(elapsed_clock)),
     "shared_calculation_path_utf8"=>collect(codeunits(realpath(shared_helper))),
     "shared_calculation_sha256_utf8"=>collect(codeunits(bytes2hex(sha256(read(shared_helper))))),
     "thread_checks_toml_utf8"=>tomlbytes(thread_checks),

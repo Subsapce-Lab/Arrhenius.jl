@@ -15,6 +15,28 @@ with patch.dict(sys.modules,{"cantera":types.ModuleType("cantera")}):
 
 
 class ProvenanceChecks(unittest.TestCase):
+    def test_elapsed_clock_uses_raw_on_linux_and_propagates_failure(self):
+        with patch.object(bench.platform,"system",return_value="Linux"), patch.object(bench.time,"clock_gettime_ns",return_value=123456789) as raw:
+            self.assertEqual(bench.benchmark_elapsed_ns(),123456789)
+            raw.assert_called_once_with(bench.time.CLOCK_MONOTONIC_RAW)
+        with patch.object(bench.platform,"system",return_value="Linux"), patch.object(bench.time,"clock_gettime_ns",side_effect=OSError("clock unavailable")):
+            with self.assertRaises((OSError,RuntimeError)):
+                bench.benchmark_elapsed_ns()
+
+    def test_elapsed_clock_preserves_nonlinux_fallback(self):
+        with patch.object(bench.platform,"system",return_value="Darwin"), patch.object(bench.time,"perf_counter_ns",return_value=987654321) as mono, patch.dict(sys.modules,{"cantera":types.ModuleType("cantera")}):
+            alternate=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(alternate)
+            self.assertEqual(alternate.benchmark_elapsed_ns(),987654321)
+            self.assertEqual(alternate.ELAPSED_CLOCK,"monotonic")
+            mono.assert_called_once()
+
+    def test_missing_or_mismatched_native_clock_rejected(self):
+        self.assertEqual(bench.checked_elapsed_clock({"elapsed_clock_utf8":np.frombuffer(bench.ELAPSED_CLOCK.encode(),dtype=np.uint8)}),bench.ELAPSED_CLOCK)
+        for data in [{},{"elapsed_clock_utf8":np.frombuffer(b"different",dtype=np.uint8)},{"elapsed_clock_utf8":np.array([255],dtype=np.uint8)}]:
+            with self.assertRaisesRegex(RuntimeError,"elapsed clock"):
+                bench.checked_elapsed_clock(data)
+
     def test_process_clock_observations_reject_invalid_or_missing_rows(self):
         samples=np.tile([.2,.18,0,1],(6,1))
         self.assertEqual(bench.checked_clock_observations(samples,5),samples.tolist())

@@ -16,6 +16,25 @@ MECHANISM_HASHES={"h2o2":"0efc6c52862741a29e0c29b65d979c7d8cb409db5282bca83b9c54
     "gri30":"06650b1e0ee0012f6903d5328b1bb218cb6007d07f8ebe375d18f24811039345"}
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
+if platform.system()=="Linux":
+    if not hasattr(time,"CLOCK_MONOTONIC_RAW") or not hasattr(time,"clock_gettime_ns"):
+        raise RuntimeError("CLOCK_MONOTONIC_RAW nanosecond clock is unavailable on this Linux host")
+    def benchmark_elapsed_ns():return time.clock_gettime_ns(time.CLOCK_MONOTONIC_RAW)
+    ELAPSED_CLOCK="CLOCK_MONOTONIC_RAW"
+else:
+    def benchmark_elapsed_ns():return time.perf_counter_ns()
+    ELAPSED_CLOCK="monotonic"
+
+def checked_elapsed_clock(data):
+    try:
+        value=bytes(np.asarray(data["elapsed_clock_utf8"],dtype=np.uint8).ravel()).decode("utf-8")
+    except (KeyError,ValueError,UnicodeError) as exc:
+        raise RuntimeError("missing or invalid native elapsed clock") from exc
+    if value!=ELAPSED_CLOCK:
+        raise RuntimeError("Julia and Cantera elapsed clocks differ")
+    return value
+
+
 def current_source_hashes(project):
     return {str(path.relative_to(project)):digest(path) for path in sorted((project/"src").rglob("*.jl"))}
 
@@ -46,7 +65,7 @@ def make_clock_observer():
     def observe():
         cpu=getcpu()
         if cpu<0:raise RuntimeError("sched_getcpu failed")
-        return time.perf_counter(),time.process_time(),cpu
+        return benchmark_elapsed_ns()/1e9,time.process_time(),cpu
     return observe
 
 
@@ -89,7 +108,7 @@ def cantera_sequence(gas,case,profile,save_profiles=False):
     # fresh mechanism loading outside the timed source calculation.
     gas.transport_model="mixture-averaged"
     for stage,mode in enumerate(modes):
-        multi=mode.startswith("multi");start=time.perf_counter()
+        multi=mode.startswith("multi");start=benchmark_elapsed_ns()
         if stage==0:
             gas.TPX=(300.,ct.one_atm,"H2:1.1,O2:1,AR:5") if free else (373.7,ct.one_atm,"CH4:.65,O2:1,N2:3.76") if fixed else (373.,.05*ct.one_atm,"H2:1.5,O2:1,AR:7")
             flame=ct.FreeFlame(gas,width=.03) if free else ct.BurnerFlame(gas,width=.01 if fixed else .5)
@@ -109,7 +128,7 @@ def cantera_sequence(gas,case,profile,save_profiles=False):
         if save_profiles:
             snapshots[mode]=dict(grid=flame.grid.copy(),T=flame.T.copy(),Y=flame.Y.copy(),velocity=flame.velocity.copy(),
                 inlet_Y=flame.inlet.Y.copy() if free else flame.burner.Y.copy(),P=[flame.P])
-        seconds.append(time.perf_counter()-start);points.append(len(flame.grid))
+        seconds.append((benchmark_elapsed_ns()-start)/1e9);points.append(len(flame.grid))
     return seconds,points,snapshots
 
 def main():
@@ -127,6 +146,8 @@ def main():
     a=p.parse_args()
     if a.clock_diagnostics and (a.formal or a.target!="wsl" or platform.system()!="Linux"):
         p.error("clock diagnostics require Linux/WSL and cannot qualify formal performance")
+    if a.formal and a.target=="wsl" and ELAPSED_CLOCK!="CLOCK_MONOTONIC_RAW":
+        p.error("formal WSL qualification requires the CLOCK_MONOTONIC_RAW elapsed clock")
     observe_clock=make_clock_observer() if a.clock_diagnostics else None
     if a.reps<5 or (a.formal and a.reps<9):p.error("at least five warm repetitions required; formal qualification requires nine")
     if not ct.__version__.startswith("4.0"):p.error("Cantera4 required")
@@ -164,7 +185,7 @@ def main():
         scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published transport sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
         compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
         warmup_gc_policy="One explicit collection after the excluded first complete sequence on each runtime; automatic GC remains enabled and timed during measured calculations.",
-        clock_diagnostics=a.clock_diagnostics,
+        clock_diagnostics=a.clock_diagnostics,elapsed_clock=ELAPSED_CLOCK,
         clock_columns=["wall_seconds","process_cpu_seconds","cpu_before","cpu_after"],
         clock_scope="Outer complete calculation call; process CPU includes all process threads. CPU IDs are observations at call boundaries and cannot rule out migrations within a call.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
@@ -200,8 +221,8 @@ def main():
                 if repetition==0:np.savez(cantera/f"{a.case}-{mode}-first.npz",**data)
             print("cantera",a.case,repetition,sum(elapsed),elapsed,points,flush=True)
             if repetition==0:
-                gc_start=time.perf_counter();gc.collect()
-                report["cantera_warmup_gc_seconds"]=time.perf_counter()-gc_start
+                gc_start=benchmark_elapsed_ns();gc.collect()
+                report["cantera_warmup_gc_seconds"]=(benchmark_elapsed_ns()-gc_start)/1e9
             if repetition==a.reps:
                 for mode,data in snapshots.items():np.savez(cantera/f"{a.case}-{mode}-0.npz",**data)
         if a.clock_diagnostics:report["cantera_clock_observations"]=checked_clock_observations(clock_rows,a.reps)
@@ -216,6 +237,7 @@ def main():
         print(result.stdout,end="",flush=True)
         if result.returncode:raise RuntimeError(f"Julia failed: {result.stderr[-3000:]}")
         data=np.load(native/"timings.npz")
+        report["julia_elapsed_clock"]=checked_elapsed_clock(data)
         if a.clock_diagnostics:
             if not bool(data["clock_diagnostics"][0]):raise RuntimeError("native clock diagnostic was not enabled")
             report["julia_clock_observations"]=checked_clock_observations(data["clock_observations"],a.reps)
