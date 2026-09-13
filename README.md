@@ -260,6 +260,11 @@ The species-data directory must contain `nasa_gas.yaml` referenced by the
 oxygen mechanism. The YAML files are read by Julia; Cantera is not required
 at runtime.
 
+For Boltzmann phases, `PlasmaEnergyReactor` supplies a constant-pressure
+mass, enthalpy, and species RHS with cached EEDF and field updates. See
+[plasma thermochemistry and energy equations](validation/plasma_thermochemistry.md)
+for the API and current validation scope.
+
 ## Publication
 
 + [Arrhenius.jl: A Differentiable Combustion Simulation Package](https://arxiv.org/pdf/2107.06172.pdf): overview of Arrhenius.jl and applications in deep mechanism reduction, uncertainty quantification, mechanism tuning and model discovery. [Slides in NCM21](https://www.slideshare.net/WeiqiJi/arrheniusjl-a-differentiable-combustion-simulation-package-248457895), [Vedio for NCM21](https://www.youtube.com/watch?v=X1mwpW78NvA).

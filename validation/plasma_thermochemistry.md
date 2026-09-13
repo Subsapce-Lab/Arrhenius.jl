@@ -22,4 +22,24 @@ set_plasma_enthalpy!(s, h; pressure=101325.0)
 
 The [state validation results](results/cantera4_wsl_pulse_thermochemistry.json) compare the methane pulse mechanism's 71 species and 440 reactions at five states against Cantera 4.0.0a2. They cover gas and electron thermodynamics, all rate families, density, field/EEDF caching, and enthalpy inversion. Tiny net production rates are also checked against high-precision sums of independently parsed net stoichiometry: separate production/destruction accumulation can leave floating-point cancellation residuals.
 
-These are mechanism and state calculations. The complete 90 ns pulse trajectory and its repeated-run speed remain unvalidated. `PlasmaReactor` remains an isothermal model and does not accept Boltzmann phases requiring energy coupling.
+`PlasmaEnergyReactor` supplies a closed, constant-pressure energy equation for Boltzmann phases. Its ODE state contains mass, total enthalpy, and all species mass fractions. Gas temperature is recovered from enthalpy while electron temperature remains fixed. Joule heating changes total enthalpy; the RHS retains the field, mobility, and collision-rate cache between explicit EEDF updates.
+
+```julia
+r = PlasmaEnergyReactor(s; volume=1.0)
+rhs = reactor_rhs(r)
+u = reactor_state(r)
+du = similar(u)
+rhs(du, u)
+properties = reactor_properties(rhs, u)
+update_eedf!(rhs, u; reduced_field=190e-21)
+```
+
+Each `reactor_rhs(r)` or `reactor_problem(r, tspan)` starts from the reactor snapshot. For piecewise field histories, retain the prepared RHS and accepted terminal state between intervals, update that RHS's EEDF, and restart the integrator's history and caches.
+
+The [energy-reactor validation results](results/cantera4_wsl_pulse_energy.json) compare the 73-state RHS, thermodynamics, and cached EEDF at six prescribed methane-pulse states against a converged Cantera reference. Species sources use independently accumulated net stoichiometry. The optional [integration test](../test/plasma_energy_integration.jl) checks two inert charged-mixture heating intervals against a closed-form solution:
+
+```sh
+julia --project=example/reactors test/plasma_energy_integration.jl
+```
+
+The complete native 90 ns pulse trajectory and its repeated-run speed remain unvalidated. `PlasmaReactor` remains an isothermal model and does not accept Boltzmann phases requiring energy coupling.
