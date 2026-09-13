@@ -29,6 +29,27 @@ def checked_times(values,repetitions,stages):
         raise RuntimeError("missing or invalid first/warm stage timings")
     return np.sum(values,axis=1)
 
+def checked_clock_observations(values,repetitions):
+    values=np.asarray(values,dtype=float)
+    if (values.shape!=(repetitions+1,4) or not np.all(np.isfinite(values)) or
+            np.any(values[:,0]<=0) or np.any(values[:,1]<0) or
+            np.any(values[:,2:]<0) or np.any(values[:,2:]!=np.floor(values[:,2:]))):
+        raise RuntimeError("invalid process-clock observations")
+    return values.tolist()
+
+
+def make_clock_observer():
+    # Diagnostic only: CPU IDs are WSL/Linux logical IDs, not host core types.
+    import ctypes
+    libc=ctypes.CDLL(None)
+    getcpu=libc.sched_getcpu;getcpu.argtypes=[];getcpu.restype=ctypes.c_int
+    def observe():
+        cpu=getcpu()
+        if cpu<0:raise RuntimeError("sched_getcpu failed")
+        return time.perf_counter(),time.process_time(),cpu
+    return observe
+
+
 def verified_cantera_libraries(build):
     import cantera._cantera as compiled
     paths={path.resolve() for path in loaded_library_paths() if "cantera" in path.name.lower() and path.is_file()}
@@ -102,7 +123,11 @@ def main():
     p.add_argument("--target",required=True,choices=["wsl","apple-m4"])
     p.add_argument("--reps",type=int,default=9);p.add_argument("--formal",action="store_true")
     p.add_argument("--order",choices=["cantera-first","julia-first"],default="cantera-first")
+    p.add_argument("--clock-diagnostics",action="store_true",help="Linux process clocks and observed CPU IDs; incompatible with --formal")
     a=p.parse_args()
+    if a.clock_diagnostics and (a.formal or a.target!="wsl" or platform.system()!="Linux"):
+        p.error("clock diagnostics require Linux/WSL and cannot qualify formal performance")
+    observe_clock=make_clock_observer() if a.clock_diagnostics else None
     if a.reps<5 or (a.formal and a.reps<9):p.error("at least five warm repetitions required; formal qualification requires nine")
     if not ct.__version__.startswith("4.0"):p.error("Cantera4 required")
     build=json.loads(a.build_record.read_text())
@@ -139,6 +164,9 @@ def main():
         scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published transport sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
         compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
         warmup_gc_policy="One explicit collection after the excluded first complete sequence on each runtime; automatic GC remains enabled and timed during measured calculations.",
+        clock_diagnostics=a.clock_diagnostics,
+        clock_columns=["wall_seconds","process_cpu_seconds","cpu_before","cpu_after"],
+        clock_scope="Outer complete calculation call; process CPU includes all process threads. CPU IDs are observations at call boundaries and cannot rule out migrations within a call.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
         cantera_build_record_sha256=digest(a.build_record),mechanism_sha256=digest(mechanism),
         sidecar_sha256=digest(str(mechanism)+".npz"),multicomponent_sha256=digest(str(mechanism)+".multicomponent.npz"),
@@ -150,9 +178,13 @@ def main():
         actual_loaded_cantera_hashes_before=libraries_before,python_executable_sha256=digest(sys.executable),
         native_source_hashes=source_hashes,native_commit=native_record.get("commit"),native_record_sha256=digest(a.native_record))
     def run_ct():
-        times=[];nodes=[];baseline=None;replay=[];thread_checks=[]
+        times=[];nodes=[];baseline=None;replay=[];thread_checks=[];clock_rows=[]
         for repetition in range(a.reps+1):
+            clock_before=observe_clock() if observe_clock is not None else None
             elapsed,points,snapshots=cantera_sequence(gas,a.case,profile,True)
+            if observe_clock is not None:
+                after=observe_clock()
+                clock_rows.append([after[0]-clock_before[0],after[1]-clock_before[1],clock_before[2],after[2]])
             thread_checks.append(verify_threads())
             times.append(elapsed);nodes.append(points)
             if baseline is None:baseline=snapshots
@@ -172,16 +204,21 @@ def main():
                 report["cantera_warmup_gc_seconds"]=time.perf_counter()-gc_start
             if repetition==a.reps:
                 for mode,data in snapshots.items():np.savez(cantera/f"{a.case}-{mode}-0.npz",**data)
+        if a.clock_diagnostics:report["cantera_clock_observations"]=checked_clock_observations(clock_rows,a.reps)
         report["cantera_stage_seconds"]=times;report["cantera_stage_points"]=nodes
         report["cantera_repetition_thread_checks"]=thread_checks
         report["cantera_replay"]=dict(passed=True,checked_stages=len(replay),relative_tolerance=1e-12,absolute_tolerance=1e-14,records=replay)
     def run_julia():
         command=[a.julia,f"--project={a.project}",str(Path(__file__).with_suffix(".jl")),str(a.parameters),str(native),a.case,str(a.reps)]
+        if a.clock_diagnostics:command.append("clock-diagnostics")
         result=subprocess.run(command,capture_output=True,text=True,env=dict(os.environ))
         (a.output/"julia.log").write_text(result.stdout+result.stderr)
         print(result.stdout,end="",flush=True)
         if result.returncode:raise RuntimeError(f"Julia failed: {result.stderr[-3000:]}")
         data=np.load(native/"timings.npz")
+        if a.clock_diagnostics:
+            if not bool(data["clock_diagnostics"][0]):raise RuntimeError("native clock diagnostic was not enabled")
+            report["julia_clock_observations"]=checked_clock_observations(data["clock_observations"],a.reps)
         if int(data["julia_threads"][0])!=1 or int(data["blas_threads"][0])!=1:raise RuntimeError("Julia thread guard failed")
         if platform.system()=="Darwin" and int(data["accelerate_threading"][0])!=1:raise RuntimeError("Julia Accelerate thread guard failed")
         text=lambda key:bytes(data[key+"_utf8"]).decode()

@@ -11,6 +11,13 @@ initial_source_hashes=source_hashes(source_root)
 parameters,output,case=ARGS[1:3]
 reps=parse(Int,ARGS[4]);reps>=5 || error("at least five warm repetitions required")
 Threads.nthreads()==1 && BLAS.get_num_threads()==1 || error("single-thread benchmark required")
+clock_diagnostics=length(ARGS)>=5 && ARGS[5]=="clock-diagnostics"
+clock_diagnostics && !(Sys.islinux() && Sys.WORD_SIZE==64) && error("clock diagnostics require 64-bit Linux")
+function flame_clock_observation()
+    cpu=ccall(:sched_getcpu,Cint,())
+    cpu>=0 || error("sched_getcpu failed")
+    return (time_ns(),ccall(:clock,Clong,())/1e6,cpu)
+end
 mkpath(output)
 mechanism=joinpath(parameters,case=="fixed" ? "gri30.yaml" : "h2o2.yaml")
 gas=CreateSolution(mechanism);data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
@@ -30,9 +37,15 @@ fields=["grid","T","Y","velocity","inlet_Y","state","P"]
 seconds=zeros(reps+1,length(modes));points=zeros(Int,size(seconds));snapshots=nothing;first_profiles=nothing
 replay_errors=zeros(reps+1,length(modes),length(fields));hashes=String[]
 automatic_gc_seconds=zeros(reps+1);warmup_gc_seconds=Ref(0.0)
+clock_observations=zeros(clock_diagnostics ? reps+1 : 0,4)
 for repetition in 0:reps
     gc_start_ns=Base.gc_time_ns()
+    clock_before=clock_diagnostics ? flame_clock_observation() : nothing
     elapsed,nodes,saved=run_source_sequence(gas,data,case,profile;save_profiles=true)
+    if clock_diagnostics
+        after=flame_clock_observation()
+        clock_observations[repetition+1,:].=((after[1]-clock_before[1])/1e9,after[2]-clock_before[2],clock_before[3],after[3])
+    end
     automatic_gc_seconds[repetition+1]=(Base.gc_time_ns()-gc_start_ns)/1e9
     thread_checks["after_repetition_"*string(repetition)]=benchmark_julia_thread_settings(;enforce=false)
     seconds[repetition+1,:].=elapsed;points[repetition+1,:].=nodes
@@ -66,6 +79,7 @@ tomlbytes(value)=collect(codeunits(sprint(io->TOML.print(io,value;sorted=true)))
 library_hashes=Dict(realpath(path)=>bytes2hex(sha256(read(path))) for path in Libdl.dllist() if isfile(path))
 npzwrite(joinpath(output,"timings.npz"),Dict("stage_seconds"=>seconds,"stage_points"=>points,
     "automatic_gc_seconds"=>automatic_gc_seconds,"warmup_gc_seconds"=>[warmup_gc_seconds[]],
+    "clock_diagnostics"=>[clock_diagnostics],"clock_observations"=>clock_observations,
     "shared_calculation_path_utf8"=>collect(codeunits(realpath(shared_helper))),
     "shared_calculation_sha256_utf8"=>collect(codeunits(bytes2hex(sha256(read(shared_helper))))),
     "thread_checks_toml_utf8"=>tomlbytes(thread_checks),

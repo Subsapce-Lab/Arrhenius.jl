@@ -15,6 +15,16 @@ with patch.dict(sys.modules,{"cantera":types.ModuleType("cantera")}):
 
 
 class ProvenanceChecks(unittest.TestCase):
+    def test_process_clock_observations_reject_invalid_or_missing_rows(self):
+        samples=np.tile([.2,.18,0,1],(6,1))
+        self.assertEqual(bench.checked_clock_observations(samples,5),samples.tolist())
+        for invalid in [samples[1:],samples[:,:3],np.full((6,4),np.nan),
+                np.tile([0,.18,0,1],(6,1)),np.tile([.2,-.1,0,1],(6,1)),
+                np.tile([.2,.18,-1,1],(6,1)),np.tile([.2,.18,.5,1],(6,1))]:
+            with self.assertRaisesRegex(RuntimeError,"invalid process-clock"):
+                bench.checked_clock_observations(invalid,5)
+
+
     def test_incomplete_or_invalid_timing_samples_rejected(self):
         samples=np.ones((10,4))
         np.testing.assert_array_equal(bench.checked_times(samples,9,4),np.full(10,4.))
