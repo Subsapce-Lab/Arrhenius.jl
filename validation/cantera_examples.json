@@ -310,9 +310,13 @@
     {
       "id": "onedim/ion_burner_flame",
       "url": "https://cantera.org/dev/examples/python/onedim/ion_burner_flame.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/flames/source_ion_flame_sequence.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_ion_burner_correctness_ced4114.json",
+        "case": "onedim/ion_burner_flame",
+        "scope": "run_ion_source_sequence(gas, \"burner\"): complete fresh native frozen-field and enabled-field stages; full independent profiles, conservation and reference-uncertainty gates; exact first/warm replay in both runtimes."
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"
