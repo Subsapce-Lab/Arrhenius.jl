@@ -29,8 +29,11 @@ modes=case=="free" ? ["mass","mass-soret","multi","multi-soret"] : ["mole","mult
 fields=["grid","T","Y","velocity","inlet_Y","state","P"]
 seconds=zeros(reps+1,length(modes));points=zeros(Int,size(seconds));snapshots=nothing;first_profiles=nothing
 replay_errors=zeros(reps+1,length(modes),length(fields));hashes=String[]
+automatic_gc_seconds=zeros(reps+1);warmup_gc_seconds=Ref(0.0)
 for repetition in 0:reps
+    gc_start_ns=Base.gc_time_ns()
     elapsed,nodes,saved=run_source_sequence(gas,data,case,profile;save_profiles=true)
+    automatic_gc_seconds[repetition+1]=(Base.gc_time_ns()-gc_start_ns)/1e9
     thread_checks["after_repetition_"*string(repetition)]=benchmark_julia_thread_settings(;enforce=false)
     seconds[repetition+1,:].=elapsed;points[repetition+1,:].=nodes
     repetition==0 && (global first_profiles=saved)
@@ -49,6 +52,11 @@ for repetition in 0:reps
     end
     repetition==reps && (global snapshots=saved)
     println((;case,repetition,seconds=sum(elapsed),stages=elapsed,points=nodes));flush(stdout)
+    # Exclude garbage left by the excluded warmup; automatic GC stays enabled
+    # throughout all measured repetitions. No per-repetition collection.
+    if repetition==0
+        warmup_gc_seconds[]=@elapsed GC.gc()
+    end
 end
 for (mode,values) in snapshots
     npzwrite(joinpath(output,"$case-$mode-0.npz"),values)
@@ -57,6 +65,7 @@ initial_source_hashes==source_hashes(source_root) || error("native source files 
 tomlbytes(value)=collect(codeunits(sprint(io->TOML.print(io,value;sorted=true))))
 library_hashes=Dict(realpath(path)=>bytes2hex(sha256(read(path))) for path in Libdl.dllist() if isfile(path))
 npzwrite(joinpath(output,"timings.npz"),Dict("stage_seconds"=>seconds,"stage_points"=>points,
+    "automatic_gc_seconds"=>automatic_gc_seconds,"warmup_gc_seconds"=>[warmup_gc_seconds[]],
     "shared_calculation_path_utf8"=>collect(codeunits(realpath(shared_helper))),
     "shared_calculation_sha256_utf8"=>collect(codeunits(bytes2hex(sha256(read(shared_helper))))),
     "thread_checks_toml_utf8"=>tomlbytes(thread_checks),

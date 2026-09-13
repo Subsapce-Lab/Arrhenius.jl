@@ -1,5 +1,5 @@
 """Time complete source-default flame sequences, with separate physical references."""
-import argparse,ast,hashlib,json,os,platform,re,statistics,subprocess,sys,time,tomllib
+import argparse,ast,gc,hashlib,json,os,platform,re,statistics,subprocess,sys,time,tomllib
 from pathlib import Path
 THREAD_KEYS=["OPENBLAS_NUM_THREADS","OMP_NUM_THREADS","MKL_NUM_THREADS","VECLIB_MAXIMUM_THREADS","JULIA_NUM_THREADS"]
 for key in THREAD_KEYS:os.environ[key]="1"
@@ -138,6 +138,7 @@ def main():
     report=dict(case=a.case,formal=a.formal,passed=False,performance_pass=False,date=time.strftime("%Y-%m-%d %H:%M:%S %z"),host=host,target=a.target,
         scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published transport sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
         compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
+        warmup_gc_policy="One explicit collection after the excluded first complete sequence on each runtime; automatic GC remains enabled and timed during measured calculations.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
         cantera_build_record_sha256=digest(a.build_record),mechanism_sha256=digest(mechanism),
         sidecar_sha256=digest(str(mechanism)+".npz"),multicomponent_sha256=digest(str(mechanism)+".multicomponent.npz"),
@@ -166,6 +167,9 @@ def main():
                 replay.append(dict(repetition=repetition,mode=mode,sha256=hasher.hexdigest(),max_abs=errors))
                 if repetition==0:np.savez(cantera/f"{a.case}-{mode}-first.npz",**data)
             print("cantera",a.case,repetition,sum(elapsed),elapsed,points,flush=True)
+            if repetition==0:
+                gc_start=time.perf_counter();gc.collect()
+                report["cantera_warmup_gc_seconds"]=time.perf_counter()-gc_start
             if repetition==a.reps:
                 for mode,data in snapshots.items():np.savez(cantera/f"{a.case}-{mode}-0.npz",**data)
         report["cantera_stage_seconds"]=times;report["cantera_stage_points"]=nodes
@@ -188,6 +192,10 @@ def main():
             raise RuntimeError("Julia source calculation does not match the public example helper")
         report["shared_public_calculation_verified"]=True
         report["julia_stage_seconds"]=data["stage_seconds"].tolist();report["julia_stage_points"]=data["stage_points"].tolist()
+        gc_seconds=np.asarray(data["automatic_gc_seconds"],dtype=float)
+        if gc_seconds.shape!=(a.reps+1,) or not np.all(np.isfinite(gc_seconds)) or np.any(gc_seconds<0):raise RuntimeError("invalid native automatic-GC observations")
+        report["julia_automatic_gc_seconds"]=gc_seconds.tolist()
+        report["julia_warmup_gc_seconds"]=float(data["warmup_gc_seconds"][0])
         report["julia_runtime"]={key:text(key) for key in ["julia_version","kernel","machine","package_path","blas_config","loaded_libraries"]}
         report["julia_runtime"]["accelerate_threading"]=int(data["accelerate_threading"][0])
         checks=tomllib.loads(text("thread_checks_toml"))
