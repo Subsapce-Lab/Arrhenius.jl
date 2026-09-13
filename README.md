@@ -264,6 +264,9 @@ For Boltzmann phases, `PlasmaEnergyReactor` supplies a constant-pressure
 mass, enthalpy, and species RHS with cached EEDF and field updates. See
 [plasma thermochemistry and energy equations](validation/plasma_thermochemistry.md)
 for the API and current validation scope.
+The [methane nanosecond-pulse example](example/reactors/nanosecond_pulse_discharge.jl)
+integrates the coupled gas energy and charged-species equations through the full
+pulse, retaining its prescribed field-update schedule.
 
 ## Publication
 

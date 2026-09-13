@@ -42,4 +42,4 @@ The [energy-reactor validation results](results/cantera4_wsl_pulse_energy.json) 
 julia --project=example/reactors test/plasma_energy_integration.jl
 ```
 
-The complete native 90 ns pulse trajectory and its repeated-run speed remain unvalidated. `PlasmaReactor` remains an isothermal model and does not accept Boltzmann phases requiring energy coupling.
+The [complete native methane pulse](results/cantera4_wsl_nanosecond_pulse.json) passes all 664 trajectory and snapshot checks, including its 901 output times and 91 field-update intervals. Its repeated-run speed remains unvalidated. `PlasmaReactor` remains an isothermal model and does not accept Boltzmann phases requiring energy coupling.

@@ -466,9 +466,12 @@
     {
       "id": "reactors/nanosecond_pulse_discharge",
       "url": "https://cantera.org/dev/examples/python/reactors/nanosecond_pulse_discharge.html",
-      "status": "not_validated",
-      "julia_example": null,
-      "correctness_evidence": null,
+      "status": "calculation_validated",
+      "julia_example": "example/reactors/nanosecond_pulse_discharge.jl",
+      "correctness_evidence": {
+        "report": "validation/results/cantera4_wsl_nanosecond_pulse.json",
+        "scope": "Complete native energy-coupled pulse: all901 exact outputs,71 species trajectories,93 EEDF snapshots, heating increments, signed conservation, executable CLI and local validation."
+      },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": null,
       "performance_status": "not_validated"

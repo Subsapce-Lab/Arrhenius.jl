@@ -63,3 +63,19 @@ mechanism and creates fresh state and solver storage on every call. It returns
 time and electron mole fraction together with the reactor and solution.
 `native_bdf` uses a dense automatic-differentiation Jacobian for this
 species-only plasma reactor. Gas and electron temperatures remain fixed.
+
+`nanosecond_pulse_discharge.jl` integrates the methane/air pulse with gas-energy
+coupling and a Boltzmann electron-energy distribution:
+
+```sh
+julia --project=example/reactors example/reactors/nanosecond_pulse_discharge.jl /path/to/methane-plasma-pavan-2023.yaml /path/to/species-data
+```
+
+The species-data directory supplies `gri30.yaml` and `nasa_gas.yaml` imported by
+the mechanism. The function `nanosecond_pulse_discharge(mechanism)` reuses a loaded
+mechanism and starts fresh physical state and solver storage. It returns time,
+temperature, species histories, field values, snapshots and solver statistics;
+check `completed` and `error` before using results. The original delayed field
+updates and all 901 output times are retained. See the
+[full pulse validation](../../validation/results/cantera4_wsl_nanosecond_pulse.json)
+for accuracy and timing scope.
