@@ -21,6 +21,14 @@ reactions, Blowers–Masel rates and explicit reaction orders. Unsupported Cante
 rejected during preprocessing. Native ideal-gas thermochemistry supports
 NASA7, multi-region NASA9, Shomate and constant-cp species models.
 
+The first gas phase may select local or imported species and reaction sections.
+Regenerate the sidecar after changing any imported YAML file. Julia resolves
+imports relative to the mechanism, then in optional search directories:
+
+```julia
+gas = CreateSolution("path/to/mechanism.yaml"; data_paths=["path/to/shared-data"])
+```
+
 ## Native calculations
 
 The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV;

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import cantera as ct
 import numpy as np
+from ruamel.yaml import YAML
 
 
 SUPPORTED_RATE_TYPES = {
@@ -28,6 +30,49 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def resolve_import(mechanism: Path, filename: str) -> Path:
+    candidate = Path(filename)
+    if candidate.is_absolute():
+        candidates = [candidate]
+    else:
+        candidates = [mechanism.parent / filename] + [
+            Path(directory) / filename for directory in ct.get_data_directories()
+        ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise ValueError(f"cannot resolve imported mechanism file: {filename}")
+
+
+def phase_selection(mechanism: Path, gas: ct.Solution) -> bytes:
+    yaml = YAML(typ="safe")
+    with mechanism.open("r", encoding="utf-8") as stream:
+        document = yaml.load(stream)
+    imports: set[str] = set()
+    phases = (document or {}).get("phases") or []
+    if isinstance(phases, list) and phases:
+        first = phases[0]
+        if isinstance(first, dict):
+            for field in ("species", "reactions"):
+                selector = first.get(field)
+                entries = selector if isinstance(selector, list) else [selector]
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        for key in entry:
+                            key = str(key)
+                            if "/" in key:
+                                imports.add(key.rsplit("/", 1)[0])
+    dependencies = {
+        name: sha256(resolve_import(mechanism, name)) for name in sorted(imports)
+    }
+    selection = dict(
+        species_names=list(gas.species_names),
+        n_reactions=int(gas.n_reactions),
+        dependencies=dependencies,
+    )
+    return json.dumps(selection, ensure_ascii=True).encode("utf-8")
 
 
 def arrhenius_row(data: dict[str, Any]) -> tuple[float, float, float]:
@@ -145,6 +190,7 @@ def export(mechanism: Path, output: Path) -> None:
             ]).T,
         }
     output.parent.mkdir(parents=True, exist_ok=True)
+    selection = phase_selection(mechanism, gas)
     payload = dict(
         molecular_weights=np.asarray(gas.molecular_weights, dtype=np.float64),
         reactant_stoich_coeffs=reactant_stoich,
@@ -170,8 +216,9 @@ def export(mechanism: Path, output: Path) -> None:
         Plog_pressures=np.asarray(plog_pressures, dtype=np.float64),
         Plog_rate_offsets=np.asarray(plog_rate_offsets, dtype=np.int64),
         Plog_Arrhenius=np.asarray(plog_arrhenius, dtype=np.float64).reshape((-1, 3)),
-        sidecar_format_utf8=np.frombuffer(b"arrhenius-sidecar-v2", dtype=np.uint8),
+        sidecar_format_utf8=np.frombuffer(b"arrhenius-sidecar-v4", dtype=np.uint8),
         source_sha256_utf8=np.frombuffer(sha256(mechanism).encode(), dtype=np.uint8),
+        phase_selection_utf8=np.frombuffer(selection, dtype=np.uint8),
         cantera_version_utf8=np.frombuffer(ct.__version__.encode(), dtype=np.uint8),
         **transport,
     )

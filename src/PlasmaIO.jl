@@ -89,11 +89,13 @@ function _plasma_import(file,path,data_paths)
     i===nothing && _plasma_error("imported species file $(repr(file)) not found; searched "*join(candidates,", "))
     candidates[i]
 end
-function _plasma_species(root,phase,path,data_paths)
+function _plasma_species(root,phase,path,data_paths; source_paths=nothing)
     data_paths isa AbstractVector || _plasma_error("data_paths must be a list")
-    selection=get(phase,"species",nothing); selection isa AbstractVector && !isempty(selection) || _plasma_error("phase needs a species list")
-    local_table,local_order=_plasma_table(root,"mechanism"); names=String[]; defs=Any[]
-    function add!(table,order,wanted,context)
+    selection=get(phase,"species",nothing)
+    selection == "all" && (selection = [Dict("species"=>"all")])
+    selection isa AbstractVector && !isempty(selection) || _plasma_error("phase needs a species list")
+    local_table,local_order=_plasma_table(get(root,"species",nothing) === nothing ? Dict("species"=>Any[]) : root,"mechanism"); names=String[]; defs=Any[]
+    function add!(table,order,wanted,context,source=path)
         chosen=wanted=="all" ? order : wanted
         chosen isa AbstractVector || _plasma_error("$context selection must be 'all' or a name list")
         for raw in chosen
@@ -101,6 +103,7 @@ function _plasma_species(root,phase,path,data_paths)
             name=String(raw); haskey(table,name) || _plasma_error("species $name not found in $context")
             name in names && _plasma_error("species $name selected more than once")
             push!(names,name); push!(defs,table[name])
+            source_paths === nothing || push!(source_paths,String(source))
         end
     end
     for (i,item) in enumerate(selection)
@@ -116,7 +119,7 @@ function _plasma_species(root,phase,path,data_paths)
         endswith(section,"/species") || _plasma_error("unsupported species section $section; expected <file>/species")
         file=section[1:end-length("/species")]; imported=_plasma_import(file,path,data_paths)
         imported_root=YAML.load_file(imported); imported_root isa AbstractDict || _plasma_error("$imported is not a YAML mapping")
-        table,order=_plasma_table(imported_root,imported); add!(table,order,wanted,imported)
+        table,order=_plasma_table(imported_root,imported); add!(table,order,wanted,imported,imported)
     end
     names,defs
 end
