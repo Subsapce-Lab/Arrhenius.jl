@@ -54,14 +54,19 @@ to solve the species and energy equations with adaptive grid refinement.
 enthalpy fluxes; `:finite_difference` retains the original discretization.
 """
 function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothing,
-        transport_model=:mixture_averaged, multicomponent_data=nothing, soret=false,
-        flux_gradient_basis=:mole, discretization=:conservative)
+        transport_model=gas.trans.model==:ionized_gas ? :ionized_gas : :mixture_averaged,
+        multicomponent_data=nothing, soret=false,flux_gradient_basis=:mole,
+        discretization=gas.trans.model==:ionized_gas ? :finite_difference : :conservative)
     discretization = Symbol(discretization)
     discretization in (:finite_difference,:conservative) ||
         throw(ArgumentError("discretization must be :finite_difference or :conservative"))
     isfinite(T) && 200 <= T <= 6000 && isfinite(P) && P > 0 ||
         throw(ArgumentError("finite inlet temperature in 200–6000 K and positive pressure required"))
-    gas.trans.model == :ionized_gas && throw(ArgumentError("ionized gas requires a flame model with electric-field equations"))
+    if gas.trans.model == :ionized_gas
+        Symbol(transport_model)==:ionized_gas && !soret && discretization==:finite_difference ||
+            throw(ArgumentError("ionized flames require ionized transport and finite differences without Soret"))
+        return IonizedFlame(gas;kind=:free,T,P,X,width,grid)
+    end
     gas.trans.poly_order == 5 || throw(ArgumentError("regenerate the sidecar to include native transport fits"))
     x = mole_fractions(gas,X)
     eq = equilibrate(gas; T, P, X=x, mode=:HP)
@@ -95,9 +100,15 @@ Use `discretization=:conservative` for finite-volume species and total enthalpy
 balances, or `:finite_difference` for the original discretization.
 """
 function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=nothing,
-        transport_model=:mixture_averaged,multicomponent_data=nothing,soret=false,
-        flux_gradient_basis=:mole,discretization=:conservative)
+        transport_model=gas.trans.model==:ionized_gas ? :ionized_gas : :mixture_averaged,
+        multicomponent_data=nothing,soret=false,flux_gradient_basis=:mole,
+        discretization=gas.trans.model==:ionized_gas ? :finite_difference : :conservative)
     isfinite(mdot) && mdot > 0 || throw(ArgumentError("mass flux must be finite and positive"))
+    if gas.trans.model == :ionized_gas
+        Symbol(transport_model)==:ionized_gas && !soret && Symbol(discretization)==:finite_difference ||
+            throw(ArgumentError("ionized flames require ionized transport and finite differences without Soret"))
+        return IonizedFlame(gas;kind=:burner,T,P,X,width,grid,mdot)
+    end
     initial_grid = isnothing(grid) ? width .* [0,.1,.2,.3,.5,.7,1] : grid
     base = FreeFlame(gas; T,P,X,width,grid=initial_grid,transport_model,multicomponent_data,soret,flux_gradient_basis,discretization)
     Teq = base.state[1,end]
