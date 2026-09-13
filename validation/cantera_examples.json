@@ -473,8 +473,13 @@
         "scope": "Complete native energy-coupled pulse: all901 exact outputs,71 species trajectories,93 EEDF snapshots, heating increments, signed conservation, executable CLI and local validation."
       },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_wsl_nanosecond_pulse_repeated.json",
+        "case": "reactors/nanosecond_pulse_discharge",
+        "speed_ratio": 0.6568669236394354,
+        "scope": "Three batches of three complete fresh pulse calculations with one loaded mechanism; initialization, setup, solve and required numerical outputs included. Accuracy passes; speed is below the 0.95 target."
+      },
+      "performance_status": "below_target"
     },
     {
       "id": "reactors/non_ideal_shock_tube",

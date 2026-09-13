@@ -1,0 +1,251 @@
+{
+  "case": "reactors/nanosecond_pulse_discharge",
+  "platform": "WSL",
+  "calculation_validated": true,
+  "performance_measured": true,
+  "performance_validated": false,
+  "passed": false,
+  "performance_status": "below_target",
+  "source_url": "https://cantera.org/dev/examples/python/reactors/nanosecond_pulse_discharge.html",
+  "julia_example": "example/reactors/nanosecond_pulse_discharge.jl",
+  "runtime": {
+    "julia": "1.12.7",
+    "cantera": "4.0.0a2",
+    "cantera_commit": "726522be4e2a13454d8415b7ef799d621f665cf3",
+    "arrhenius_commit": "37c67a171fa33f92667f72096dd914dc10898382",
+    "native_solver": "OrdinaryDiffEqBDF QNDF with prepared central finite-difference energy Jacobian",
+    "reference_solver": "Cantera ReactorNet CVODES dense",
+    "numerical_threads": 1
+  },
+  "conditions": {
+    "temperature_K": 300.0,
+    "pressure_Pa": 101325.0,
+    "volume_m3": 1.0,
+    "species": 71,
+    "reactions": 440,
+    "mole_fractions": {
+      "CH4": 0.095,
+      "O2": 0.19,
+      "N2": 0.715,
+      "e": 1e-11
+    },
+    "stored_electron_temperature_K": 0.001,
+    "rtol": 1e-11,
+    "atol": 1e-23,
+    "nominal_end_s": 9e-08,
+    "final_saved_time_s": 9.00999999999986e-08,
+    "outputs": 901,
+    "field_intervals": 91
+  },
+  "timing_contract": {
+    "mechanism_reused": true,
+    "fresh_physical_state": true,
+    "fresh_reactor_and_integrator": true,
+    "includes": [
+      "physical initialization and initial EEDF",
+      "reactor/solver setup",
+      "complete pulse integration and delayed field updates",
+      "all required t,T,X,E/N and numerical P/h outputs"
+    ],
+    "excludes": [
+      "imports and compilation",
+      "one-time mechanism loading",
+      "explicit garbage collection between runs",
+      "validation-only reference Y/density extraction",
+      "plots, printing and file I/O"
+    ],
+    "reference_reset": "Restore electron temperature if needed before source TPX, then source initial E/N and a fresh low-field EEDF update; reuse the original loaded phase with clone=False.",
+    "native_scope": "Complete public function, including its additional snapshot and diagnostic return values."
+  },
+  "repetitions": {
+    "excluded_warmups": 1,
+    "batches": 3,
+    "calculations_per_batch": 3,
+    "timed_calculations_per_engine": 9
+  },
+  "timing": {
+    "required_cantera_over_native": 0.95,
+    "cantera_over_native": 0.6568669236394354,
+    "conservative_cantera_over_native": 0.6466584258843459,
+    "noise_gate_passed": true,
+    "maximum_allowed_batch_spread": 0.1,
+    "reference": {
+      "means_seconds": [
+        0.318844532,
+        0.3210086703333333,
+        0.32118221500000005
+      ],
+      "median_seconds": 0.3210086703333333,
+      "relative_spread": 0.007282304859780268,
+      "per_call_seconds": [
+        0.30731803,
+        0.329824212,
+        0.319391354,
+        0.353983333,
+        0.305256548,
+        0.30378613,
+        0.310251518,
+        0.319676428,
+        0.333618699
+      ]
+    },
+    "native": {
+      "means_seconds": [
+        0.493064838,
+        0.481449289,
+        0.488696658
+      ],
+      "median_seconds": 0.488696658,
+      "relative_spread": 0.023768423233211475,
+      "per_call_seconds": [
+        0.480570192,
+        0.511523464,
+        0.487100858,
+        0.473196734,
+        0.480671753,
+        0.49047938,
+        0.485336979,
+        0.482213043,
+        0.498539952
+      ]
+    }
+  },
+  "accuracy": {
+    "passed": true,
+    "checks": 7550,
+    "failures": 0,
+    "native_full_trajectory_snapshot_checks_per_run": 664,
+    "checks_by_group": {
+      "frozen-inputs-before": 1,
+      "initialization-reuse-qualified": 1,
+      "supervised-reference-pass": 1,
+      "supervised-native-pass": 1,
+      "reference": 3,
+      "native": 3,
+      "native-0": 664,
+      "native-1": 664,
+      "native-2": 664,
+      "native-3": 664,
+      "native-4": 664,
+      "native-5": 664,
+      "native-6": 664,
+      "native-7": 664,
+      "native-8": 664,
+      "native-9": 664,
+      "reference-0": 89,
+      "reference-1": 90,
+      "reference-2": 90,
+      "reference-3": 90,
+      "reference-4": 90,
+      "reference-5": 90,
+      "reference-6": 90,
+      "reference-7": 90,
+      "reference-8": 90,
+      "reference-9": 90,
+      "frozen-inputs-after": 1
+    },
+    "repeated_reference_outputs_bitwise_identical": true,
+    "independent_loaded_phase_reset_checks": 62,
+    "complete_accuracy_report": "validation/results/cantera4_wsl_nanosecond_pulse.json",
+    "independent_checks_sha256": "1dab3f628d63f612a7f2fbe1e4c3c797812ae40a06f84088231a8336e3193994"
+  },
+  "accuracy_limits": {
+    "X_atol": 1e-14,
+    "X_rtol": 0.001,
+    "T_atol_K": 0.005,
+    "T_rtol": 1e-05,
+    "T_rise_atol_K": 1e-06,
+    "T_rise_rtol": 0.001,
+    "total_H_rise_atol_J": 1e-06,
+    "total_H_rise_rtol": 0.001,
+    "rho_atol": 1e-12,
+    "rho_rtol": 1e-06,
+    "mass_relative_drift": 1e-10,
+    "pressure_relative_drift": 1e-10,
+    "Y_sum_drift": 1e-10,
+    "signed_electron_inventory_absolute": 1e-18,
+    "signed_electron_inventory_relative": 0.0001,
+    "nonnegative_X_roundoff": 1e-13,
+    "exact_times": true
+  },
+  "solver_work": {
+    "native_first_timed": {
+      "njacs": 90,
+      "nreject": 222,
+      "nf": 9010,
+      "naccept": 6781,
+      "nnonliniter": 8740,
+      "nnonlinconvfail": 0,
+      "ncondition": 0,
+      "nf2": 0,
+      "nsolve": 8740,
+      "nfpiter": 0,
+      "maxeig": 0.0,
+      "nw": 2046,
+      "nfpconvfail": 0
+    },
+    "cantera_first_timed_interval_sums": {
+      "steps": 6916,
+      "step_solve_fails": 0,
+      "rhs_evals": 8524,
+      "nonlinear_iters": 8267,
+      "nonlinear_conv_fails": 0,
+      "err_test_fails": 206,
+      "stab_order_reductions": 0,
+      "jac_evals": 173,
+      "lin_solve_setups": 1560,
+      "lin_rhs_evals": 12629,
+      "lin_iters": 0,
+      "lin_conv_fails": 0,
+      "prec_evals": 0,
+      "prec_solves": 0,
+      "jt_vec_setup_evals": 0,
+      "jt_vec_prod_evals": 0
+    }
+  },
+  "validation_sha256": {
+    "reference.py": "a51d583a732bd7fa51e2f97f6632a6e68b22c799a881fb8056f5fbf31b6b1290",
+    "reference_driver.py": "f9d1c99ce16f7bddf9ab627fd44a8f3a8940626a0e250fdd52b3c263e5f72ac4",
+    "driver.jl": "c6affe31a0a046cdbbe2462aa52f276060464d29e7fd4fb7b08c8f73873a0ab4",
+    "review.py": "581ac4890bf0567d86d4181a02247b51c2a91b16347aaf3eb97c5686833b3802",
+    "initialization-review.json": "15086c6b4d7ae8ba2df67493307238b1e5761c76d27591024eb4ac098f4d4992"
+  },
+  "source_sha256": {
+    "example/reactors/nanosecond_pulse_discharge.jl": "7047b5bac54e11de78f664083ea95a1ed785432a92ac624bf35a7b47e4fa346e",
+    "src/PlasmaEnergyReactor.jl": "e84c953601934665fd6cf248de806d460920b236ae17d5e5bb43829c89633596",
+    "src/PlasmaThermochemistry.jl": "0f55d45ea941eae4ebef35a5dd1886bfc17d40d4bf300c496e322a6ccef10830",
+    "src/Kinetics.jl": "93429db6a18ceb3ed06677368dccc06b218795a0223a1d98d7e0536cafcb3561"
+  },
+  "input_sha256": {
+    "model": "3789dc895d9ad0bd5437bb84386b9c274ca553e9ca52f98417f3a35d8f04bbcc",
+    "gri30": "06650b1e0ee0012f6903d5328b1bb218cb6007d07f8ebe375d18f24811039345",
+    "nasa_gas": "4de6199d65d2d3db782e30573720c723130953707336add59713b02d8667e4db",
+    "extension": "cb6f63a9170b57a6e8f3a0ba1eeb92ecfb43becf64f92fcae867a9f2a5e4f6ac"
+  },
+  "per_run_output_sha256": {
+    "native": [
+      "792359f7fe3d3e44808112edef8b217565fbbaa4670dddba35261bf34948b17d",
+      "792359f7fe3d3e44808112edef8b217565fbbaa4670dddba35261bf34948b17d",
+      "ecaa040fdfd66621c7eec13b89a1e738a744d756ab6d3859665870188fbf9c3d",
+      "ecaa040fdfd66621c7eec13b89a1e738a744d756ab6d3859665870188fbf9c3d",
+      "ecaa040fdfd66621c7eec13b89a1e738a744d756ab6d3859665870188fbf9c3d",
+      "38ebf1bb3f4b367e054c7835eedfd082630a314621bda2c74ff3527ce29d125d",
+      "5cd5caf8a5dd59be1fc2975b5f7f1fec60d26f695655bc23c7d95513729b1499",
+      "5cd5caf8a5dd59be1fc2975b5f7f1fec60d26f695655bc23c7d95513729b1499",
+      "69f53ddcb45aed8a253e18065cec2efd5fad99003721c9b5c344d0c1d00fa1ba",
+      "69f53ddcb45aed8a253e18065cec2efd5fad99003721c9b5c344d0c1d00fa1ba"
+    ],
+    "reference": [
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
+      "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d"
+    ]
+  }
+}
