@@ -35,7 +35,7 @@ end
         @test convert_precision(g,Float32).trans.model==:ionized_gas
         @test IonTransportData(convert_precision(g,Float32)).electron==4
         @test_throws ArgumentError mixture_transport!(TransportWorkspace(g),g,one_atm,1000.,fill(.25,4))
-        @test_throws ArgumentError FreeFlame(g;X=Dict("Ar"=>1.0))
+        @test FreeFlame(g;T=900.,X=Dict("Ar"=>1.0)) isa IonizedFlame
         bad=copy(a);delete!(bad,"transport_model_utf8");npzwrite(path*".npz",bad)
         @test_throws ArgumentError CreateSolution(path)
         npzwrite(path*".npz",a)

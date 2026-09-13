@@ -628,6 +628,19 @@ function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameW
     return residual
 end
 
+# Model-specific state contracts share the same banded Newton engine.
+_flame_perturbation(f,u,k,j)=1e-7*max(abs(u[k,j]),k==1 ? .1 : 1e-5)
+_flame_correction_weights(f,u,transient)=_flame_correction_weights(u,transient)
+_flame_needs_correction_check(f)=false
+_flame_checkpoint_steady(f)=_conservative_flame(f)
+_flame_reuse_trial(f)=_conservative_flame(f)
+_flame_refine_threshold(f,k)=k==1 ? sqrt(eps(Float64))/1000 : sqrt(eps(Float64))
+function _flame_bounds(f,k,B)
+    low=k==1 ? .2 : k==B ? 1e-6 : -1e-7
+    high=k==1 ? 6.0 : k==B ? 100.0 : 1.00001
+    return low,high
+end
+
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
 function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing,analytic=true)
@@ -648,7 +661,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     end
     for k in 1:B, color in 1:3
         for j in color:3:N
-            steps[j] = 1e-7*max(abs(u[k,j]), k == 1 ? .1 : 1e-5)
+            steps[j] = _flame_perturbation(f,u,k,j)
             perturbed[k,j] = u[k,j]+steps[j]
         end
         flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport=false,nodes=color:3:N)
@@ -725,7 +738,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
     residual_valid = false
     region_enabled = _conservative_flame(f)
     correction_enabled = _flame_correction_enabled(f)
-    correction_weights = correction_enabled ? _flame_correction_weights(u,previous !== nothing) : Float64[]
+    correction_weights = correction_enabled ? _flame_correction_weights(f,u,previous !== nothing) : Float64[]
     trial_correction = correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     current_region = falses(size(u,1)-2,2size(u,2)-1)
     factored_region = similar(current_region)
@@ -738,7 +751,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         residual_norm = norm(r,Inf)
         # Final-grid polishing also checks the physical species criterion.
         # Intermediate grids retain the existing equation-residual criterion.
-        if iteration > minimum_iterations && residual_norm < tolerance && (!require_positive ||
+        if !_flame_needs_correction_check(f) && iteration > minimum_iterations && residual_norm < tolerance && (!require_positive ||
                 minimum(@view(u[2:end-1,:])) > -1e-12)
             return true
         end
@@ -766,12 +779,15 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             return false
         end
         all(isfinite,step) || return false
+        if _flame_needs_correction_check(f) && iteration > minimum_iterations &&
+                residual_norm < tolerance && _flame_correction_norm(step,correction_weights) < 1
+            return true
+        end
         alpha = 1.0
         for j in axes(u,2), k in axes(u,1)
             # Small negative species values are permitted in Newton iterates;
             # thermodynamic and kinetic evaluations use the nonnegative state.
-            low = k == 1 ? .2 : k == size(u,1) ? 1e-6 : -1e-7
-            high = k == 1 ? 6.0 : k == size(u,1) ? 100.0 : 1.00001
+            low,high = _flame_bounds(f,k,size(u,1))
             if step[k,j] < 0
                 alpha = min(alpha,.99*(u[k,j]-low)/(-step[k,j]))
             elseif step[k,j] > 0
@@ -811,7 +827,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         # The accepted trial already evaluated the full residual and properties
         # at exactly the newly accepted state. A rejected search never reuses it.
         r,rt = rt,r
-        residual_valid = _conservative_flame(f)
+        residual_valid = _flame_reuse_trial(f)
         age += 1
     end
     return false
@@ -819,7 +835,7 @@ end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6))
     w = FlameWorkspace(f)
-    steady_state = _conservative_flame(f) ? copy(f.state) : nothing
+    steady_state = _flame_checkpoint_steady(f) ? copy(f.state) : nothing
     _flame_newton!(f,w; loglevel) && return true
     # A failed steady trial must not replace the accepted pseudo-time state.
     steady_state === nothing || copyto!(f.state,steady_state)
@@ -861,7 +877,7 @@ function _refine_flame!(f; ratio=3.,slope=.06,curve=.12,max_points=1000)
         values = k == B ? velocity(f) : @view(u[k,:])
         low,high = extrema(values)
         span = high-low
-        threshold = k == 1 ? sqrt(eps(Float64))/1000 : sqrt(eps(Float64))
+        threshold = _flame_refine_threshold(f,k)
         if span > .01*max(abs(low),abs(high))
             for j in 1:N-1
                 abs(values[j+1]-values[j]) > slope*span+threshold &&

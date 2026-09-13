@@ -78,4 +78,53 @@ velocity(f::IonizedFlame)=copy(vec(f.state[end,:]))
 include("IonFlameProperties.jl")
 include("IonFlameResidual.jl")
 
+# Use the same signed, unnormalized thermodynamic convention as the residual.
+function density(f::IonizedFlame)
+    return f.pressure ./ (R .* temperature(f) .* vec(sum(mass_fractions(f)./f.gas.MW;dims=1)))
+end
+function heat_release_rate(f::IonizedFlame)
+    w=FlameWorkspace(f)
+    _ion_flame_properties!(w,f,f.state)
+    return -vec(sum(w.h.*w.source;dims=1))
+end
+function set_transport!(f::IonizedFlame,model;data=nothing,soret=false,flux_gradient_basis=:mole)
+    Symbol(replace(String(model),"-"=>"_"))==:ionized_gas &&
+        data===nothing && soret===false && flux_gradient_basis==:mole ||
+        throw(ArgumentError("ionized flames require ionized-gas mole-gradient transport without Soret"))
+    f.converged=false
+    return f
+end
+
+
+_flame_correction_enabled(f::IonizedFlame)=true
+_flame_needs_correction_check(f::IonizedFlame)=true
+_flame_checkpoint_steady(f::IonizedFlame)=true
+_flame_reuse_trial(f::IonizedFlame)=true
+_flame_refine_threshold(f::IonizedFlame,k)=
+    sqrt(eps(Float64))/(k in (1,f.gas.n_species+2) ? 1000 : 1)
+function _flame_perturbation(f::IonizedFlame,u,k,j)
+    scale=k in (1,f.gas.n_species+2) ? 1000 : 1
+    return copysign(1e-5*abs(u[k,j])+1e-10/scale,u[k,j])
+end
+function _flame_correction_weights(f::IonizedFlame,u,transient)
+    n=f.gas.n_species;weights=zeros(n+3)
+    for k in 1:n+3
+        rtol=1e-4;atol=transient ? 1e-11 : 1e-9
+        if 2<=k<=n+1 && f.ion_data.charges[k-1]!=0
+            rtol=1e-5;atol=k-1==f.ion_data.electron ? 1e-20 : 1e-16
+        end
+        k in (1,n+2) && (atol/=1000)
+        weights[k]=rtol*sum(abs,@view(u[k,:]))/size(u,2)+atol
+    end
+    return weights
+end
+function _flame_bounds(f::IonizedFlame,k,B)
+    k==1 && return (.2,2*minimum(@view(f.gas.thermo.Trange[:,end]))/1000)
+    k==B && return (-1e20,1e20)
+    k==B-1 && return (-1e17,1e17)
+    k-1==f.ion_data.electron && return (-1e-14,1.0)
+    f.ion_data.charges[k-1]!=0 && return (-1e-10,1.0)
+    return (-1e-7,1e5)
+end
+
 export IonizedFlame, set_electric_field!, electric_field

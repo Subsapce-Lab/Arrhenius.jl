@@ -44,6 +44,7 @@ include("blowers_masel_native.jl")
 include("inert_phase.jl")
 include("imported_gas_native.jl")
 include("ion_transport_native.jl")
+include("ionized_flames_native.jl")
 
 @testset "sidecar provenance" begin
     mechanism, stream = mktemp()

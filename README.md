@@ -291,8 +291,23 @@ viscosity, conductivity, electrical = ionized_transport!(workspace, data, one_at
 
 `ionized_flux!` evaluates diffusion and electric-field drift from midpoint
 transport and endpoint mass fractions. This model uses gas-temperature
-transport and a fixed electron mobility of 0.4 m²/(V s). Electric-field
-flame solves are not yet supported.
+transport and a fixed electron mobility of 0.4 m²/(V s).
+
+`FreeFlame` and `BurnerFlame` construct an `IonizedFlame` for these mechanisms.
+Solve first with charged diffusion frozen, then enable the electric field:
+
+```julia
+flame = FreeFlame(gas; T=300.0, X="CH4:1,O2:2,N2:7.52", width=0.05)
+solve!(flame; ratio=3.0, slope=0.05, curve=0.1)
+set_electric_field!(flame, true)
+solve!(flame; ratio=3.0, slope=0.05, curve=0.1)
+E = electric_field(flame)  # V/m at each grid point
+```
+
+The planar model solves species, energy, continuity, and Gauss's law with
+signed charged-species states. It uses ionized-gas transport and finite
+differences; Soret diffusion, prescribed temperature profiles, and restart
+snapshots are not supported for this flame type.
 
 ## Publication
 
