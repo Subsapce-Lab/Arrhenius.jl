@@ -11,9 +11,12 @@ PINNED_COMMIT="726522be4e2a13454d8415b7ef799d621f665cf3"
 SOURCE_EXAMPLES={
     "free":("adiabatic_flame","f2a845e0e2b0c06d466eadeba9b1be1d9b8124aadf94e83230527d4124b5840d"),
     "burner":("burner_flame","8c95f440748a2559b4f2a940b6b1864144e0668704a8d894e5923663278632c2"),
-    "fixed":("flame_fixed_T","102af72f0349116ce7a1258bb1ce0b06cc04ebe7359358b5c4d635799bbd01be")}
+    "fixed":("flame_fixed_T","102af72f0349116ce7a1258bb1ce0b06cc04ebe7359358b5c4d635799bbd01be"),
+    "ion-free":("ion_free_flame","70d0b6d647ce98b7ca7eaa9b749be7d67fe8dccbad2b560b4a2225499ec47878"),
+    "ion-burner":("ion_burner_flame","69f4d02bc8482f51c439a879fda59a947ba652a3735cdc4315b3f81d7f47481b")}
 MECHANISM_HASHES={"h2o2":"0efc6c52862741a29e0c29b65d979c7d8cb409db5282bca83b9c5437b3d8c8d4",
-    "gri30":"06650b1e0ee0012f6903d5328b1bb218cb6007d07f8ebe375d18f24811039345"}
+    "gri30":"06650b1e0ee0012f6903d5328b1bb218cb6007d07f8ebe375d18f24811039345",
+    "gri30_ion":"1409cc65488ea885118257c65d0a0b72fbcf5968f7b4a0572f637f9bdec9a66a"}
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 if platform.system()=="Linux":
@@ -101,6 +104,12 @@ def verify_threads(*,set_accelerate=False):
     return result
 
 def cantera_sequence(gas,case,profile,save_profiles=False):
+    if case.startswith("ion-"):
+        from ion_source_sequence import run_ion_source_sequence
+        source_case=case.removeprefix("ion-")
+        if gas.transport_model!="ionized-gas":raise RuntimeError("ion mechanism transport model mismatch")
+        seconds,points,snapshots=run_ion_source_sequence(gas,source_case,clock_ns=benchmark_elapsed_ns,loglevel=0)
+        return seconds,points,snapshots if save_profiles else {}
     free=case=="free";fixed=case=="fixed"
     modes=["mass","mass-soret","multi","multi-soret"] if free else ["mole","multi"]
     seconds=[];points=[];snapshots={}
@@ -134,7 +143,7 @@ def cantera_sequence(gas,case,profile,save_profiles=False):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument("parameters",type=Path);p.add_argument("references",type=Path);p.add_argument("output",type=Path)
-    p.add_argument("case",choices=["free","burner","fixed"])
+    p.add_argument("case",choices=["free","burner","fixed","ion-free","ion-burner"])
     p.add_argument("--project",required=True,type=Path);p.add_argument("--julia",required=True)
     p.add_argument("--build-record",required=True,type=Path)
     p.add_argument("--native-record",required=True,type=Path)
@@ -163,9 +172,11 @@ def main():
     a.output.mkdir(parents=True,exist_ok=True)
     native=a.output/"native";native.mkdir(exist_ok=True)
     cantera=a.output/"cantera";cantera.mkdir(exist_ok=True)
-    mechanism=a.parameters/("gri30.yaml" if a.case=="fixed" else "h2o2.yaml")
+    ion=a.case.startswith("ion-"); source_case=a.case.removeprefix("ion-") if ion else a.case
+    mechanism=a.parameters/("gri30_ion.yaml" if ion else "gri30.yaml" if a.case=="fixed" else "h2o2.yaml")
     gas=ct.Solution(str(mechanism))
-    if (gas.n_species,gas.n_reactions)!=((53,325) if a.case=="fixed" else (10,29)):p.error("exact stock mechanism required")
+    expected=(56,331) if ion else (53,325) if a.case=="fixed" else (10,29)
+    if (gas.n_species,gas.n_reactions)!=expected or (ion and gas.transport_model!="ionized-gas"):p.error("exact stock mechanism required")
     profile=np.load(a.parameters/"fixed-profile.npz") if a.case=="fixed" else None
     provenance=json.loads((a.parameters/"provenance.json").read_text())
     example=a.source_examples/(SOURCE_EXAMPLES[a.case][0]+".py")
@@ -173,16 +184,17 @@ def main():
     threads=verify_threads(set_accelerate=True)
     libraries_before=verified_cantera_libraries(build)
     driver_paths=[Path(__file__),Path(__file__).with_suffix(".jl"),*[Path(__file__).with_name(name) for name in
-        ("conservative_source_accuracy.py","flame_benchmarks.py","benchmark_environment.py","numerical_threads.jl")]]
+        ("conservative_source_accuracy.py","ionized_source_accuracy.py","ion_source_sequence.py","flame_benchmarks.py","benchmark_environment.py","numerical_threads.jl")]]
     example_paths=[a.project/"example/flames"/name for name in
-        ("source_flame_sequence.jl","adiabatic_flame.jl","burner_flame.jl","flame_fixed_T.jl")]
-    input_paths=[*driver_paths,*example_paths,example,mechanism,Path(str(mechanism)+".npz"),Path(str(mechanism)+".multicomponent.npz"),
+        ("source_flame_sequence.jl","source_ion_flame_sequence.jl","adiabatic_flame.jl","burner_flame.jl","flame_fixed_T.jl")]
+    input_paths=[*driver_paths,*example_paths,example,mechanism,Path(str(mechanism)+".npz"),
         a.parameters/"provenance.json",a.build_record,a.native_record,a.project/"Project.toml",a.project/"Manifest.toml",
-        *sorted(a.references.glob(a.case+"-*.npz"))]
+        *sorted(a.references.glob(source_case+"-*.npz"))]
+    if not ion: input_paths.append(Path(str(mechanism)+".multicomponent.npz"))
     if a.case=="fixed":input_paths.append(a.parameters/"fixed-profile.npz")
     input_hashes={str(path.resolve()):digest(path) for path in input_paths}
     report=dict(case=a.case,formal=a.formal,passed=False,performance_pass=False,date=time.strftime("%Y-%m-%d %H:%M:%S %z"),host=host,target=a.target,
-        scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published transport sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
+        scope="Sum of construction/initialization/adaptive-solve stages and required numerical profiles in the complete published stage sequence. Mechanism/sidecar loading, validation and file output excluded. No refined-reference solve is timed.",
         compilation_scope="Julia runtime startup and using/imports are outside timers. Specialization of run_source_sequence before entry to its internal stage timers is also excluded; the first measured sequence is not whole-program cold latency. Only JIT triggered after a stage timer starts can enter its measurement. First repetition is recorded separately and excluded from warm medians.",
         warmup_gc_policy="One explicit collection after the excluded first complete sequence on each runtime; automatic GC remains enabled and timed during measured calculations.",
         clock_diagnostics=a.clock_diagnostics,elapsed_clock=ELAPSED_CLOCK,
@@ -190,10 +202,10 @@ def main():
         clock_scope="Outer complete calculation call; process CPU includes all process threads. CPU IDs are observations at call boundaries and cannot rule out migrations within a call.",
         timing_order=a.order,threads=threads,cantera_version=ct.__version__,cantera_build_record=build,
         cantera_build_record_sha256=digest(a.build_record),mechanism_sha256=digest(mechanism),
-        sidecar_sha256=digest(str(mechanism)+".npz"),multicomponent_sha256=digest(str(mechanism)+".multicomponent.npz"),
+        sidecar_sha256=digest(str(mechanism)+".npz"),multicomponent_sha256=None if ion else digest(str(mechanism)+".multicomponent.npz"),
         fixed_temperature_profile_sha256=digest(a.parameters/"fixed-profile.npz") if a.case=="fixed" else None,
         parameter_provenance=provenance,original_source_example=dict(path=str(example),sha256=digest(example)),
-        reference_hashes={path.name:digest(path) for path in sorted(a.references.glob(a.case+"-*.npz"))},
+        reference_hashes={path.name:digest(path) for path in sorted(a.references.glob(source_case+"-*.npz"))},
         benchmark_driver_hashes={path.name:digest(path) for path in driver_paths},input_hashes=input_hashes,
         native_example_hashes={path.name:digest(path) for path in example_paths},
         actual_loaded_cantera_hashes_before=libraries_before,python_executable_sha256=digest(sys.executable),
@@ -246,7 +258,7 @@ def main():
         text=lambda key:bytes(data[key+"_utf8"]).decode()
         if text("kernel")!=host["kernel_release"]:raise RuntimeError("Julia and Cantera host/kernel mismatch")
         if Path(text("package_path")).resolve()!=(a.project/"src/Arrhenius.jl").resolve():raise RuntimeError("Julia loaded a different Arrhenius checkout")
-        helper=a.project/"example/flames/source_flame_sequence.jl"
+        helper=a.project/"example/flames/"/("source_ion_flame_sequence.jl" if ion else "source_flame_sequence.jl")
         if Path(text("shared_calculation_path")).resolve()!=helper.resolve() or text("shared_calculation_sha256")!=digest(helper):
             raise RuntimeError("Julia source calculation does not match the public example helper")
         report["shared_public_calculation_verified"]=True
@@ -279,17 +291,17 @@ def main():
         hashes=verified_cantera_libraries(build)
         if hashes!=libraries_before:raise RuntimeError("loaded Cantera libraries changed during calculation")
         report["actual_loaded_cantera_hashes"]=hashes
-        checker=Path(__file__).with_name("conservative_source_accuracy.py")
+        checker=Path(__file__).with_name("ionized_source_accuracy.py" if ion else "conservative_source_accuracy.py")
         accuracy=a.output/"accuracy.json"
         result=subprocess.run([sys.executable,str(checker),str(mechanism),str(native),str(a.references),a.case,str(accuracy)],capture_output=True,text=True)
         print(result.stdout,end="",flush=True)
         report["accuracy"]=json.loads(accuracy.read_text()) if accuracy.is_file() else dict(passed=False,error=result.stderr)
         require_unchanged(input_hashes)
         if current_source_hashes(a.project)!=source_hashes:raise RuntimeError("native source files changed during benchmark")
-        if {path.name:digest(path) for path in a.references.glob(a.case+"-*.npz")}!=report["reference_hashes"]:
+        if {path.name:digest(path) for path in a.references.glob(source_case+"-*.npz")}!=report["reference_hashes"]:
             raise RuntimeError("reference file set changed during benchmark")
         report["input_and_source_bytes_unchanged"]=True
-        stages=4 if a.case=="free" else 2
+        stages=2 if ion else 4 if a.case=="free" else 2
         ct_times=checked_times(report["cantera_stage_seconds"],a.reps,stages)
         jl_times=checked_times(report["julia_stage_seconds"],a.reps,stages)
         report["cantera_seconds"]=ct_times.tolist();report["julia_seconds"]=jl_times.tolist()

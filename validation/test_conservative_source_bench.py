@@ -15,6 +15,30 @@ with patch.dict(sys.modules,{"cantera":types.ModuleType("cantera")}):
 
 
 class ProvenanceChecks(unittest.TestCase):
+    def test_ion_dispatch_reuses_loaded_phase_without_transport_reset(self):
+        class Phase:
+            @property
+            def transport_model(self):return "ionized-gas"
+        gas=Phase();snapshots={"frozen":{"T":np.array([600.])},"field":{"E":np.array([0.])}}
+        calls=[]
+        def calculation(actual,case,**kwargs):
+            calls.append((actual,case,kwargs));return [.2,.1],[7,7],snapshots
+        helper=types.ModuleType("ion_source_sequence");helper.run_ion_source_sequence=calculation
+        with patch.dict(sys.modules,{"ion_source_sequence":helper}):
+            values=bench.cantera_sequence(gas,"ion-burner",None,True)
+            self.assertIs(values[2],snapshots)
+            self.assertEqual(bench.cantera_sequence(gas,"ion-free",None,False)[2],{})
+        self.assertEqual([c[1] for c in calls],["burner","free"])
+        self.assertTrue(all(c[0] is gas and c[2]["clock_ns"] is bench.benchmark_elapsed_ns for c in calls))
+
+    def test_ion_dispatch_rejects_wrong_transport_before_calculation(self):
+        helper=types.ModuleType("ion_source_sequence")
+        def unexpected(*args,**kwargs):raise AssertionError("calculation must not start")
+        helper.run_ion_source_sequence=unexpected
+        with patch.dict(sys.modules,{"ion_source_sequence":helper}):
+            with self.assertRaisesRegex(RuntimeError,"transport model mismatch"):
+                bench.cantera_sequence(types.SimpleNamespace(transport_model="mixture-averaged"),"ion-burner",None,True)
+
     def test_elapsed_clock_uses_raw_on_linux_and_propagates_failure(self):
         with patch.object(bench.platform,"system",return_value="Linux"), patch.object(bench.time,"clock_gettime_ns",return_value=123456789) as raw:
             self.assertEqual(bench.benchmark_elapsed_ns(),123456789)

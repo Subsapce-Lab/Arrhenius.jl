@@ -9,6 +9,7 @@ function source_hashes(root)
 end
 initial_source_hashes=source_hashes(source_root)
 parameters,output,case=ARGS[1:3]
+case in ("free","burner","fixed","ion-free","ion-burner") || error("unknown flame case")
 reps=parse(Int,ARGS[4]);reps>=5 || error("at least five warm repetitions required")
 Threads.nthreads()==1 && BLAS.get_num_threads()==1 || error("single-thread benchmark required")
 clock_diagnostics=length(ARGS)>=5 && ARGS[5]=="clock-diagnostics"
@@ -30,21 +31,33 @@ function flame_clock_observation()
     return (benchmark_elapsed_ns(),ccall(:clock,Clong,())/1e6,cpu)
 end
 mkpath(output)
-mechanism=joinpath(parameters,case=="fixed" ? "gri30.yaml" : "h2o2.yaml")
-gas=CreateSolution(mechanism);data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
-profile=case=="fixed" ? npzread(joinpath(parameters,"fixed-profile.npz")) : nothing
-shared_helper=joinpath(source_root,"example","flames","source_flame_sequence.jl")
-include(shared_helper)
-realpath(String(which(run_source_sequence,Tuple{typeof(gas),typeof(data),typeof(case),typeof(profile)}).file))==realpath(shared_helper) ||
-    error("source calculation must come from the public example helper")
-if case=="fixed"
-    original_profile=source_flame_temperature_profile()
-    all(profile[key]==original_profile[key] for key in ("positions","temperatures")) ||
-        error("public prescribed temperature profile differs from pinned source data")
+ion_case=startswith(case,"ion-")
+source_case=ion_case ? case[5:end] : case
+if ion_case
+    mechanism=joinpath(parameters,"gri30_ion.yaml")
+    gas=CreateSolution(mechanism)
+    shared_helper=joinpath(source_root,"example","flames","source_ion_flame_sequence.jl")
+    include(shared_helper)
+    realpath(String(which(run_ion_source_sequence,Tuple{typeof(gas),typeof(source_case)}).file))==realpath(shared_helper) ||
+        error("ion source calculation must come from the public example helper")
+    modes=["frozen","field"]
+    fields=["grid","T","Y","X","E","velocity","rho","qdot","inlet_Y","state","P"]
+else
+    mechanism=joinpath(parameters,case=="fixed" ? "gri30.yaml" : "h2o2.yaml")
+    gas=CreateSolution(mechanism);data=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+    profile=case=="fixed" ? npzread(joinpath(parameters,"fixed-profile.npz")) : nothing
+    shared_helper=joinpath(source_root,"example","flames","source_flame_sequence.jl")
+    include(shared_helper)
+    realpath(String(which(run_source_sequence,Tuple{typeof(gas),typeof(data),typeof(case),typeof(profile)}).file))==realpath(shared_helper) ||
+        error("source calculation must come from the public example helper")
+    if case=="fixed"
+        original_profile=source_flame_temperature_profile()
+        all(profile[key]==original_profile[key] for key in ("positions","temperatures")) ||
+            error("public prescribed temperature profile differs from pinned source data")
+    end
+    modes=case=="free" ? ["mass","mass-soret","multi","multi-soret"] : ["mole","multi"]
+    fields=["grid","T","Y","velocity","inlet_Y","state","P"]
 end
-
-modes=case=="free" ? ["mass","mass-soret","multi","multi-soret"] : ["mole","multi"]
-fields=["grid","T","Y","velocity","inlet_Y","state","P"]
 seconds=zeros(reps+1,length(modes));points=zeros(Int,size(seconds));snapshots=nothing;first_profiles=nothing
 replay_errors=zeros(reps+1,length(modes),length(fields));hashes=String[]
 automatic_gc_seconds=zeros(reps+1);warmup_gc_seconds=Ref(0.0)
@@ -52,7 +65,8 @@ clock_observations=zeros(clock_diagnostics ? reps+1 : 0,4)
 for repetition in 0:reps
     gc_start_ns=Base.gc_time_ns()
     clock_before=clock_diagnostics ? flame_clock_observation() : nothing
-    elapsed,nodes,saved=run_source_sequence(gas,data,case,profile;save_profiles=true,clock_ns=benchmark_elapsed_ns)
+    elapsed,nodes,saved=ion_case ? run_ion_source_sequence(gas,source_case;clock_ns=benchmark_elapsed_ns) :
+        run_source_sequence(gas,data,case,profile;save_profiles=true,clock_ns=benchmark_elapsed_ns)
     if clock_diagnostics
         after=flame_clock_observation()
         clock_observations[repetition+1,:].=((after[1]-clock_before[1])/1e9,after[2]-clock_before[2],clock_before[3],after[3])
