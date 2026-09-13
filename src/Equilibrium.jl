@@ -176,7 +176,7 @@ function equivalence_ratio(gas::Solution, X; fuel=nothing, oxidizer=nothing,
 end
 
 function _equilibrium_system(gas, X)
-    all(>=(0), gas.ele_matrix) || throw(ArgumentError("charged species with signed element counts are unsupported"))
+    any(<(0), gas.ele_matrix) && return _signed_equilibrium_system(gas,X)
     b_all = gas.ele_matrix * X
     elements = findall(>(0), b_all)
     isempty(elements) && throw(ArgumentError("composition must contain a conserved element"))
@@ -201,6 +201,8 @@ function _equilibrium_system(gas, X)
 end
 
 function _equilibrium_evaluate(system, state, logpressure, constant_volume; jacobian=false)
+    hasproperty(system,:signed_balance) &&
+        return _signed_equilibrium_evaluate(system,state,logpressure,constant_volume;jacobian)
     A, At, g, b = system.A, system.At, system.g, system.b
     ne = size(A,1)
     v,mole,abar,f = system.potentials,system.mole,system.abar,system.residual
@@ -356,13 +358,14 @@ end
 Native single-phase ideal-gas equilibrium. Supported conserved pairs are `:TP`,
 `:TV`, `:HP`, `:UV`, `:SP` and `:SV` (symbols or strings). The supplied state
 defines the conserved specific enthalpy, internal energy, entropy, or volume.
-Returns `(T, P, X, Y)`; no input is modified. Absent elements stay exactly absent.
+Returns `(T, P, X, Y)`; no input is modified. Absent ordinary elements stay
+absent; signed electron counts conserve the supplied net charge.
 
 The temperature search uses the explicit `temperature_bounds`. Like the
 underlying NASA property functions, evaluation outside species fit ranges
 extrapolates the polynomials. Supply bounds within the shared fit interval when
-extrapolation is unsuitable. This solver does not support charged, nonideal,
-surface, or multiphase equilibrium.
+extrapolation is unsuitable. This solver does not support nonideal, surface,
+or multiphase equilibrium.
 `property_rtol` controls the outer conserved-property temperature solve for HP,
 UV, SP and SV states, with an enthalpy/energy scale floor of 1e6 J/kg or an
 entropy scale floor of 1e3 J/(kg K). Element-balance tolerances are unchanged.

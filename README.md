@@ -31,7 +31,8 @@ gas = CreateSolution("path/to/mechanism.yaml"; data_paths=["path/to/shared-data"
 
 ## Native calculations
 
-The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV;
+The Julia solvers provide ideal-gas equilibrium at TP, TV, HP, UV, SP and SV,
+including charged species with conserved net charge;
 isentropic states, frozen or equilibrium sound speeds, and constant-pressure stream mixing;
 closed constant-pressure and constant-volume reactors; connected stirred
 reactors with flow devices and heat-transfer walls; planar premixed free flames

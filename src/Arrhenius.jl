@@ -22,6 +22,7 @@ module Arrhenius
     include("MulticomponentTransport.jl")
     include("DustyGasTransport.jl")
     include("Equilibrium.jl")
+include("SignedEquilibrium.jl")
     include("IdealGasStates.jl")
     include("IdealGasMixing.jl")
     include("Reactors.jl")
