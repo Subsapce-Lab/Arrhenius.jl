@@ -24,6 +24,8 @@ mutable struct CounterflowDiffusionFlame{G<:Solution}
     fixed_temperature::Vector{Float64}
     radiation_enabled::Bool
     boundary_emissivities::Tuple{Float64,Float64}
+    # (left_z, left_T, right_z, right_T) when two-point control is enabled.
+    control_points::Union{Nothing,NTuple{4,Float64}}
 end
 
 # Scales only condition the algebraic system; physical values are returned below.
@@ -102,7 +104,7 @@ function CounterflowDiffusionFlame(gas::Solution; fuel,oxidizer,mdot_fuel,mdot_o
     state[end,1]=mdot_fuel; state[end,end]=-mdot_oxidizer
     flame=CounterflowDiffusionFlame(gas,z,Float64(P),Float64(T_fuel),Float64(T_oxidizer),
         yf,yo,Float64(mdot_fuel),Float64(mdot_oxidizer),state,1,argmax(yst),false,
-        :mixture_averaged,false,nothing,:mole,Float64[],false,(0.,0.))
+        :mixture_averaged,false,nothing,:mole,Float64[],false,(0.,0.),nothing)
     return set_radiation!(flame,radiation;boundary_emissivities)
 end
 
@@ -120,6 +122,72 @@ function set_radiation!(f::CounterflowDiffusionFlame,enabled::Bool=true;
         throw(ArgumentError("two boundary emissivities in [0,1] required"))
     f.radiation_enabled=enabled
     f.boundary_emissivities=(Float64(boundary_emissivities[1]),Float64(boundary_emissivities[2]))
+    f.converged=false
+    return f
+end
+
+# Nearest grid point to the first (fromleft=true) or last crossing of target.
+function _counterflow_crossing(T,z,target,fromleft)
+    N=length(z)
+    for j in (fromleft ? (1:N-1) : (N-1:-1:1))
+        a=T[j]-target; b=T[j+1]-target
+        if a==0 || b==0 || a*b<0
+            return fromleft ? (abs(a)<abs(b) ? j : j+1) : (abs(b)<abs(a) ? j+1 : j)
+        end
+    end
+    return nothing
+end
+
+"""
+    set_two_point_control!(flame; temperature, decrement=0)
+
+Enable two-point temperature control: fixes the temperature [K] at the interior
+grid points nearest the first (fuel side) and last (oxidizer side) crossing of
+`temperature`, recording the actual selected grid temperatures minus `decrement`
+[K]. A positive oxidizer mass-flux auxiliary row [kg/(m² s)] is inserted before
+the spread-rate row on first enable; the inlet mass fluxes become unknowns.
+`temperature` must lie in 200–6000 K and exceed both inlet temperatures.
+"""
+function set_two_point_control!(f::CounterflowDiffusionFlame;temperature,decrement=0.)
+    isempty(f.fixed_temperature) || throw(ArgumentError("two-point control conflicts with fixed_temperature"))
+    isfinite(temperature) && 200<=temperature<=6000 ||
+        throw(ArgumentError("control temperature must lie in 200–6000 K"))
+    isfinite(decrement) && decrement>=0 ||
+        throw(ArgumentError("nonnegative finite decrement required"))
+    temperature>f.fuel_temperature && temperature>f.oxidizer_temperature ||
+        throw(ArgumentError("control temperature must exceed both inlet temperatures"))
+    T=1000 .* vec(f.state[1,:]); z=f.grid; N=length(z)
+    jl=_counterflow_crossing(T,z,temperature,true)
+    jr=_counterflow_crossing(T,z,temperature,false)
+    (!isnothing(jl) && !isnothing(jr) && 2<=jl && jl<jr && jr<=N-1) ||
+        throw(ArgumentError("two distinct interior control crossings required"))
+    left_T,right_T=T[jl]-decrement,T[jr]-decrement
+    200<=left_T<=6000 && 200<=right_T<=6000 &&
+        left_T>f.fuel_temperature && right_T>f.oxidizer_temperature ||
+        throw(ArgumentError("decrement must leave control temperatures above their inlets and within 200–6000 K"))
+    n=f.gas.n_species
+    if isnothing(f.control_points)
+        f.state=vcat(f.state[1:n+1,:],fill(f.oxidizer_mass_flux,1,N),f.state[n+2:end,:])
+    end
+    f.control_points=(z[jl],left_T,z[jr],right_T)
+    f.converged=false
+    return f
+end
+
+"""
+    disable_two_point_control!(flame)
+
+Remove the auxiliary mass-flux row, store the current axial mass-flux endpoints
+[kg/(m² s)] as the inlet fluxes and restore inlet-flux boundary conditions.
+Enable/disable without solving reproduces the initial state bit-exactly.
+"""
+function disable_two_point_control!(f::CounterflowDiffusionFlame)
+    isnothing(f.control_points) && return f
+    n=f.gas.n_species
+    f.fuel_mass_flux=f.state[end,1]
+    f.oxidizer_mass_flux=-f.state[end,end]
+    f.state=f.state[[1:n+1;n+3:n+5],:]
+    f.control_points=nothing
     f.converged=false
     return f
 end
@@ -226,7 +294,15 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
     _counterflow_radiation!(w.radiative_heat_loss,w.planck_absorption,f,u,p.X)
     n,N=f.gas.n_species,length(f.grid)
     z,MW=f.grid,f.gas.MW
-    iv,il,im=n+2,n+3,n+4
+    ctrl=f.control_points
+    iq=isnothing(ctrl) ? 0 : n+2
+    iv,il,im=size(u,1)-2,size(u,1)-1,size(u,1)
+    jl=jr=0
+    if !isnothing(ctrl)
+        jl=findfirst(==(ctrl[1]),z); jr=findfirst(==(ctrl[3]),z)
+        (isnothing(jl) || isnothing(jr)) &&
+            error("two-point control coordinates are not on the current grid")
+    end
     if update_transport
         for j in 1:N-1
             Tmid=500*(u[1,j]+u[1,j+1])
@@ -243,15 +319,36 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
             residual[im,j]=u[im,j+1]-u[im,j]+(z[j+1]-z[j])*
                 _counterflow_Vscale*(p.rho[j+1]*u[iv,j+1]+p.rho[j]*u[iv,j])
         else
-            residual[im,j]=u[im,j]+f.oxidizer_mass_flux
+            residual[im,j]=u[im,j]+(isnothing(ctrl) ? f.oxidizer_mass_flux : u[iq,j])
         end
-        residual[il,j]=j==1 ? u[im,j]-f.fuel_mass_flux : u[il,j]-u[il,j-1]
+        if isnothing(ctrl)
+            residual[il,j]=j==1 ? u[im,j]-f.fuel_mass_flux : u[il,j]-u[il,j-1]
+        elseif j==1
+            residual[il,j]=u[il,2]-u[il,1]
+        elseif j==jl
+            residual[il,j]=u[1,j]-ctrl[2]/1000
+        elseif j<jl
+            residual[il,j]=u[il,j+1]-u[il,j]
+        else
+            residual[il,j]=u[il,j]-u[il,j-1]
+        end
+        if !isnothing(ctrl)
+            if j==jr
+                residual[iq,j]=u[1,j]-ctrl[4]/1000
+            elseif j<jr
+                residual[iq,j]=u[iq,j+1]-u[iq,j]
+            else
+                residual[iq,j]=u[iq,j]-u[iq,j-1]
+            end
+        end
         if j==1 || j==N
             residual[iv,j]=u[iv,j]
             residual[1,j]=u[1,j]-(j==1 ? f.fuel_temperature : f.oxidizer_temperature)/1000
+            fuel_flux=isnothing(ctrl) ? f.fuel_mass_flux : u[im,1]
+            oxidizer_flux=isnothing(ctrl) ? f.oxidizer_mass_flux : u[iq,N]
             for k in 1:n
-                residual[k+1,j]=j==1 ? f.fuel_mass_flux*f.fuel_Y[k]-u[im,j]*u[k+1,j]-p.flux[k,1] :
-                    p.flux[k,N-1]+u[im,j]*u[k+1,j]+f.oxidizer_mass_flux*f.oxidizer_Y[k]
+                residual[k+1,j]=j==1 ? fuel_flux*f.fuel_Y[k]-u[im,j]*u[k+1,j]-p.flux[k,1] :
+                    p.flux[k,N-1]+u[im,j]*u[k+1,j]+oxidizer_flux*f.oxidizer_Y[k]
             end
         else
             left=z[j]-z[j-1]; right=z[j+1]-z[j]; cell=.5*(left+right)
@@ -277,7 +374,9 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
             residual[1,j]=_flame_timescale/(1000*p.rho[j]*cpmean)*
                 (conduction-chemical-enthalpyflux-u[im,j]*cpmean*dT-w.radiative_heat_loss[j])
             if previous !== nothing
-                for k in 1:n+2
+                # Under two-point control the radial momentum and auxiliary
+                # mass-flux equations are algebraic; T and species retain time terms.
+                for k in 1:(isnothing(ctrl) ? n+2 : n+1)
                     residual[k,j]-=_flame_timescale/dt*(u[k,j]-previous[k,j])
                 end
             end
@@ -320,11 +419,16 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
     u=f.state; r=similar(u); trial=similar(u); rt=similar(u)
     n=f.gas.n_species; bandwidth=2*size(u,1)-1
     pivots=LinearAlgebra.BlasInt[]; age=5; contraction=Inf
+    correction_enabled=!isnothing(f.control_points)
+    correction_enabled && (age=21)
+    weights=correction_enabled ? _flame_correction_weights(u,previous!==nothing) : Float64[]
+    trial_correction=correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     for iteration in 1:maxiters
         counterflow_residual!(r,f,u,w;previous,dt)
         residualnorm=norm(r,Inf)
         residualnorm<tolerance && return true
-        refresh=age>=5 || contraction>.7
+        # Healthy correction-merit steps reuse the Jacobian; age-based refresh only.
+        refresh=correction_enabled ? age>20 : (age>=5 || contraction>.7)
         step=try
             if refresh
                 J=_counterflow_jacobian!(f,u,w,r;previous,dt)
@@ -345,17 +449,37 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
             # Enforcing strict positivity stalls initially absent hydrocarbon radicals.
             low=k==1 ? .2 : k<=n+1 ? -1e-7 : -1e5
             high=k==1 ? 6. : k<=n+1 ? 1.00001 : 1e5
+            if k==size(u,1)-1
+                # Cantera's physical Lambda bounds, converted to stored Lambda/Lscale.
+                low=-1e20/_counterflow_Lscale
+                high=1e20/_counterflow_Lscale
+            end
+            if !isnothing(f.control_points)
+                k==n+2 && (low=0.)
+                k==size(u,1)-2 && (low=-1e-5/_counterflow_Vscale)
+            end
             if step[k,j]<0
                 alpha=min(alpha,.99*(u[k,j]-low)/(-step[k,j]))
             elseif step[k,j]>0
                 alpha=min(alpha,.99*(high-u[k,j])/step[k,j])
             end
         end
+        step_merit=correction_enabled ? _flame_correction_norm(step,weights) : 0.
         accepted=false
         for backtrack in 1:24
             @. trial=u+alpha*step
             counterflow_residual!(rt,f,trial,w;previous,dt)
-            if all(isfinite,rt) && norm(rt)<norm(r)*(1-1e-4*alpha)
+            contracts=false
+            if all(isfinite,rt)
+                if correction_enabled
+                    copyto!(trial_correction,vec(rt))
+                    LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(u),w.band,pivots,trial_correction)
+                    contracts=_flame_correction_norm(reshape(trial_correction,size(u)),weights)<step_merit
+                else
+                    contracts=norm(rt)<norm(r)*(1-1e-4*alpha)
+                end
+            end
+            if contracts
                 u .= trial; accepted=true; break
             end
             alpha*=.5
@@ -363,7 +487,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
         loglevel>1 && println("Counterflow Newton ",iteration," residual=",residualnorm," damping=",alpha)
         if !accepted || alpha<=1e-10
             refresh && return false
-            age=5; continue
+            age=correction_enabled ? 21 : 5; continue
         end
         contraction=norm(rt)/norm(r); age+=1
     end
@@ -408,11 +532,21 @@ Solve the native axisymmetric counterflow flame. With `auto=true`,
 recover failed or extinguished coarse-grid solves using the native prescribed
 initial temperature profile, then progressively finer initial grids. Failure to
 find a burning solution raises an error and leaves `converged=false`.
+With `auto=false`, a converged extinguished state is returned for extinction
+continuation. Two-point control always retains the current branch and disables
+automatic reinitialization; call `set_two_point_control!` to choose new targets.
 """
 function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,curve=.3,
         max_points=1200,max_time_steps=800,loglevel=0,initial_time_step=1e-6,auto=true)
     isfinite(ratio) && ratio>1 && 0<slope<=1 && 0<curve<=1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(initial_time_step) && initial_time_step>0 || throw(ArgumentError("positive finite initial time step required"))
+    if !isnothing(f.control_points)
+        isempty(f.fixed_temperature) || throw(ArgumentError("two-point control conflicts with fixed_temperature"))
+        zL,_,zR,_=f.control_points
+        f.grid[1]<zL<zR<f.grid[end] && zL in f.grid && zR in f.grid ||
+            throw(ArgumentError("two distinct interior control coordinates must remain on the grid"))
+        auto=false
+    end
     f.converged=false
     timestep=Ref(Float64(initial_time_step))
     initial_N=length(f.grid)
@@ -436,22 +570,29 @@ function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,
                 success=_counterflow_steady!(f;max_time_steps,timestep,loglevel)
             end
         end
-        burning=success && !extinct(f)
+        burning=success && (!auto || !extinct(f))
         burning && break
     end
-    burning || error("native counterflow solver did not find a burning solution")
+    burning || error(auto ? "native counterflow solver did not find a burning solution" :
+        "native counterflow continuation solver did not converge")
     for pass in 1:40
         if !refine_grid || !_refine_flame!(f;ratio,slope,curve,max_points)
+            if !isnothing(f.control_points)
+                f.fuel_mass_flux=f.state[end,1]
+                f.oxidizer_mass_flux=-f.state[end,end]
+            end
             f.converged=true
             return f
         end
         loglevel>0 && println("Counterflow solve on ",length(f.grid)," points")
         _counterflow_steady!(f;max_time_steps,timestep,loglevel) ||
             error("native counterflow solver failed on $(length(f.grid)) points")
-        extinct(f) && error("counterflow flame extinguished during refinement")
+        auto && extinct(f) && error("counterflow flame extinguished during refinement")
     end
     error("counterflow refinement did not finish")
 end
 
 export CounterflowDiffusionFlame, CounterflowWorkspace, counterflow_residual!, spread_rate, pressure_curvature, extinct
 export set_radiation!, radiation_source, radiative_heat_loss
+
+export set_two_point_control!, disable_two_point_control!

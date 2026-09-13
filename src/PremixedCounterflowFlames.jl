@@ -116,7 +116,7 @@ function _premixed_counterflow_storage(gas;reactants,mdot_reactants,mdot_product
     state[end,1]=mdot_reactants; state[end,end]=-mdot_products
     return CounterflowDiffusionFlame(gas,z,Float64(P),Float64(T_reactants),Tright,
         Y,Yright,Float64(mdot_reactants),Float64(mdot_products),state,1,argmax(Y),false,
-        :mixture_averaged,false,nothing,:mole,Float64[],false,(0.,0.))
+        :mixture_averaged,false,nothing,:mole,Float64[],false,(0.,0.),nothing)
 end
 
 """
@@ -177,7 +177,12 @@ function density(f::AbstractPremixedCounterflow)
     return [f.pressure/(R*1000*f.state[1,j]*sum(f.state[k+1,j]/f.gas.MW[k]
         for k in 1:f.gas.n_species)) for j in eachindex(f.grid)]
 end
-function heat_release_rate(f::AbstractPremixedCounterflow)
+"""
+    heat_release_rate(f)
+
+Volumetric chemical heat release rate [W/m^3] at each grid point.
+"""
+function heat_release_rate(f::Union{AbstractPremixedCounterflow,CounterflowDiffusionFlame})
     properties=CounterflowWorkspace(f).properties
     _flame_properties!(properties,f,f.state)
     return [-dot(@view(properties.h[:,j]),@view(properties.source[:,j])) for j in eachindex(f.grid)]

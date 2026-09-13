@@ -42,6 +42,75 @@ end
         @test maximum(source.heat_loss)>0
         @test source.heat_loss[end]==0
         @test maximum(source.planck_absorption)>0
+
+        @testset "two-point control equations and compatibility" begin
+            cgas=CreateSolution(mechanism)
+            cf=CounterflowDiffusionFlame(cgas;fuel="H2:1",oxidizer="O2:1",mdot_fuel=.5,
+                mdot_oxidizer=3.,T_fuel=300.,T_oxidizer=500.,P=1e5,
+                grid=collect(range(0.,.018;length=7)))
+            cf.state[1,:]=[.3,1.,1.8,2.6,2.,1.2,.5]
+            state0=copy(cf.state); grid0=copy(cf.grid); n=cgas.n_species
+            @test_throws ArgumentError set_two_point_control!(cf;temperature=Inf)
+            @test_throws ArgumentError set_two_point_control!(cf;temperature=150.)
+            @test_throws ArgumentError set_two_point_control!(cf;temperature=1500.,decrement=-1.)
+            @test_throws ArgumentError set_two_point_control!(cf;temperature=1500.,decrement=1400.)
+            @test cf.state==state0 && cf.grid==grid0 && isnothing(cf.control_points)
+            cf.fixed_temperature=temperature(cf)
+            @test_throws ArgumentError set_two_point_control!(cf;temperature=1500.)
+            @test cf.state==state0 && isnothing(cf.control_points)
+            empty!(cf.fixed_temperature)
+            set_two_point_control!(cf;temperature=1500.,decrement=20.)
+            zL,tL,zR,tR=cf.control_points; iL=findfirst(==(zL),cf.grid); iR=findfirst(==(zR),cf.grid)
+            @test iL<iR
+            @test tL==1000*state0[1,iL]-20
+            @test tR==1000*state0[1,iR]-20
+            rr=similar(cf.state); counterflow_residual!(rr,cf)
+            @test rr[end-1,iL]≈.02 atol=1e-14
+            @test rr[n+2,iR]≈.02 atol=1e-14
+            @test rr[end,end]≈0 atol=1e-14
+            @test all(isfinite,rr)
+            controlled_state=copy(cf.state)
+            qdot=heat_release_rate(cf)
+            @test length(qdot)==length(cf.grid) && all(isfinite,qdot)
+            @test cf.state==controlled_state
+            disable_two_point_control!(cf)
+            @test cf.state==state0 && cf.grid==grid0 && isnothing(cf.control_points)
+            @test cf.fuel_mass_flux==.5 && cf.oxidizer_mass_flux==3.
+
+            set_two_point_control!(cf;temperature=1500.,decrement=20.)
+            trace=findfirst(==("HO2"),cgas.species_names)+1
+            for j in 2:6
+                δ=(iseven(j) ? 0. : -1e-12)-cf.state[trace,j]
+                cf.state[trace,j]+=δ; cf.state[cf.dependent_species+1,j]-=δ
+            end
+            w=CounterflowWorkspace(cf); base=similar(cf.state)
+            counterflow_residual!(base,cf,cf.state,w)
+            band=copy(Arrhenius._counterflow_jacobian!(cf,cf.state,w,base))
+            B,N=size(cf.state); bw=2B-1; J=zeros(length(cf.state),length(cf.state))
+            for col in 1:length(cf.state), row in max(1,col-bw):min(length(cf.state),col+bw)
+                J[row,col]=band[2bw+1+row-col,col]
+            end
+            ref=zeros(size(J)); wp=CounterflowWorkspace(cf); rp=similar(cf.state); trial=copy(cf.state)
+            counterflow_residual!(rp,cf,cf.state,wp)
+            for j in 1:N, k in 1:B
+                h=1e-7*max(abs(cf.state[k,j]),k==1 ? .1 : k<=n+1 ? 1e-5 : .01)
+                trial .= cf.state; trial[k,j]+=h
+                counterflow_residual!(rp,cf,trial,wp;update_transport=false)
+                ref[:,(j-1)*B+k].=vec((rp.-base)./h)
+            end
+            @test norm(J-ref,Inf)/max(1.,norm(ref,Inf))<1e-7
+            @test maximum(abs.(J.-ref)./(1e-5.+abs.(ref)))<1e-4
+            @test J[(N-1)*B+B,(N-1)*B+n+2]≈1 atol=1e-6
+            @test J[B-1,B]==0
+            cp=cf.control_points
+            @test Arrhenius._refine_flame!(cf;ratio=4.,slope=.1,curve=.2,max_points=100)
+            @test cf.control_points==cp
+            @test cp[1] in cf.grid && cp[3] in cf.grid
+            premixed=CounterflowPremixedFlame(cgas;reactants="H2:2,O2:1,AR:7",
+                mdot_reactants=.12,mdot_products=.06)
+            @test isnothing(premixed.flow.control_points)
+            @test size(premixed.flow.state,1)==n+4
+        end
     else
         @test_skip false
     end
