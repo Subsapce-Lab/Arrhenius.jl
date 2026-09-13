@@ -469,17 +469,17 @@
       "status": "calculation_validated",
       "julia_example": "example/reactors/nanosecond_pulse_discharge.jl",
       "correctness_evidence": {
-        "report": "validation/results/cantera4_wsl_nanosecond_pulse.json",
-        "scope": "Complete native energy-coupled pulse: all901 exact outputs,71 species trajectories,93 EEDF snapshots, heating increments, signed conservation, executable CLI and local validation."
+        "report": "validation/results/cantera4_wsl_nanosecond_pulse_repeated.json",
+        "scope": "Repeated complete energy-coupled pulse validation: 7,550 trajectory, EEDF, conservation, initialization, and timing-contract checks."
       },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": {
         "report": "validation/results/cantera4_wsl_nanosecond_pulse_repeated.json",
         "case": "reactors/nanosecond_pulse_discharge",
-        "speed_ratio": 0.6333903433481649,
-        "scope": "Three batches of three complete fresh pulse calculations with one loaded mechanism; initialization, setup, solve and required numerical outputs included. Accuracy passes; speed is below the 0.95 target."
+        "speed_ratio": 0.9745467094568752,
+        "scope": "Three batches of three complete fresh pulse calculations with one loaded mechanism; the conservative repeated ratio and noise gates pass."
       },
-      "performance_status": "below_target"
+      "performance_status": "validated"
     },
     {
       "id": "reactors/non_ideal_shock_tube",

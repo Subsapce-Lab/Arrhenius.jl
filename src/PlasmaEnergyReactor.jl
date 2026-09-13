@@ -34,25 +34,74 @@ end
 
 reactor_state(r::PlasmaEnergyReactor)=vcat(r.mass,r.total_enthalpy,r.mass_fractions)
 
-mutable struct PlasmaEnergyRHS{W}
+# This private tag owns a Float64-only prepared first derivative. The energy
+# reactor does not promise support for differentiation through its Jacobian.
+struct _PlasmaEnergyJacobianTag end
+mutable struct _PlasmaEnergySpeciesKernel{W}
+    mechanism::PlasmaMechanism
+    pressure::Float64
+    electron_temperature::Float64
+    workspace::W
+end
+
+function (kernel::_PlasmaEnergySpeciesKernel)(out,z)
+    m=kernel.mechanism
+    T=z[1]
+    Y=@view z[2:end]
+    denominator=zero(T)
+    @inbounds for k in eachindex(Y)
+        amount=Y[k]/m.MW[k]
+        denominator+=(k==m.electron_index ? kernel.electron_temperature : T)*amount
+    end
+    rho=kernel.pressure/(R*denominator)
+    _plasma_thermal_sources!(kernel.workspace,m,T,kernel.electron_temperature,
+        kernel.pressure,rho,Y)
+    @inbounds for k in eachindex(Y)
+        out[k]=m.MW[k]*kernel.workspace.wdot[k]/rho
+    end
+    return nothing
+end
+
+struct _PlasmaEnergyJacobian{K,C}
+    kernel::K
+    config::C
+    output::Vector{Float64}
+    z::Vector{Float64}
+    species_jacobian::Matrix{Float64}
+end
+
+function _PlasmaEnergyJacobian(r::PlasmaEnergyReactor)
+    return _PlasmaEnergyJacobian(r,Val(min(8,r.mechanism.n_species+1)))
+end
+
+function _PlasmaEnergyJacobian(r::PlasmaEnergyReactor,::Val{N}) where {N}
+    ns=r.mechanism.n_species
+    DualT=ForwardDiff.Dual{_PlasmaEnergyJacobianTag,Float64,N}
+    workspace=_PlasmaThermoRateWorkspace(r.mechanism,DualT)
+    kernel=_PlasmaEnergySpeciesKernel(r.mechanism,r.pressure,
+        r.electron_temperature,workspace)
+    output=zeros(ns)
+    z=zeros(ns+1)
+    config=ForwardDiff.JacobianConfig(kernel,output,z,ForwardDiff.Chunk{N}(),
+        _PlasmaEnergyJacobianTag())
+    return _PlasmaEnergyJacobian(kernel,config,output,z,zeros(ns,ns+1))
+end
+
+mutable struct PlasmaEnergyRHS{W,J}
     reactor::PlasmaEnergyReactor
     workspace::W
     eedf::EEDFResult
     electric_field::Float64
     mobility::Float64
     last_temperature::Float64
-    jac_state::Vector{Float64}
-    jac_base::Vector{Float64}
-    jac_plus::Vector{Float64}
-    jac_minus::Vector{Float64}
+    jacobian::J
 end
 
 function reactor_rhs(r::PlasmaEnergyReactor)
-    u=reactor_state(r)
     w=_PlasmaThermoRateWorkspace(r.mechanism,Float64)
     _plasma_collision_rates!(w.collision_rates,w.collision_integrand,r.mechanism,r.eedf)
     return PlasmaEnergyRHS(r,w,deepcopy(r.eedf),r.electric_field,r.eedf.mobility,
-        r.temperature,copy(u),similar(u),similar(u),similar(u))
+        r.temperature,_PlasmaEnergyJacobian(r))
 end
 
 function _plasma_hp_temperature!(w,m,target,Y,Te,guess;rtol=1e-13,maxiter=500)
@@ -169,44 +218,53 @@ end
 
 function reactor_jacobian!(J,u,rhs::PlasmaEnergyRHS,t=0)
     n=length(u)
+    m=rhs.reactor.mechanism
     size(J)==(n,n) || throw(DimensionMismatch("Jacobian must have state dimensions"))
-    copyto!(rhs.jac_state,u)
-    rhs(rhs.jac_base,u,nothing,t)
-    rel=cbrt(eps(Float64))
-    e=rhs.reactor.mechanism.electron_index+2
-    @inbounds for j in 1:n
-        scale=j==1 ? 1.0 : j==2 ? 1.0 : j==e ? 1e-16 : 1e-12
-        step=rel*max(abs(u[j]),scale)
-        if j==1 && u[j]<=step
-            rhs.jac_state[j]=u[j]+step
-            rhs(rhs.jac_plus,rhs.jac_state,nothing,t)
-            rhs.jac_state[j]=u[j]+2step
-            rhs(rhs.jac_minus,rhs.jac_state,nothing,t)
-            for i in 1:n
-                J[i,j]=(-3rhs.jac_base[i]+4rhs.jac_plus[i]-rhs.jac_minus[i])/(2step)
-            end
-        else
-            rhs.jac_state[j]=u[j]+step
-            rhs(rhs.jac_plus,rhs.jac_state,nothing,t)
-            rhs.jac_state[j]=u[j]-step
-            rhs(rhs.jac_minus,rhs.jac_state,nothing,t)
-            for i in 1:n
-                J[i,j]=(rhs.jac_plus[i]-rhs.jac_minus[i])/(2step)
-            end
+    eltype(u)===Float64 ||
+        throw(ArgumentError("prepared energy-plasma Jacobian requires a Float64 state"))
+
+    # Recover the scalar HP root once. This also leaves root-state h and cp in
+    # the Float64 workspace for the exact implicit-temperature chain below.
+    T,_,_,Y=_plasma_energy_state!(rhs,u)
+    hp=rhs.workspace
+    capacity=0.0
+    @inbounds for k in eachindex(Y)
+        k==m.electron_index || (capacity+=Y[k]*hp.cp[k]/m.MW[k])
+    end
+    isfinite(capacity) && capacity>0 ||
+        throw(DomainError(capacity,"positive heavy-species heat capacity required for plasma Jacobian"))
+
+    jac=rhs.jacobian
+    jac.z[1]=T
+    copyto!(jac.z,2,Y,1,length(Y))
+    @inbounds for i in eachindex(hp.collision_rates)
+        jac.kernel.workspace.collision_rates[i]=hp.collision_rates[i]
+    end
+    ForwardDiff.jacobian!(jac.species_jacobian,jac.kernel,jac.output,jac.z,jac.config)
+
+    mass=u[1]
+    H=u[2]
+    dTdm=-H/(mass*mass*capacity)
+    dTdH=1/(mass*capacity)
+    fill!(J,0.0)
+    @inbounds for i in 1:m.n_species
+        row=i+2
+        dsource_dT=jac.species_jacobian[i,1]
+        J[row,1]=dsource_dT*dTdm
+        J[row,2]=dsource_dT*dTdH
+        for k in 1:m.n_species
+            dTdY=-hp.h[k]/(m.MW[k]*capacity)
+            J[row,k+2]=jac.species_jacobian[i,k+1]+dsource_dT*dTdY
         end
-        rhs.jac_state[j]=u[j]
     end
-    fill!(view(J,1,:),0.0)
-    fill!(view(J,2,:),0.0)
-    Y=@view u[3:end]
-    if Y[rhs.reactor.mechanism.electron_index]>0 && rhs.mobility>0 && rhs.electric_field>0
-        factor=_EEDF_ELECTRON_CHARGE*_EEDF_AVOGADRO_KMOL/
-            rhs.reactor.mechanism.MW[rhs.reactor.mechanism.electron_index]*rhs.mobility*rhs.electric_field^2
-        J[2,1]=Y[rhs.reactor.mechanism.electron_index]*factor
-        J[2,e]=u[1]*factor
+
+    e=m.electron_index
+    if Y[e]>0 && rhs.mobility>0 && rhs.electric_field>0
+        factor=_EEDF_ELECTRON_CHARGE*_EEDF_AVOGADRO_KMOL/m.MW[e]*
+            rhs.mobility*rhs.electric_field^2
+        J[2,1]=Y[e]*factor
+        J[2,e+2]=mass*factor
     end
-    rhs(rhs.jac_base,u,nothing,t)
-    copyto!(rhs.jac_state,u)
     return nothing
 end
 

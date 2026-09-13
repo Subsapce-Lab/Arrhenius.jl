@@ -3,17 +3,16 @@
   "platform": "WSL",
   "calculation_validated": true,
   "performance_measured": true,
-  "performance_validated": false,
-  "passed": false,
-  "performance_status": "below_target",
+  "performance_validated": true,
+  "passed": true,
+  "performance_status": "validated",
   "source_url": "https://cantera.org/dev/examples/python/reactors/nanosecond_pulse_discharge.html",
   "julia_example": "example/reactors/nanosecond_pulse_discharge.jl",
   "runtime": {
     "julia": "1.12.7",
     "cantera": "4.0.0a2",
     "cantera_commit": "726522be4e2a13454d8415b7ef799d621f665cf3",
-    "arrhenius_commit": "2c0a9d8bc6cb3828a88b78da1a8bcf6e21bc3ece",
-    "native_solver": "OrdinaryDiffEqBDF QNDF with prepared central finite-difference energy Jacobian",
+    "native_solver": "OrdinaryDiffEqBDF QNDF with prepared chunked ForwardDiff implicit-enthalpy energy Jacobian",
     "reference_solver": "Cantera ReactorNet CVODES dense",
     "numerical_threads": {
       "julia_threads": 1,
@@ -73,7 +72,6 @@
       "fzQ1O_Fcb6M.so": "1c59877f511479275007031d608491331b3a697ac2a5d6a4f91678481f6d00a8",
       "MnrwM_Fcb6M.so": "e82745daf2f6dd3ed051118c444e4dc1ead5b3a7e195b3fbf6d2f6b432d859f7",
       "7qfxl_Fcb6M.so": "920a24c02731738ad3bc5cf8af42387320b71314d71ae6ccda03cc1bc9328a44",
-      "ymlFQ_aPw0g.so": "3a5cec4131e6ba3a312d9e08fd4c46268aef96d5ca3f5d62da99aea48a57893e",
       "DTVAk_e3fAa.so": "9b7e6d2269416c8ad40095a848d179030bf4aa16b0cdc1ee267ad2c8203c8724",
       "iCwSB_Xp4XB.so": "e391dbcb528c6edb99ff9998fca1003c1ec8a2bee3a42f3f3700c14b92e4cf72",
       "1jNpr_Fcb6M.so": "435c15b7a87375b99c4aa5f4a215cea6cef871fd51235a2f430535f2f39a80d1",
@@ -192,6 +190,7 @@
       "dghrV_aPw0g.so": "dedf92dde42f167cdf7fa003d5a3949b9767f980dd7663323196a253b4db2503",
       "ToVO1_Xp4XB.so": "d87cb3c4d135a51cd3e53f3310d3599ba9f3167489a8650c8cab598584eb9732",
       "rQYNM_Fcb6M.so": "8dc7dcfa29c84ac8e5c706ce9d173d03ad77f998c054c2c930272b5e0bee3cd0",
+      "ymlFQ_H1Ax0.so": "cc3fd30a0496288e94a21057473da60e86d3aebf9ee4c5c1dfe52f994783b893",
       "TEBpV_Fcb6M.so": "300ef805191171db229c7ce6dfb8863edefc76d53945396c19bd77bf9d396929",
       "XG7P7_Fcb6M.so": "2bee9a1a6a4bb5ee5fc7263d9f1a2d14d81f0511e0a9561c2d204777ada22325",
       "9JWaY_Xp4XB.so": "88cf6c140cd736fb53003d5c8cdef7ff20f162ddd49eebd7f80009db473dd4f1",
@@ -222,7 +221,8 @@
       "mjrwE_Xp4XB.so": "db5f2870f17e26aa672d6b66d91c2dbe57b8c9944c620728d74c9bcf6fd610d0",
       "BdATY_aPw0g.so": "5560e223f13f805682000dd06e5c40d2a1b4c9d851e90d52ec828eef63a3e0e3"
     },
-    "native_library_hashes_unchanged": true
+    "native_library_hashes_unchanged": true,
+    "arrhenius_base_commit": "af041d281da0fb1597e6a6d241d0a313f4c92cda"
   },
   "conditions": {
     "temperature_K": 300.0,
@@ -272,8 +272,8 @@
   },
   "timing": {
     "required_cantera_over_native": 0.95,
-    "cantera_over_native": 0.6333903433481649,
-    "conservative_cantera_over_native": 0.6175215109000362,
+    "cantera_over_native": 0.9745467094568752,
+    "conservative_cantera_over_native": 0.9509099459596229,
     "noise_gate_passed": true,
     "maximum_allowed_batch_spread": 0.1,
     "reference": {
@@ -298,22 +298,22 @@
     },
     "native": {
       "means_seconds": [
-        0.5068101743333333,
-        0.49457122166666667,
-        0.5163294336666667
+        0.33530465566666673,
+        0.329392801,
+        0.32324014500000003
       ],
-      "median_seconds": 0.5068101743333333,
-      "relative_spread": 0.04293167955560714,
+      "median_seconds": 0.329392801,
+      "relative_spread": 0.03662651591060939,
       "per_call_seconds": [
-        0.500277236,
-        0.492598414,
-        0.527554873,
-        0.49202547,
-        0.497754666,
-        0.493933529,
-        0.510973137,
-        0.501078628,
-        0.536936536
+        0.351904098,
+        0.325866781,
+        0.328143088,
+        0.340319072,
+        0.33159007,
+        0.316269261,
+        0.333411133,
+        0.327673863,
+        0.308635439
       ]
     }
   },
@@ -353,9 +353,10 @@
     },
     "repeated_reference_outputs_bitwise_identical": true,
     "independent_loaded_phase_reset_checks": 62,
-    "complete_accuracy_report": "validation/results/cantera4_wsl_nanosecond_pulse.json",
-    "independent_checks_sha256": "4c861d095aade07631bf1eaf2c248299530647e029285bf4e5d3b617ce23a19f",
-    "native_outputs_identical_to_prior_measurement": true
+    "complete_accuracy_report": "validation/results/cantera4_wsl_nanosecond_pulse_repeated.json",
+    "independent_checks_sha256": "17f3ce527154ab26cf0d573657433121d9aaee9dc212855815248c6ab7669702",
+    "prepared_jacobian_derivative_checks": 62,
+    "derivative_checks_sha256": "dfb198794b6f7f3465f59296bb7990faf53986a8ed9349fe3c8399f7bf1b3ac7"
   },
   "accuracy_limits": {
     "X_atol": 1e-14,
@@ -379,17 +380,17 @@
   "solver_work": {
     "native_first_timed": {
       "njacs": 90,
-      "nreject": 222,
-      "nf": 9010,
-      "naccept": 6781,
-      "nnonliniter": 8740,
+      "nreject": 230,
+      "nf": 8896,
+      "naccept": 6767,
+      "nnonliniter": 8626,
       "nnonlinconvfail": 0,
       "ncondition": 0,
       "nf2": 0,
-      "nsolve": 8740,
+      "nsolve": 8626,
       "nfpiter": 0,
       "maxeig": 0.0,
-      "nw": 2046,
+      "nw": 2055,
       "nfpconvfail": 0
     },
     "cantera_first_timed_interval_sums": {
@@ -417,11 +418,16 @@
     "driver.jl": "0ae0d3572446fd41334479b82d4af33a9703eac6a12edf2bad6f14c8c7b3dde5",
     "review.py": "581ac4890bf0567d86d4181a02247b51c2a91b16347aaf3eb97c5686833b3802",
     "initialization-review.json": "15086c6b4d7ae8ba2df67493307238b1e5761c76d27591024eb4ac098f4d4992",
-    "numerical_threads.jl": "d3e91bf0e05b0043e2f50fac7082fe73af8e9d7326b249793129bd43bb28f739"
+    "numerical_threads.jl": "d3e91bf0e05b0043e2f50fac7082fe73af8e9d7326b249793129bd43bb28f739",
+    "candidate-v2-full-repeat-review.py": "581ac4890bf0567d86d4181a02247b51c2a91b16347aaf3eb97c5686833b3802",
+    "candidate-v2-full-repeat-config.json": "d4c68caab7e40868d9700da63fb37ca4460b0bb37a509c19b6101db7b8e0d670",
+    "candidate-v2-derivative-review.json": "dfb198794b6f7f3465f59296bb7990faf53986a8ed9349fe3c8399f7bf1b3ac7",
+    "candidate-v2-core-ci-status.json": "9ccc8706e2aa0f9a464eaba227c0c569afba5738ef95fffabc8ca4aa7707ef31",
+    "candidate-v2-optional-ci-status.json": "4fee17892a1a6ca2a490034b338a66232c48dbf9858ba98987ea6b6ec1170d04"
   },
   "source_sha256": {
     "example/reactors/nanosecond_pulse_discharge.jl": "7047b5bac54e11de78f664083ea95a1ed785432a92ac624bf35a7b47e4fa346e",
-    "src/PlasmaEnergyReactor.jl": "e84c953601934665fd6cf248de806d460920b236ae17d5e5bb43829c89633596",
+    "src/PlasmaEnergyReactor.jl": "08f3b01c2930779bf3b7d58d93ea2ea0b9f2a48e17662936c20596f37b3c1fbd",
     "src/PlasmaThermochemistry.jl": "0f55d45ea941eae4ebef35a5dd1886bfc17d40d4bf300c496e322a6ccef10830",
     "src/Kinetics.jl": "93429db6a18ceb3ed06677368dccc06b218795a0223a1d98d7e0536cafcb3561"
   },
@@ -433,16 +439,16 @@
   },
   "per_run_output_sha256": {
     "native": [
-      "765244e6a65cbe84b4a9b0fed2021d4c483fb90d1d66bb5176577b3aba947c2d",
-      "c4311acf1e0ad425e1ca6afdf5a782db42262148573c1747a8567448f2cbb96d",
-      "c4311acf1e0ad425e1ca6afdf5a782db42262148573c1747a8567448f2cbb96d",
-      "a2c4c266cc7860b3113734290bcef05513d8a71c02682c032f93a5e60e21b8f9",
-      "a2c4c266cc7860b3113734290bcef05513d8a71c02682c032f93a5e60e21b8f9",
-      "e098a3a15f7a1c43ef866c0afb673cd6489427ae462e83b16fec95e03c44e44d",
-      "e098a3a15f7a1c43ef866c0afb673cd6489427ae462e83b16fec95e03c44e44d",
-      "f07aeab0a2fa43ed6b1b1c7d3333dff47145c0d93a46f20734cf2c1adeca81ce",
-      "f07aeab0a2fa43ed6b1b1c7d3333dff47145c0d93a46f20734cf2c1adeca81ce",
-      "f07aeab0a2fa43ed6b1b1c7d3333dff47145c0d93a46f20734cf2c1adeca81ce"
+      "3a59d02ba7840bfc978387b3c1686ff9f5afbb60beff9a82ad73cecdda397518",
+      "76d9b7143b182141dd6064d507c8b9d53818e0fee79fec8342dfc21583c7e7e7",
+      "76d9b7143b182141dd6064d507c8b9d53818e0fee79fec8342dfc21583c7e7e7",
+      "76d9b7143b182141dd6064d507c8b9d53818e0fee79fec8342dfc21583c7e7e7",
+      "4d1281921a1ef62fb2f7a2f9d4f1ad0b32d6905d656d3abd3364e08bc2976231",
+      "4d1281921a1ef62fb2f7a2f9d4f1ad0b32d6905d656d3abd3364e08bc2976231",
+      "4d1281921a1ef62fb2f7a2f9d4f1ad0b32d6905d656d3abd3364e08bc2976231",
+      "4d1281921a1ef62fb2f7a2f9d4f1ad0b32d6905d656d3abd3364e08bc2976231",
+      "6285570cd15e818f633b2b11cefe09cc17cf3c71902db51c8436561daae939aa",
+      "6285570cd15e818f633b2b11cefe09cc17cf3c71902db51c8436561daae939aa"
     ],
     "reference": [
       "4723d839b8f8226c2d24e51edfec809d3104bb41ed7ab2a3754214f59fcc324d",
@@ -462,5 +468,125 @@
     "cantera_over_native": 0.6568669236394354,
     "native_seconds": 0.488696658,
     "limitation": "The initial runtime observer checked Julia's default BLAS but did not directly query LinearSolve's independently loaded MKL backend. The native timings were repeated with complete backend observation; numerical code and accuracy gates are unchanged."
+  },
+  "measurement_history": [
+    {
+      "epoch": "published_finite_difference_baseline",
+      "report_sha256": "56b45214a1be127afdba760a604e8d204a29244aef2eb1046d0a1dd7bd1e1600",
+      "performance_status": "below_target",
+      "cantera_over_native": 0.6333903433481649,
+      "conservative_cantera_over_native": 0.6175215109000362,
+      "timing": {
+        "required_cantera_over_native": 0.95,
+        "cantera_over_native": 0.6333903433481649,
+        "conservative_cantera_over_native": 0.6175215109000362,
+        "noise_gate_passed": true,
+        "maximum_allowed_batch_spread": 0.1,
+        "reference": {
+          "means_seconds": [
+            0.318844532,
+            0.3210086703333333,
+            0.32118221500000005
+          ],
+          "median_seconds": 0.3210086703333333,
+          "relative_spread": 0.007282304859780268,
+          "per_call_seconds": [
+            0.30731803,
+            0.329824212,
+            0.319391354,
+            0.353983333,
+            0.305256548,
+            0.30378613,
+            0.310251518,
+            0.319676428,
+            0.333618699
+          ]
+        },
+        "native": {
+          "means_seconds": [
+            0.5068101743333333,
+            0.49457122166666667,
+            0.5163294336666667
+          ],
+          "median_seconds": 0.5068101743333333,
+          "relative_spread": 0.04293167955560714,
+          "per_call_seconds": [
+            0.500277236,
+            0.492598414,
+            0.527554873,
+            0.49202547,
+            0.497754666,
+            0.493933529,
+            0.510973137,
+            0.501078628,
+            0.536936536
+          ]
+        }
+      },
+      "source_sha256": {
+        "example/reactors/nanosecond_pulse_discharge.jl": "7047b5bac54e11de78f664083ea95a1ed785432a92ac624bf35a7b47e4fa346e",
+        "src/PlasmaEnergyReactor.jl": "08f3b01c2930779bf3b7d58d93ea2ea0b9f2a48e17662936c20596f37b3c1fbd",
+        "src/PlasmaThermochemistry.jl": "0f55d45ea941eae4ebef35a5dd1886bfc17d40d4bf300c496e322a6ccef10830",
+        "src/Kinetics.jl": "93429db6a18ceb3ed06677368dccc06b218795a0223a1d98d7e0536cafcb3561"
+      }
+    },
+    {
+      "epoch": "prepared_implicit_jacobian_first_measurement",
+      "review_sha256": "4235c0cf344b647335ba027aca3f7d72aaba79312c34311b82782fd96e56256e",
+      "decision": "inconclusive",
+      "noise_gate_passed": false,
+      "cantera_over_native": 0.9902993981179387,
+      "conservative_cantera_over_native": 0.8188208107673588,
+      "timing": {
+        "reference": {
+          "means_seconds": [
+            0.318844532,
+            0.3210086703333333,
+            0.32118221500000005
+          ],
+          "median_seconds": 0.3210086703333333,
+          "relative_spread": 0.007282304859780268,
+          "per_call_seconds": [
+            0.30731803,
+            0.329824212,
+            0.319391354,
+            0.353983333,
+            0.305256548,
+            0.30378613,
+            0.310251518,
+            0.319676428,
+            0.333618699
+          ]
+        },
+        "native": {
+          "means_seconds": [
+            0.32415315100000003,
+            0.315076387,
+            0.3893947586666667
+          ],
+          "median_seconds": 0.32415315100000003,
+          "relative_spread": 0.22926931741183862,
+          "per_call_seconds": [
+            0.302286462,
+            0.34536211,
+            0.324810881,
+            0.31222357,
+            0.309113199,
+            0.323892392,
+            0.332022367,
+            0.505646502,
+            0.330515407
+          ]
+        }
+      },
+      "energy_reactor_source_sha256": "08f3b01c2930779bf3b7d58d93ea2ea0b9f2a48e17662936c20596f37b3c1fbd"
+    }
+  ],
+  "energy_reactor_source_sha256": "08f3b01c2930779bf3b7d58d93ea2ea0b9f2a48e17662936c20596f37b3c1fbd",
+  "qualification_evidence": {
+    "full_repeat_review_sha256": "17f3ce527154ab26cf0d573657433121d9aaee9dc212855815248c6ab7669702",
+    "derivative_checks": 62,
+    "core_ci_assertions": 2893,
+    "optional_ci_assertions": 166
   }
 }
