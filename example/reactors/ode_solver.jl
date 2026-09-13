@@ -31,6 +31,29 @@ with QNDF's ordinary dense linear solver for supported reactors. The default
 function native_bdf(problem; linear_solver=:auto, kwargs...)
     linear_solver in (:auto, :dense) ||
         throw(ArgumentError("linear_solver must be :auto or :dense"))
+    if problem.f isa Arrhenius.PlasmaEnergyRHS
+        f = SciMLBase.ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad,
+            jac_prototype=zeros(length(problem.u0), length(problem.u0)))
+        ode = SciMLBase.ODEProblem(f, problem.u0, problem.tspan, problem.p)
+        # The state is mass, total enthalpy, then signed mass fractions.
+        # Recover temperature from enthalpy; negative enthalpy is valid.
+        outside_domain = function (u, p, t)
+            (!all(isfinite, u) || u[1] <= 0) && return true
+            try
+                props = Arrhenius.reactor_properties(problem.f, u)
+                return !(isfinite(props.T) && props.T > 0 &&
+                         isfinite(props.rho) && props.rho > 0)
+            catch error
+                (error isa DomainError || error isa ErrorException) || rethrow()
+                return true
+            end
+        end
+        solution = SciMLBase.solve(ode, OrdinaryDiffEqBDF.QNDF();
+            isoutofdomain=outside_domain, kwargs...)
+        SciMLBase.successful_retcode(solution) ||
+            error("plasma energy integration failed: $(solution.retcode)")
+        return solution
+    end
     if problem.f isa Arrhenius.PlasmaRHS
         f = SciMLBase.ODEFunction(problem.f; jac=problem.jac, tgrad=problem.tgrad,
             jac_prototype=zeros(length(problem.u0), length(problem.u0)))

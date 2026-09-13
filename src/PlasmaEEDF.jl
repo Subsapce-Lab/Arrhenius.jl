@@ -73,6 +73,18 @@ EEDFState(T, P, x, mw, reduced_field, frequency) =
 function EEDFState(model::EEDFModel; T, P, mole_fractions::AbstractDict,
                    molecular_weights::AbstractDict, reduced_field, frequency=0,
                    number_density=nothing)
+    return _eedf_state(model,T,P,mole_fractions,molecular_weights,reduced_field,
+        frequency,number_density,false)
+end
+
+function _accepted_eedf_state(model::EEDFModel;T,P,mole_fractions::AbstractDict,
+        molecular_weights::AbstractDict,reduced_field,frequency=0,number_density=nothing)
+    return _eedf_state(model,T,P,mole_fractions,molecular_weights,reduced_field,
+        frequency,number_density,true)
+end
+
+function _eedf_state(model,T,P,mole_fractions,molecular_weights,reduced_field,
+        frequency,number_density,accepted_signed)
     Tf = Float64(T)
     Pf = Float64(P)
     EN = Float64(reduced_field)
@@ -93,7 +105,8 @@ function EEDFState(model::EEDFModel; T, P, mole_fractions::AbstractDict,
         haskey(molecular_weights, target) || throw(ArgumentError("missing molecular weight for collision target '$target'"))
         xi = Float64(mole_fractions[target])
         wi = Float64(molecular_weights[target])
-        isfinite(xi) && xi >= 0 || throw(ArgumentError("target mole fractions must be finite and nonnegative"))
+        isfinite(xi) && (accepted_signed || xi >= 0) ||
+            throw(ArgumentError("target mole fractions must be finite and nonnegative"))
         isfinite(wi) && wi > 0 || throw(ArgumentError("target molecular weights must be finite and positive kg/kmol"))
         x[target] = xi
         mw[target] = wi
@@ -470,13 +483,23 @@ the calculation always starts from the gas-temperature Maxwellian.
 function solve_eedf(model::EEDFModel, state::EEDFState;
                     options::TwoTermOptions=TwoTermOptions(),
                     initial::Union{Nothing,EEDFResult}=nothing)
+    return _solve_eedf(model,state,options,initial,false)
+end
+
+function _solve_accepted_eedf(model::EEDFModel,state::EEDFState;
+        options::TwoTermOptions=TwoTermOptions(),initial::Union{Nothing,EEDFResult}=nothing)
+    return _solve_eedf(model,state,options,initial,true)
+end
+
+function _solve_eedf(model,state,options,initial,accepted_signed)
     _validate_model(model)
     for target in model.target_names
         haskey(state.mole_fractions, target) || throw(ArgumentError("EEDF state is missing target '$target'"))
         haskey(state.molecular_weights, target) || throw(ArgumentError("EEDF state is missing target molecular weight '$target'"))
         xi = state.mole_fractions[target]
         mw = state.molecular_weights[target]
-        isfinite(xi) && xi >= 0 || throw(ArgumentError("target mole fractions must be finite and nonnegative"))
+        isfinite(xi) && (accepted_signed || xi >= 0) ||
+            throw(ArgumentError("target mole fractions must be finite and nonnegative"))
         isfinite(mw) && mw > 0 || throw(ArgumentError("target molecular weights must be finite and positive kg/kmol"))
     end
     xsum = sum(state.mole_fractions[target] for target in model.target_names)

@@ -28,21 +28,22 @@ function update_eedf!(s::PlasmaState; options=TwoTermOptions())
     p = plasma_properties(s)
     m = s.mechanism
     N = s.density * sum(s.mass_fractions ./ m.MW) * _EEDF_AVOGADRO_KMOL
-    state = EEDFState(data.eedf_model; T=p.T, P=p.P,
+    state = _accepted_eedf_state(data.eedf_model; T=p.T, P=p.P,
         mole_fractions=Dict(zip(m.species_names,p.X)),
         molecular_weights=Dict(zip(m.species_names,m.MW)),
         reduced_field=s.electric_field/N, number_density=N)
-    result = solve_eedf(data.eedf_model,state;options,initial=s.eedf)
+    result = _solve_accepted_eedf(data.eedf_model,state;options,initial=s.eedf)
     result.converged || throw(ErrorException("Boltzmann EEDF did not converge"))
     s.eedf = result
     return s
 end
 
-function _plasma_species_thermo(m::PlasmaMechanism,T,Te)
+function _plasma_species_thermo!(h,cp,s0,m::PlasmaMechanism,T,Te)
     data = m.thermal
     data === nothing && throw(ArgumentError("this plasma mechanism has no gas thermodynamics"))
     thermo = data.thermo
-    h,cp,s0 = zeros(m.n_species),zeros(m.n_species),zeros(m.n_species)
+    length(h) == length(cp) == length(s0) == m.n_species ||
+        throw(DimensionMismatch("one thermochemistry entry per plasma species required"))
     @inbounds for i in eachindex(h)
         Ti = i == m.electron_index ? Te : T
         if thermo.extra === nothing
@@ -55,7 +56,99 @@ function _plasma_species_thermo(m::PlasmaMechanism,T,Te)
         end
         h[i],cp[i],s0[i] = R*Ti*h_RT,R*cp_R,R*s_R
     end
+    return nothing
+end
+
+function _plasma_species_thermo(m::PlasmaMechanism,T,Te)
+    h,cp,s0 = zeros(m.n_species),zeros(m.n_species),zeros(m.n_species)
+    _plasma_species_thermo!(h,cp,s0,m,T,Te)
     return h,cp,s0
+end
+
+
+"Reusable storage for signed thermal-plasma source evaluations."
+mutable struct _PlasmaThermoRateWorkspace{T}
+    X::Vector{T}
+    C::Vector{T}
+    h::Vector{T}
+    cp::Vector{T}
+    s0::Vector{T}
+    wdot::Vector{T}
+    collision_rates::Vector{T}
+    collision_integrand::Vector{T}
+    kinetics::KineticsWorkspace{T}
+end
+
+function _PlasmaThermoRateWorkspace(m::PlasmaMechanism,::Type{T}=Float64) where {T}
+    data=m.thermal
+    data===nothing && throw(ArgumentError("thermal plasma workspace requires gas thermodynamics"))
+    return _PlasmaThermoRateWorkspace(zeros(T,m.n_species),zeros(T,m.n_species),
+        zeros(T,m.n_species),zeros(T,m.n_species),zeros(T,m.n_species),
+        zeros(T,m.n_species),zeros(T,m.n_reactions),zeros(T,length(m.energy_levels)),
+        KineticsWorkspace(data.reaction,T))
+end
+
+function _plasma_collision_rates!(rates,integrand,m::PlasmaMechanism,eedf::EEDFResult)
+    length(rates)==m.n_reactions || throw(DimensionMismatch("one collision-rate entry per reaction required"))
+    length(integrand)==length(m.energy_levels)==length(eedf.edge_eedf) ||
+        throw(DimensionMismatch("collision quadrature grid length"))
+    fill!(rates,zero(eltype(rates)))
+    f=eedf.edge_eedf
+    @inbounds for j in eachindex(rates)
+        m.rate_types[j]==0x03 || continue
+        for i in eachindex(f)
+            energy=m.energy_levels[i]
+            sigma=_linear_interp_hold(energy,m.collision_energy[j],m.cross_sections[j])
+            integrand[i]=energy*f[i]*sigma
+        end
+        rates[j]=_EEDF_GAMMA*_EEDF_AVOGADRO_KMOL*_eedf_simpson(integrand,m.energy_levels)
+    end
+    return rates
+end
+
+function _plasma_thermal_sources!(workspace::_PlasmaThermoRateWorkspace,m::PlasmaMechanism,
+        T,Te,P,rho,Y)
+    data=m.thermal
+    data===nothing && throw(ArgumentError("thermal plasma rates require gas thermodynamics"))
+    length(Y)==m.n_species || throw(DimensionMismatch("one mass fraction per plasma species required"))
+    _plasma_species_thermo!(workspace.h,workspace.cp,workspace.s0,m,T,Te)
+    inverse_mw=zero(T)
+    @inbounds for i in eachindex(Y)
+        amount=Y[i]/m.MW[i]
+        inverse_mw+=amount
+        workspace.X[i]=amount
+        workspace.C[i]=rho*amount
+    end
+    @inbounds for i in eachindex(Y)
+        workspace.X[i]/=inverse_mw
+    end
+    e=m.electron_index
+    workspace.s0[e]=workspace.s0[e]*(Te/T)+R*(1-Te/T)*log(P/one_atm)
+    _rate_factors!(data.reaction,T,workspace.C,workspace.s0,workspace.h,
+        workspace.kinetics,data.reverse_plan;pressure=P)
+    kf=workspace.kinetics.kf
+    @inbounds for j in eachindex(kf)
+        kind=m.rate_types[j]
+        if kind==0x02
+            A,b,Eg,Ee,bg,inverse_T=view(m.rate_parameters,:,j)
+            kf[j]=A*exp(bg*log(T)+b*log(Te)-Eg/(R*T)+
+                Ee*(Te-T)/(R*Te*T)-T*inverse_T)
+        elseif kind==0x03
+            kf[j]=workspace.collision_rates[j]
+        end
+    end
+    for (i,j) in enumerate(data.chebyshev_indices)
+        kf[j]=_plasma_chebyshev_rate(data.chebyshev_coefficients[i],
+            data.chebyshev_temperature_ranges[i],data.chebyshev_pressure_ranges[i],T,P)
+    end
+    @inbounds for j in data.reaction.index_three_body
+        if m.rate_types[j]!=0x01
+            kf[j]*=dot(view(data.reaction.efficiencies_coeffs,:,j),workspace.C)
+        end
+    end
+    _mass_action!(workspace.kinetics,data.reaction,workspace.C)
+    mul!(workspace.wdot,data.reaction.vk,workspace.kinetics.rates_of_progress)
+    return workspace
 end
 
 """
