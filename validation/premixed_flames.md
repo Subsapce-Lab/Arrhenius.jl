@@ -3,14 +3,14 @@
 The complete free, burner and prescribed-temperature examples were checked with
 Julia 1.12.7 and Cantera 4.0.0a2 at revision
 [726522be](https://github.com/Cantera/cantera/tree/726522be4e2a13454d8415b7ef799d621f665cf3).
-[Results and all timing samples](results/cantera4_flames_4d09446.json) identify
-native revision 4d09446 and the source, mechanism and reference hashes.
+[Results and all timing samples](results/cantera4_flames_10dad59.json) identify
+native revision 10dad59 and the source, mechanism and reference hashes.
 
 | Complete source calculation | WSL speed ratio | Conservative ratio | Speed qualification |
 | --- | ---: | ---: | --- |
-| Free flame, four transport stages | 1.112 | 1.057 | Inconclusive: timing spread exceeds 5% |
-| Burner flame, two transport stages | 2.072 | 1.897 | Inconclusive: timing spread exceeds 5% |
-| Prescribed-temperature flame, two transport stages | 1.736 | 1.709 | Passed |
+| Free flame, four transport stages | 1.147 | 1.099 | Passed |
+| Burner flame, two transport stages | 1.980 | 1.731 | Inconclusive: timing spread exceeds 5% |
+| Prescribed-temperature flame, two transport stages | 1.728 | 1.699 | Inconclusive: timing spread exceeds 5% |
 
 Each implementation performs 96 warm complete calculations, grouped into three
 consecutive batches of 32. The speed ratio divides the median Cantera batch mean
@@ -24,7 +24,9 @@ solves and required numerical profiles. Imports, compilation, mechanism/sidecar
 loading, validation and file I/O are excluded. One complete warmup and one explicit
 collection follow loading; both are excluded from the warm samples. Automatic
 garbage collection remains enabled and included in measured calculations. All
-samples are retained, with one numerical thread per implementation.
+samples are retained, with one numerical thread per implementation. Linux elapsed
+timers use `CLOCK_MONOTONIC_RAW`; both runtime clocks were checked against an
+independent high-resolution host clock before measurement.
 
 Every transport stage passes the full-profile and elemental-conservation checks
 against independently refined Cantera references. Acceptance limits are 1% for
