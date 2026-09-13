@@ -318,8 +318,15 @@
         "scope": "run_ion_source_sequence(gas, \"burner\"): complete fresh native frozen-field and enabled-field stages; full independent profiles, conservation and reference-uncertainty gates; exact first/warm replay in both runtimes."
       },
       "m4_timing_evidence": null,
-      "wsl_timing_evidence": null,
-      "performance_status": "not_validated"
+      "wsl_timing_evidence": {
+        "report": "validation/results/cantera4_ion_burner_repeated_caeb50c.json",
+        "case": "onedim/ion_burner_flame",
+        "speed_ratio": 1.9340573942713977,
+        "conservative_speed_ratio": 1.9136720426670961,
+        "verdict": "qualified",
+        "scope": "CLOCK_MONOTONIC_RAW; three fixed batches of 4 warm complete frozen-field and enabled-field sequences, loaded mechanisms reused with fresh flame state and solver setup; native initialization, required numerical profiles and automatic GC included. Imports/JIT, loading, explicit warmup collection, validation and file I/O excluded."
+      },
+      "performance_status": "validated"
     },
     {
       "id": "onedim/ion_free_flame",
