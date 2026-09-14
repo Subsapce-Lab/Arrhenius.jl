@@ -458,8 +458,12 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
     weights=correction_enabled ? _flame_correction_weights(u,previous!==nothing) : Float64[]
     trial_correction=correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
     residual_scales=correction_enabled ? Vector{Float64}(undef,length(u)) : Float64[]
+    residual_valid = false
     for iteration in 1:maxiters
-        counterflow_residual!(r,f,u,w;previous,dt)
+        if !residual_valid
+            counterflow_residual!(r,f,u,w;previous,dt)
+        end
+        residual_valid = false
         residualnorm=norm(r,Inf)
         residualnorm<tolerance && return true
         # Healthy correction-merit steps reuse the Jacobian; age-based refresh only.
@@ -537,6 +541,10 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
             age=correction_enabled ? 21 : 5; continue
         end
         contraction=norm(rt)/norm(r)
+        # Keep the old residual through the contraction test, then reuse the
+        # accepted trial's residual and full properties at the identical state.
+        copyto!(r, rt)
+        residual_valid = true
         age=correction_enabled && trial_merit<1 ? 21 : age+1
     end
     return false

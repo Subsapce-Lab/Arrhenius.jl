@@ -219,7 +219,8 @@
       "correctness_evidence": {
         "report": "validation/results/cantera4_counterflow_continuation_d512dbc.json",
         "case": "onedim/diffusion_flame_continuation",
-        "scope": "Complete fresh H2/O2 two-point controlled counterflow continuation through both branches to the source termination condition. All 133 native profiles are validated against independently solved Cantera flames at matching control points. Adaptive paths differ: 132 native rows and 134 stock Cantera rows."
+        "scope": "Complete fresh H2/O2 two-point controlled counterflow continuation through both branches to the source termination condition. All 133 native profiles are validated against independently solved Cantera flames at matching control points. Adaptive paths differ: 132 native rows and 134 stock Cantera rows.",
+        "replay_report": "validation/results/cantera4_counterflow_residual_reuse_bb3af69.json"
       },
       "m4_timing_evidence": null,
       "wsl_timing_evidence": {
