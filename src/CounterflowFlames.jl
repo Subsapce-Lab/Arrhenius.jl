@@ -292,6 +292,13 @@ struct CounterflowWorkspace{F}
     planck_absorption::Vector{Float64}
     derivatives::_ConservativeFlameDerivatives
     source_gradient::Matrix{Float64}
+    # Unfactored Jacobian kept across pseudo-time steps on one grid. A new dt
+    # only shifts the time-term diagonal and refactors, as Cantera's
+    # MultiJac::updateTransient does. cache = [Jacobian dt, factored dt, age].
+    jacobian::Matrix{Float64}
+    pivots::Vector{LinearAlgebra.BlasInt}
+    transient::Vector{Bool}
+    cache::Vector{Float64}
 end
 function CounterflowWorkspace(f::CounterflowDiffusionFlame)
     adapter=_CounterflowPropertyAdapter(f.gas,f.grid,f.transport_model,
@@ -300,7 +307,8 @@ function CounterflowWorkspace(f::CounterflowDiffusionFlame)
     n=f.gas.n_species
     return CounterflowWorkspace(FlameWorkspace(adapter),zeros(N-1),zeros(6B-2,B*N),
         zeros(B,N),zeros(B,N),zeros(N),zeros(N),zeros(N),
-        _ConservativeFlameDerivatives(f.gas,N),zeros(n,n+1))
+        _ConservativeFlameDerivatives(f.gas,N),zeros(n,n+1),
+        zeros(6B-2,B*N),LinearAlgebra.BlasInt[],Bool[],[NaN,NaN,Inf])
 end
 
 "Evaluate continuity, radial momentum, pressure curvature, species and energy."
@@ -501,6 +509,11 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
     pivots=LinearAlgebra.BlasInt[]; age=5; contraction=Inf
     correction_enabled=!isnothing(f.control_points)
     correction_enabled && (age=21)
+    if !correction_enabled && w.cache[3]<5
+        age=Int(w.cache[3])
+        w.cache[2]==dt || _counterflow_shift_jacobian!(f,u,w,r;previous,dt)
+        pivots=copy(w.pivots)
+    end
     # Pseudo-time steps end on Cantera's weighted-correction criterion.
     step_converged=previous!==nothing
     weights=correction_enabled || step_converged ? _flame_correction_weights(u,previous!==nothing) : Float64[]
@@ -520,7 +533,9 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
             if refresh
                 J=_counterflow_jacobian!(f,u,w,r;previous,dt)
                 correction_enabled && _counterflow_residual_scales!(residual_scales,J,u,bandwidth)
+                copyto!(w.jacobian,J); w.cache[1]=dt
                 _,pivots=LinearAlgebra.LAPACK.gbtrf!(bandwidth,bandwidth,length(u),J)
+                copy!(w.pivots,pivots); w.cache[2]=dt
                 age=0
             end
             correction=-vec(copy(r))
@@ -598,8 +613,30 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=45,tolerance=
         copyto!(r, rt)
         residual_valid = true
         age=correction_enabled && trial_merit<1 ? 21 : age+1
+        correction_enabled || (w.cache[3]=age)
     end
     return false
+end
+
+# Move the cached Jacobian to step size dt: the pseudo-time term contributes
+# -timescale/dt on the diagonal of the rows that carry it (found once per grid
+# by differencing two residuals), so only that diagonal and the factors change.
+function _counterflow_shift_jacobian!(f,u,w,r;previous,dt)
+    B,N=size(u); kl=2B-1
+    if isempty(w.transient)
+        probe=similar(u); counterflow_residual!(r,f,u,w;previous=u,dt=1.)
+        counterflow_residual!(probe,f,u,w;previous=u.-1,dt=1.)
+        append!(w.transient,vec(abs.(probe.-r).>_flame_timescale/2))
+    end
+    shift=_flame_timescale*((isfinite(w.cache[1]) ? 1/w.cache[1] : 0.)-(isfinite(dt) ? 1/dt : 0.))
+    w.band .= w.jacobian
+    for i in eachindex(w.transient)
+        w.transient[i] && (w.band[2kl+1,i]+=shift)
+    end
+    _,pivots=LinearAlgebra.LAPACK.gbtrf!(kl,kl,B*N,w.band)
+    copy!(w.pivots,pivots)
+    w.cache[2]=dt
+    return w
 end
 
 function _counterflow_steady!(f;max_time_steps=800,timestep=Ref(1e-6),loglevel=0)
