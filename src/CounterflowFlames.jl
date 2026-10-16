@@ -632,7 +632,7 @@ end
 
 function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1e-8,loglevel=0,
         analytic=true,iterations=Ref(0),skip_dependent_transient=true,
-        transient_update! = _counterflow_transient_update!,defer_failed_refresh=false)
+        transient_update! = _counterflow_transient_update!)
     u=f.state; r=similar(u); trial=similar(u); rt=similar(u)
     n=f.gas.n_species; bandwidth=2*size(u,1)-1
     correction_enabled=!isnothing(f.control_points)
@@ -774,7 +774,6 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
                 (w.jac_age<=1 || reevals>3) && return false
                 reevals+=1
             end
-            defer_failed_refresh && previous!==nothing && return false
             w.jac_age=21; continue
         end
         # Cantera's convergence is s1<1 after the damped step. Pseudo-time steps
@@ -882,15 +881,12 @@ function _counterflow_steady_impl!(f;max_time_steps=800,timestep=Ref(_COUNTERFLO
     residual_at!(r,x,previous,dt)=_counterflow_growth_residual!(r,f,x,w;previous,dt)
     failures=0
     retry_attempt=0
-    defer_initial_transient_refresh=true
     while accepted_steps<max_time_steps
         attempts+=1
         previous=copy(f.state)
         j0=w.jac_evals
         if _counterflow_newton!(f,w;previous,dt,analytic,iterations,
-                maxiters=transient_newton_maxiters,skip_dependent_transient,transient_update!,
-                defer_failed_refresh=defer_initial_transient_refresh)
-            defer_initial_transient_refresh=false
+                maxiters=transient_newton_maxiters,skip_dependent_transient,transient_update!)
             cs.time_steps+=1; COUNTERFLOW_STATS.time_steps+=1
             failures=0
             # Cantera grows dt only when the step evaluated no Jacobian
@@ -917,7 +913,6 @@ function _counterflow_steady_impl!(f;max_time_steps=800,timestep=Ref(_COUNTERFLO
                 failures=0
             end
         else
-            defer_initial_transient_refresh=false
             f.state .= previous
             failures+=1
             cs.time_step_failures+=1; COUNTERFLOW_STATS.time_step_failures+=1

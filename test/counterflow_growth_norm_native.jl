@@ -190,19 +190,17 @@ mutable struct CounterflowBudgetFixture
     state::Matrix{Float64}
     transient_calls::Int
     steady_calls::Int
-    defer_flags::Vector{Bool}
 end
 mutable struct CounterflowBudgetWorkspace
     jac_evals::Int
     source_gradient::Matrix{Float64}
 end
 Arrhenius.CounterflowWorkspace(::CounterflowBudgetFixture)=CounterflowBudgetWorkspace(0,zeros(0,1))
-function Arrhenius._counterflow_newton!(f::CounterflowBudgetFixture,w;previous=nothing,defer_failed_refresh=false,kwargs...)
+function Arrhenius._counterflow_newton!(f::CounterflowBudgetFixture,w;previous=nothing,kwargs...)
     if previous===nothing
         f.steady_calls+=1
         return false
     end
-    push!(f.defer_flags,defer_failed_refresh)
     f.transient_calls+=1
     w.jac_evals+=1 # no growth in this oracle
     f.transient_calls>2 || return false
@@ -256,29 +254,6 @@ end
     @test f.residual_calls==2 # initial residual on each damped attempt
 end
 
-@testset "initial failed pseudo-time attempt preserves Jacobian age" begin
-    # At Y=-1e-7 an outward Newton direction has Cantera's bound fraction 0.
-    # A stale Jacobian may fail once, then must be refreshed before the solver
-    # reports failure with a fresh Jacobian.
-    state=ones(4,1); state[2]=-1e-7
-    f=BoundRefreshNewtonFixture(state,(n_species=1,),nothing,1,0)
-    band=zeros(22,4)
-    for k in 1:4
-        band[15,k]=1
-    end
-    _,pivots=LinearAlgebra.LAPACK.gbtrf!(7,7,4,band)
-    w=BoundRefreshWorkspace(copy(band),copy(band),pivots,2,Inf,true,0)
-    previous=copy(state)
-    @test !Arrhenius._counterflow_newton!(f,w;previous,maxiters=8,
-        defer_failed_refresh=true)
-    @test w.jac_evals==0
-    @test w.jac_age==3
-    @test f.residual_calls==1 # no backtracking or in-attempt refresh
-    @test !Arrhenius._counterflow_newton!(f,w;previous,maxiters=8)
-    @test w.jac_evals==1 # stale Jacobian retries fresh within the next attempt
-    @test f.residual_calls==3
-end
-
 @testset "counterflow negative bound fraction fails before trial evaluation" begin
     # Exercise the production Newton path, not just boundStep: the native
     # species value is already below its lower bound and Newton points farther
@@ -305,7 +280,7 @@ end
     # retry, matching Cantera's timeStep(nsteps) check in SteadyStateSystem.cpp.
     # Steady retries use the Cantera cadence: every ten successful steps.
     for (budget,steadies,accepted) in ((10,1,10),(21,3,21))
-        f=CounterflowBudgetFixture([0.],zeros(1,1),0,0,Bool[])
+        f=CounterflowBudgetFixture([0.],zeros(1,1),0,0)
         dts=Float64[]
         steps0=Arrhenius.COUNTERFLOW_STATS.time_steps
         failures0=Arrhenius.COUNTERFLOW_STATS.time_step_failures
@@ -314,7 +289,6 @@ end
         @test Arrhenius.COUNTERFLOW_STATS.time_steps-steps0==budget
         @test Arrhenius.COUNTERFLOW_STATS.time_step_failures-failures0==2
         @test f.transient_calls==budget+2
-        @test f.defer_flags[1:2]==[true,false]
         @test f.steady_calls==steadies
     end
 end
