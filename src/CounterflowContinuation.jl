@@ -104,7 +104,9 @@ end
 
 """Trace a fixed-grid branch with a bordered pseudo-arclength Newton corrector.
 `parameter` is `:fuel_mass_flux`, `:oxidizer_mass_flux`, `:pressure`, or `:inlet_flux_scale`.
-Returns points with states, residual infinity norms, arclengths, and turning flags.
+Returns points with states, residual infinity norms, arclengths, and turning flags. `parameter_scale` and `state_scale`
+control the relative continuation metric; both must be positive and finite. The initial state is used to construct
+componentwise state scales, multiplied by `state_scale`.
 """
 function pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=40,ds=.05,
         min_ds=ds/16,max_ds=2ds,tolerance=1e-8,max_corrector_iters=18,

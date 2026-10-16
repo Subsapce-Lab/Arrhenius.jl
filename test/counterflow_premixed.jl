@@ -26,6 +26,8 @@ end
     @test ps isa CounterflowStats && Arrhenius.solver_stats(f)===ps
     @test ps.jacobians>0 && ps.newton_iterations>=ps.jacobians
     @test !isempty(ps.grids) && last(ps.grids)==length(f.grid)
+    fc=pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=1,ds=.005,tolerance=1e-7)
+    @test length(fc)==2 && all(p->p.residual_inf<1e-7,fc)
 
     # Inert wall and symmetry are checked directly with signed trial traces.
     twin=Arrhenius.CounterflowTwinPremixedFlame(gas;reactants=composition,mdot=.12,T=373.,P=.05*one_atm,width=.2)
@@ -62,6 +64,8 @@ end
     @test twin.converged
     @test ts.jacobians>0 && ts.newton_iterations>=ts.jacobians
     @test !isempty(ts.grids) && last(ts.grids)==length(twin.grid)
+    tc=pseudo_arclength!(twin;parameter=:fuel_mass_flux,steps=1,ds=.005,tolerance=1e-7)
+    @test length(tc)==2 && all(p->p.residual_inf<1e-7,tc)
 
     cold=Arrhenius.ImpingingJet(gas;reactants="AR:1",mdot=.06,T_inlet=373.,
         T_surface=500.,P=.05*one_atm,width=.2,initial_products=:inlet)
