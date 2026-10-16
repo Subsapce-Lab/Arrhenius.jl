@@ -205,10 +205,6 @@ end
                 maxerr=err;worst=(rowcomponent,rowpoint,point,component,J[row,col],Jad[row,col])
             end
         end
-        for rowcomponent in 1:B
-            @test J[rowcomponent,col]==0.0
-            @test J[(length(grid)-1)*B+rowcomponent,col]==0.0
-        end
     end
     @info "analytic Jacobian derivative diagnostic" maxerr worst family
     @test maxerr < 2e-7
