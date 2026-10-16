@@ -58,6 +58,8 @@ function check_mass_action_mechanism(path)
     reactant_orders = nonzeros(reaction.reactant_orders)
     product_species = rowvals(reaction.product_stoich_coeffs)
     product_orders = nonzeros(reaction.product_stoich_coeffs)
+    reactant_stoich_rows = rowvals(reaction.reactant_stoich_coeffs)
+    reactant_stoich_entries = reaction.reactant_stoich_coeffs
     reactant_entries = reaction.reactant_orders
     product_entries = reaction.product_stoich_coeffs
     vectors = comparison_vectors(solution.n_species)
@@ -67,10 +69,14 @@ function check_mass_action_mechanism(path)
     # Sparse CSC matrices have unique row indices and no stored numeric zeros
     # after sparse(dense) construction. Assert this for every mechanism.
     @test all(x -> !iszero(x), nonzeros(reactant_entries))
+    @test all(x -> !iszero(x), nonzeros(reactant_stoich_entries))
     @test all(x -> !iszero(x), nonzeros(product_entries))
     for col in 1:reaction.n_reactions
         rr = nzrange(reactant_entries, col)
         pr = nzrange(product_entries, col)
+        sr = nzrange(reactant_stoich_entries, col)
+        @test issorted(view(reactant_stoich_rows, sr))
+        @test length(unique(view(reactant_stoich_rows, sr))) == length(sr)
         @test issorted(view(reactant_species, rr))
         @test length(unique(view(reactant_species, rr))) == length(rr)
         @test issorted(view(product_species, pr))
