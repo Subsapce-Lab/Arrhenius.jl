@@ -237,6 +237,25 @@ function Arrhenius._counterflow_jacobian!(f::BoundRefreshNewtonFixture,u,w,r;kwa
     end
     return w.band
 end
+@testset "counterflow stale Jacobian retries a negative bound failure" begin
+    # The identical production failure retries only when the cached Jacobian
+    # is stale (age > 1): the second attempt evaluates one fresh Jacobian,
+    # then the fresh-Jacobian failure ends the solve without another retry.
+    lower=-1e-7
+    state=ones(4,1); state[2]=lower-1e-7
+    f=BoundRefreshNewtonFixture(state,(n_species=1,),nothing,1,0)
+    band=zeros(22,4)
+    for k in 1:4
+        band[15,k]=1
+    end
+    _,pivots=LinearAlgebra.LAPACK.gbtrf!(7,7,4,band)
+    w=BoundRefreshWorkspace(copy(band),copy(band),pivots,2,Inf,true,0)
+    @test !Arrhenius._counterflow_newton!(f,w;maxiters=4)
+    @test w.jac_evals==1
+    @test w.jac_age==1 # retry ended on the fresh Jacobian
+    @test f.residual_calls==2 # initial residual on each damped attempt
+end
+
 @testset "initial failed pseudo-time attempt preserves Jacobian age" begin
     # At Y=-1e-7 an outward Newton direction has Cantera's bound fraction 0.
     # A stale Jacobian may fail once, then must be refreshed before the solver
