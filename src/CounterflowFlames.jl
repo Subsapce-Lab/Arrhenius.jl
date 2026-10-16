@@ -771,11 +771,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
                 (w.jac_age<=1 || reevals>3) && return false
                 reevals+=1
             end
-            w.jac_age=21
-            # On a rejected pseudo-time attempt, defer the forced refresh to
-            # the next step, matching the retry boundary in Cantera.
-            previous!==nothing && return false
-            continue
+            w.jac_age=21; continue
         end
         # Cantera's convergence is s1<1 after the damped step. Pseudo-time steps
         # stop there; steady solves keep polishing toward the residual tolerance

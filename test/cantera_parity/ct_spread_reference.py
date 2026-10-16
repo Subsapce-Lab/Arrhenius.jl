@@ -30,8 +30,8 @@ def main(spec_path, scale, output_path):
                 residual_inf=max(residual_inf,float(np.nanmax(np.abs(vals))))
     stats=flame.solver_stats
     data=dict(grid=flame.grid.copy(),T=flame.T.copy(),Y=flame.Y.copy(),
-        velocity=flame.velocity.copy(),SL=np.asarray([float(flame.velocity[0]) if spec["kind"]=="free" else float(np.max(flame.T))]),
-        mdot=np.asarray([float(flame.density[0]*flame.velocity[0])]),
+        velocity=flame.velocity.copy(),SL=np.asarray(float(flame.velocity[0]) if spec["kind"]=="free" else float(np.max(flame.T))),
+        mdot=np.asarray(float(flame.density[0]*flame.velocity[0])),
         species_names=np.asarray(flame.gas.species_names),
         tight_rtol_reached=np.asarray([RTOL]),residual_inf=np.asarray([residual_inf]),
         criterion_scale=np.asarray([scale]))
