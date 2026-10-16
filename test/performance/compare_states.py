@@ -29,7 +29,9 @@ for base_path in paths:
             if field not in base or field not in cand:
                 continue
             a, b = np.asarray(base[field]), np.asarray(cand[field])
-            if a.shape != b.shape or not np.array_equal(a, b):
+            equal = a.shape == b.shape and np.array_equal(a, b)
+            print(f"{name[:-4]},{field},{a.tolist()},{b.tolist()},same={equal}")
+            if not equal:
                 print(f"{name[:-4]},{field},COUNT_MISMATCH,{a.tolist()},{b.tolist()}")
                 failures += 1
         if ("batch_means" in base and "batch_means" in cand
