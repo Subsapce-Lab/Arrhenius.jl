@@ -2,9 +2,9 @@
 
 Counterflow flames support opt-in pseudo-arclength continuation on a fixed grid:
 
-- `pseudo_arclength!(flame; parameter=:inlet_flux_scale, steps=40, ds=0.05)` scales both inlet mass fluxes while preserving their ratio. `:fuel_mass_flux`, `:oxidizer_mass_flux`, and `:pressure` are also supported.
+- `pseudo_arclength!(flame; parameter=:inlet_flux_scale, steps=40, ds=0.05, parameter_scale=1.0, state_scale=1000.0)` scales both inlet mass fluxes while preserving their ratio. `:fuel_mass_flux`, `:oxidizer_mass_flux`, and `:pressure` are also supported.
 - The corrector retains the banded flame Jacobian and solves the scalar parameter/arclength border with a Schur complement. A residual infinity norm is returned at every point; a `turning_point` flag is set when the parameter tangent changes sign.
-- The initial flame must be converged. Continuation keeps the grid fixed; repeat on successively refined grids to estimate grid sensitivity. The solver adapts the arc step from corrector iteration count and halves it after a failed correction.
+- The initial flame must be converged. Continuation keeps the grid fixed; repeat on successively refined grids to estimate grid sensitivity. The solver adapts the arc step from corrector iteration count and halves it after a failed correction. A representative parameter_scale and state_scale let applications set the relative arc-length metric for the parameter and flame state.
 - The API covers diffusion, opposed premixed, and twin premixed counterflow flames. It does not support catalytic impinging jets.
 
 The H2/O2 example is in `example/flames/counterflow_pseudo_arclength.jl`. The upstream Cantera example uses two-point temperature control to march a stable/unstable branch, adjusting its two control temperatures and recording maximum temperature and strain rate. Cantera's selected control points are tied to grid crossings and its example allows grid refinement during continuation; those choices differ from this fixed-grid pseudo-arclength API.

@@ -65,7 +65,7 @@ function _continuation_correct!(f,w,u0,p0,tu,tp,parameter,weights,qscale,ds;
         tolerance=1e-8,maxiters=18,analytic=true,fluxbase=nothing)
     u=copy(u0); p=p0; B,N=size(u); r=similar(u); fp=similar(u)
     rhs=Vector{Float64}(undef,length(u)); z=similar(rhs)
-    pred=u0 .+ ds.*tu; ppred=p0+ds*qscale*tp
+    pred=u0 .+ ds.*tu; ppred=p0+ds*tp
     cu=tu ./ reshape(weights.^2,B,1); cp=tp/qscale^2
     merit0=Inf
     for it in 1:maxiters
@@ -97,7 +97,7 @@ end
 function _continuation_tangent!(f,w,u,p,parameter,weights,qscale;analytic=true,fluxbase=nothing)
     r=similar(u); fp=similar(u); rhs=Vector{Float64}(undef,length(u)); z=similar(rhs)
     _continuation_border_solve!(f,w,u,p,parameter,r,fp,rhs,z,analytic,fluxbase)
-    du=reshape(-z.*qscale,size(u)); tp=qscale
+    du=reshape(-z,size(u)); tp=1.
     nt=sqrt(sum((du./weights).^2)+(tp/qscale)^2); du./=nt; tp/=nt
     return du,tp
 end
@@ -107,7 +107,8 @@ end
 Returns points with states, residual infinity norms, arclengths, and turning flags.
 """
 function pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=40,ds=.05,
-        min_ds=ds/16,max_ds=2ds,tolerance=1e-8,max_corrector_iters=18,analytic=true)
+        min_ds=ds/16,max_ds=2ds,tolerance=1e-8,max_corrector_iters=18,
+        parameter_scale=nothing,state_scale=1.,analytic=true)
     parameter=Symbol(parameter)
     (f isa CounterflowDiffusionFlame || f isa CounterflowPremixedFlame || f isa CounterflowTwinPremixedFlame) ||
         throw(ArgumentError("pseudo-arclength is implemented for diffusion, opposed premixed, and twin premixed flames"))
@@ -116,8 +117,11 @@ function pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=40,ds=.05,
         throw(ArgumentError("require steps>=1 and 0<min_ds<=ds<=max_ds"))
     tolerance>0 && isfinite(tolerance) || throw(ArgumentError("positive finite tolerance required"))
     f.converged || throw(ArgumentError("initial flame must be converged"))
-    p0=_continuation_parameter(f,parameter,fluxbase); u0=copy(f.state); qscale=max(abs(p0),1.)
-    weights=[max(.05*maximum(abs,@view(u0[k,:])),1e-7) for k in axes(u0,1)]; w=CounterflowWorkspace(f)
+    p0=_continuation_parameter(f,parameter,fluxbase); u0=copy(f.state)
+    qscale=isnothing(parameter_scale) ? max(abs(p0),1.) : Float64(parameter_scale)
+    isfinite(qscale) && qscale>0 || throw(ArgumentError("parameter_scale must be positive and finite"))
+    isfinite(state_scale) && state_scale>0 || throw(ArgumentError("state_scale must be positive and finite"))
+    weights=state_scale .* [max(.05*maximum(abs,@view(u0[k,:])),1e-7) for k in axes(u0,1)]; w=CounterflowWorkspace(f)
     tu,tp=_continuation_tangent!(f,w,u0,p0,parameter,weights,qscale;analytic,fluxbase)
     pts=CounterflowContinuationPoint[]; arc=0.; lastsign=sign(tp); step=Float64(ds)
     r=similar(u0); counterflow_residual!(r,f,u0,w)
@@ -138,7 +142,7 @@ function pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=40,ds=.05,
         end
         u1,p1,rn,nit=corrected; arc+=step
         turn=sign(p1-p0)!=0 && sign(p1-p0)!=lastsign
-        du=u1.-u0; dp=(p1-p0)/qscale
+        du=u1.-u0; dp=p1-p0
         orient=sum(du.*tu./reshape(weights.^2,size(u0,1),1))+dp*tp/qscale^2
         orient<0 && (du .*= -1; dp *= -1)
         nt=sqrt(sum((du./weights).^2)+(dp/qscale)^2); tu=du./nt; tp=dp/nt

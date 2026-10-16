@@ -3,7 +3,7 @@
 Requires Cantera 4.0.0a2 and writes a compressed NPZ fixture to argv[1]. The control update follows
 samples/python/onedim/diffusion_flame_continuation.py at commit
 726522be4e2a13454d8415b7ef799d621f665cf3, with refinement disabled so every
-stored solution uses the same 12-point grid.
+stored solution uses the same fixed grid.
 """
 import json, sys
 import cantera as ct
@@ -42,6 +42,7 @@ for i in range(maxsteps):
     rows.append({"index":i,"Tmax_K":float(max(f.T)),"strain_rate_per_s":float(current),
         "grid_m":np.asarray(f.grid).tolist(),"T_K":np.asarray(f.T).tolist(),
         "Y":np.asarray(f.Y).T.tolist(),"velocity_m_s":np.asarray(f.velocity).tolist(),
+        "fuel_mdot":float(f.fuel_inlet.mdot),"oxidizer_mdot":float(f.oxidizer_inlet.mdot),
         "solver_stats":f.solver_stats})
     if abs(max(f.T)-initial_max)<16: step=min(step+3.,100.)
     elif abs(max(f.T)-initial_max)>20: step*=18./abs(max(f.T)-initial_max)
@@ -49,8 +50,7 @@ for i in range(maxsteps):
     if current/amax<.05: break
 turn=int(np.argmax([r["strain_rate_per_s"] for r in rows])) if rows else -1
 turnrow=rows[turn] if turn>=0 else {}
-np.savez_compressed(out,cantera_version=np.asarray([ct.__version__]),
-    grid_points=np.asarray([npoints]),pressure_Pa=np.asarray([1e5]),
+np.savez_compressed(out,grid_points=np.asarray([npoints]),pressure_Pa=np.asarray([1e5]),
     fuel_mdot=np.asarray([.5]),oxidizer_mdot=np.asarray([3.]),
     grid_m=np.asarray(turnrow.get("grid_m",f.grid)),
     Tmax_curve_K=np.asarray([r["Tmax_K"] for r in rows]),
@@ -59,7 +59,9 @@ np.savez_compressed(out,cantera_version=np.asarray([ct.__version__]),
     turning_Y=np.asarray(turnrow.get("Y",f.Y.T)),
     turning_velocity_m_s=np.asarray(turnrow.get("velocity_m_s",f.velocity)),
     turning_Tmax_K=np.asarray([turnrow.get("Tmax_K",max(f.T))]),
-    turning_strain_rate_per_s=np.asarray([turnrow.get("strain_rate_per_s",f.strain_rate("max"))]))
+    turning_strain_rate_per_s=np.asarray([turnrow.get("strain_rate_per_s",f.strain_rate("max"))]),
+    turning_fuel_mdot=np.asarray([turnrow.get("fuel_mdot",f.fuel_inlet.mdot)]),
+    turning_oxidizer_mdot=np.asarray([turnrow.get("oxidizer_mdot",f.oxidizer_inlet.mdot)]))
 print(json.dumps({"points":len(rows),"turning_index":turn,
     "turning_strain":float(turnrow.get("strain_rate_per_s",float("nan"))),
     "turning_Tmax":float(turnrow.get("Tmax_K",float("nan"))),
