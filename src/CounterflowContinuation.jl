@@ -171,12 +171,13 @@ function restore_continuation_checkpoint!(f,path::AbstractString)
     qs=only(a["parameter_scale"]); ss=only(a["state_scale"])
     all(isfinite,(p,tp,arc,step,mind,maxd,qs,ss)) && p>0 && arc>=0 && 0<mind<=step<=maxd && qs>0 && ss>0 ||
         throw(ArgumentError("invalid checkpoint continuation scalars"))
-    fb=Tuple(Float64.(a["inlet_flux_base"])); length(fb)==2 && all(x->isfinite(x)&&x>0,fb) ||
+    fb=Tuple(Float64.(a["inlet_flux_base"])); length(fb)==2 && all(x->isfinite(x)&&x>=0,fb) ||
         throw(ArgumentError("invalid inlet-flux baseline"))
-    pressure=only(a["pressure"]); mf=only(a["fuel_mass_flux"]); mo=only(a["oxidizer_mass_flux"])
-    all(x->isfinite(x)&&x>0,(pressure,mf,mo)) || throw(ArgumentError("invalid checkpoint flame parameters"))
     param=Symbol(_continuation_text(a,"parameter_utf8"))
     param in (:fuel_mass_flux,:oxidizer_mass_flux,:pressure,:inlet_flux_scale) || throw(ArgumentError("invalid checkpoint parameter"))
+    param===:inlet_flux_scale && !all(>(0),fb) && throw(ArgumentError("positive inlet-flux baseline required for proportional scaling"))
+    pressure=only(a["pressure"]); mf=only(a["fuel_mass_flux"]); mo=only(a["oxidizer_mass_flux"])
+    (isfinite(pressure)&&pressure>0&&isfinite(mf)&&mf>0&&isfinite(mo)&&mo>=0) || throw(ArgumentError("invalid checkpoint flame parameters"))
     b.grid=z; b.state=u; b.pressure=pressure; b.fuel_mass_flux=mf; b.oxidizer_mass_flux=mo; b.converged=true
     return (parameter=param,parameter_value=Float64(p),tangent_state=tu,tangent_parameter=Float64(tp),
         arclength=Float64(arc),next_step=Float64(step),min_ds=Float64(mind),max_ds=Float64(maxd),
