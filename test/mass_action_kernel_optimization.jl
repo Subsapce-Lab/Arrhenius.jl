@@ -51,6 +51,49 @@ function comparison_vectors(ns)
         fill(-1.0e-14, ns), mixed, ordinary)
 end
 
+function synthetic_comparison_vectors(ns)
+    # Cartesian product: all sign patterns plus signed traces and ordinary values.
+    values = (-1.0e-25, 0.0, 1.0e-25, -1.0e-14, 0.25, 1.0)
+    return (Float64[x...] for x in Iterators.product(ntuple(_ -> values, ns)...))
+end
+
+function check_synthetic_mass_action(name, species_count, orders_values, stoich_values)
+    species = collect(1:species_count)
+    orders = Float64[orders_values...]
+    stoich = sparse(species, ones(Int, species_count), Float64[stoich_values...], species_count, 1)
+    entries = 1:species_count
+    count = 0
+    for small_C in synthetic_comparison_vectors(species_count)
+        C = ones(Float64, max(3, species_count))
+        C[1:species_count] .= small_C
+        old = old_mass_action_product(C, species, orders, stoich, 1, entries)
+        new = Arrhenius._mass_action_product(C, species, orders, stoich, 1, entries)
+        old === new || error("synthetic mismatch: $name C=$small_C old=$old new=$new")
+        count += 1
+    end
+    println("MASS_ACTION_SYNTHETIC name=$name species=$species_count states=$count stored_stoich=$(nnz(stoich))")
+    return count
+end
+
+function check_synthetic_mass_action()
+    cases = (
+        ("2A+B", 2, (2, 1), (2, 1)),
+        ("A+2B", 2, (1, 2), (1, 2)),
+        ("3A", 1, (3,), (3,)),
+        ("2A", 1, (2,), (2,)),
+        ("A+B+C", 3, (1, 1, 1), (1, 1, 1)),
+        ("A+B", 2, (1, 1), (1, 1)),
+        ("noninteger-order", 2, (0.5, 1), (1, 1)),
+        ("explicit-order-override", 2, (2, 1), (1, 1)),
+        ("zero-order-entry", 2, (0, 1), (0, 1)),
+    )
+    total = 0
+    for (name, ns, orders, stoich) in cases
+        total += check_synthetic_mass_action(name, ns, orders, stoich)
+    end
+    println("MASS_ACTION_SYNTHETIC_TOTAL cases=$(length(cases)) states=$total")
+end
+
 function check_mass_action_mechanism(path)
     solution = Arrhenius.CreateSolution(path)
     reaction = solution.reaction
@@ -104,6 +147,9 @@ function check_mass_action_mechanism(path)
 end
 
 @testset "fused mass-action scan is bit-identical to PR-base helper" begin
+    @testset "synthetic repeated stoichiometric terms and sign patterns" begin
+        check_synthetic_mass_action()
+    end
     configured = get(ENV, "ARRHENIUS_MASS_ACTION_MECHANISMS", "")
     if isempty(configured)
         @testset "focused signed and fractional orders" begin
