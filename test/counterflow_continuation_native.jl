@@ -19,5 +19,15 @@ using Test, Arrhenius
         @test all(size(p.state)==size(f.state) for p in curve)
         @test all(p->p.max_strain_rate>0,curve)
         @test !any(p.turning_point for p in curve)
+        checkpoint=joinpath(mktempdir(),"counterflow-continuation.npz")
+        save_continuation_checkpoint(checkpoint,f,curve[2];parameter=:inlet_flux_scale)
+        f2=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1",
+            mdot_fuel=.5,mdot_oxidizer=3.,T_oxidizer=500.,width=.018,grid)
+        resumed=pseudo_arclength!(f2;restart=checkpoint,steps=1,tolerance=1e-7)
+        rm(dirname(checkpoint);recursive=true,force=true)
+        @test resumed[1].state==curve[2].state
+        @test resumed[1].arclength==curve[2].arclength
+        @test resumed[2].parameter≈curve[3].parameter rtol=1e-12
+        @test resumed[2].state≈curve[3].state rtol=1e-9 atol=1e-10
     end
 end

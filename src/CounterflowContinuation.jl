@@ -12,6 +12,17 @@ struct CounterflowContinuationPoint
     residual_inf::Float64
     arclength::Float64
     turning_point::Bool
+    tangent_state::Matrix{Float64}
+    tangent_parameter::Float64
+    next_step::Float64
+    minimum_step::Float64
+    maximum_step::Float64
+    parameter_scale::Float64
+    state_scale::Float64
+    pressure::Float64
+    fuel_mass_flux::Float64
+    oxidizer_mass_flux::Float64
+    inlet_flux_base::Tuple{Float64,Float64}
 end
 
 function _continuation_strain_rate(f,u)
@@ -102,57 +113,144 @@ function _continuation_tangent!(f,w,u,p,parameter,weights,qscale;analytic=true,f
     return du,tp
 end
 
-"""Trace a fixed-grid branch with a bordered pseudo-arclength Newton corrector.
-`parameter` is `:fuel_mass_flux`, `:oxidizer_mass_flux`, `:pressure`, or `:inlet_flux_scale`.
-Returns points with states, residual infinity norms, arclengths, and turning flags. `parameter_scale` and `state_scale`
-control the relative continuation metric; both must be positive and finite. The initial state is used to construct
-componentwise state scales, multiplied by `state_scale`.
-"""
-function pseudo_arclength!(f;parameter=:fuel_mass_flux,steps=40,ds=.05,
-        min_ds=ds/16,max_ds=2ds,tolerance=1e-8,max_corrector_iters=18,
-        parameter_scale=nothing,state_scale=1.,analytic=true)
-    parameter=Symbol(parameter)
+_continuation_base(f) = f isa CounterflowDiffusionFlame ? f : f.flow
+_continuation_kind(f::CounterflowDiffusionFlame) = "diffusion"
+_continuation_kind(f::CounterflowPremixedFlame) = "opposed_premixed"
+_continuation_kind(f::CounterflowTwinPremixedFlame) = "twin_premixed"
+_continuation_bytes(s) = collect(codeunits(string(s)))
+_continuation_text(a,k) = String(vec(UInt8.(a[k])))
+function _continuation_mechanism_signature(f)
+    g=f.gas
+    bytes2hex(SHA.sha256(repr((g.species_names,g.MW,g.thermo,g.reaction,g.trans);context=:limit=>false)))
+end
+function _continuation_boundary_signature(f)
+    b=_continuation_base(f)
+    repr((b.fuel_temperature,b.oxidizer_temperature,b.fuel_Y,b.oxidizer_Y,b.transport_model,
+        b.soret_enabled,b.flux_gradient_basis,b.radiation_enabled,b.boundary_emissivities,b.fixed_temperature))
+end
+
+"""Save a continuation point, tangent, grid, and next arc step to an NPZ checkpoint."""
+function save_continuation_checkpoint(path::AbstractString,f,point::CounterflowContinuationPoint;parameter,overwrite=false)
+    ispath(path) && !overwrite && throw(ArgumentError("checkpoint exists; use overwrite=true"))
+    param=Symbol(parameter); b=_continuation_base(f)
+    param in (:fuel_mass_flux,:oxidizer_mass_flux,:pressure,:inlet_flux_scale) ||
+        throw(ArgumentError("unsupported continuation checkpoint parameter"))
+    isnothing(b.control_points) || throw(ArgumentError("two-point control checkpoint is unsupported"))
+    d=Dict{String,Any}(
+        "format_utf8"=>_continuation_bytes("arrhenius-counterflow-continuation-v1"),
+        "kind_utf8"=>_continuation_bytes(_continuation_kind(f)),
+        "parameter_utf8"=>_continuation_bytes(param),
+        "mechanism_signature_utf8"=>_continuation_bytes(_continuation_mechanism_signature(f)),
+        "species_names_utf8"=>_continuation_bytes(join(f.gas.species_names,"\n")),
+        "boundary_signature_utf8"=>_continuation_bytes(_continuation_boundary_signature(f)),
+        "grid"=>copy(b.grid),"state"=>copy(point.state),"tangent_state"=>copy(point.tangent_state),
+        "parameter_value"=>[point.parameter],"tangent_parameter"=>[point.tangent_parameter],
+        "arclength"=>[point.arclength],"next_step"=>[point.next_step],
+        "minimum_step"=>[point.minimum_step],"maximum_step"=>[point.maximum_step],
+        "parameter_scale"=>[point.parameter_scale],"state_scale"=>[point.state_scale],
+        "pressure"=>[point.pressure],"fuel_mass_flux"=>[point.fuel_mass_flux],
+        "oxidizer_mass_flux"=>[point.oxidizer_mass_flux],"inlet_flux_base"=>collect(point.inlet_flux_base))
+    npzwrite(path,d); path
+end
+
+"""Restore a checkpoint after verifying flame kind, mechanism, and boundary conditions."""
+function restore_continuation_checkpoint!(f,path::AbstractString)
+    a=npzread(path); b=_continuation_base(f)
+    _continuation_text(a,"format_utf8")=="arrhenius-counterflow-continuation-v1" || throw(ArgumentError("unknown continuation checkpoint format"))
+    _continuation_text(a,"kind_utf8")==_continuation_kind(f) || throw(ArgumentError("continuation checkpoint flame kind mismatch"))
+    _continuation_text(a,"mechanism_signature_utf8")==_continuation_mechanism_signature(f) || throw(ArgumentError("continuation checkpoint mechanism mismatch"))
+    _continuation_text(a,"species_names_utf8")==join(f.gas.species_names,"\n") || throw(ArgumentError("continuation checkpoint species order mismatch"))
+    _continuation_text(a,"boundary_signature_utf8")==_continuation_boundary_signature(f) || throw(ArgumentError("continuation checkpoint boundary mismatch"))
+    isnothing(b.control_points) || throw(ArgumentError("disable two-point control before checkpoint restart"))
+    z=vec(Float64.(a["grid"])); u=Matrix{Float64}(a["state"]); tu=Matrix{Float64}(a["tangent_state"]); n=f.gas.n_species
+    length(z)>=5 && all(isfinite,z) && all(>(0),diff(z)) || throw(ArgumentError("invalid checkpoint grid"))
+    size(u)==(n+4,length(z)) && all(isfinite,u) || throw(DimensionMismatch("invalid checkpoint state"))
+    size(tu)==size(u) && all(isfinite,tu) || throw(DimensionMismatch("invalid checkpoint tangent"))
+    p=only(a["parameter_value"]); tp=only(a["tangent_parameter"]); arc=only(a["arclength"])
+    step=only(a["next_step"]); mind=only(a["minimum_step"]); maxd=only(a["maximum_step"])
+    qs=only(a["parameter_scale"]); ss=only(a["state_scale"])
+    all(isfinite,(p,tp,arc,step,mind,maxd,qs,ss)) && p>0 && arc>=0 && 0<mind<=step<=maxd && qs>0 && ss>0 ||
+        throw(ArgumentError("invalid checkpoint continuation scalars"))
+    fb=Tuple(Float64.(a["inlet_flux_base"])); length(fb)==2 && all(x->isfinite(x)&&x>0,fb) ||
+        throw(ArgumentError("invalid inlet-flux baseline"))
+    pressure=only(a["pressure"]); mf=only(a["fuel_mass_flux"]); mo=only(a["oxidizer_mass_flux"])
+    all(x->isfinite(x)&&x>0,(pressure,mf,mo)) || throw(ArgumentError("invalid checkpoint flame parameters"))
+    param=Symbol(_continuation_text(a,"parameter_utf8"))
+    param in (:fuel_mass_flux,:oxidizer_mass_flux,:pressure,:inlet_flux_scale) || throw(ArgumentError("invalid checkpoint parameter"))
+    b.grid=z; b.state=u; b.pressure=pressure; b.fuel_mass_flux=mf; b.oxidizer_mass_flux=mo; b.converged=true
+    return (parameter=param,parameter_value=Float64(p),tangent_state=tu,tangent_parameter=Float64(tp),
+        arclength=Float64(arc),next_step=Float64(step),min_ds=Float64(mind),max_ds=Float64(maxd),
+        parameter_scale=Float64(qs),state_scale=Float64(ss),inlet_flux_base=fb)
+end
+
+function _continuation_point(f,p,u,rn,arc,turn,tu,tp,step,mind,maxd,qs,ss,fb)
+    b=_continuation_base(f)
+    CounterflowContinuationPoint(Float64(p),maximum(temperature(f)),_continuation_strain_rate(f,u),copy(u),
+        Float64(rn),Float64(arc),Bool(turn),copy(tu),Float64(tp),Float64(step),Float64(mind),Float64(maxd),Float64(qs),Float64(ss),
+        b.pressure,b.fuel_mass_flux,b.oxidizer_mass_flux,fb)
+end
+
+"""Trace or restart a fixed-grid branch with a bordered pseudo-arclength Newton corrector."""
+function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothing,min_ds=nothing,max_ds=nothing,
+        tolerance=1e-8,max_corrector_iters=18,parameter_scale=nothing,state_scale=nothing,analytic=true)
     (f isa CounterflowDiffusionFlame || f isa CounterflowPremixedFlame || f isa CounterflowTwinPremixedFlame) ||
         throw(ArgumentError("pseudo-arclength is implemented for diffusion, opposed premixed, and twin premixed flames"))
-    fluxbase=parameter===:inlet_flux_scale ? (f.fuel_mass_flux,f.oxidizer_mass_flux) : nothing
-    steps>=1 && isfinite(ds) && ds>0 && 0<min_ds<=ds<=max_ds ||
-        throw(ArgumentError("require steps>=1 and 0<min_ds<=ds<=max_ds"))
+    b=_continuation_base(f); saved=isnothing(restart) ? nothing : restore_continuation_checkpoint!(f,restart)
+    parameter=isnothing(parameter) ? (isnothing(saved) ? :fuel_mass_flux : saved.parameter) : Symbol(parameter)
+    isnothing(saved) || parameter===saved.parameter || throw(ArgumentError("restart parameter differs from checkpoint"))
+    fb=isnothing(saved) ? (b.fuel_mass_flux,b.oxidizer_mass_flux) : saved.inlet_flux_base
+    if !isnothing(saved)
+        _continuation_set_parameter!(f,parameter,saved.parameter_value,parameter===:inlet_flux_scale ? fb : nothing)
+    end
+    steps>=1 || throw(ArgumentError("steps must be positive"))
     tolerance>0 && isfinite(tolerance) || throw(ArgumentError("positive finite tolerance required"))
-    f.converged || throw(ArgumentError("initial flame must be converged"))
-    p0=_continuation_parameter(f,parameter,fluxbase); u0=copy(f.state)
-    qscale=isnothing(parameter_scale) ? max(abs(p0),1.) : Float64(parameter_scale)
-    isfinite(qscale) && qscale>0 || throw(ArgumentError("parameter_scale must be positive and finite"))
-    isfinite(state_scale) && state_scale>0 || throw(ArgumentError("state_scale must be positive and finite"))
-    weights=state_scale .* [max(.05*maximum(abs,@view(u0[k,:])),1e-7) for k in axes(u0,1)]; w=CounterflowWorkspace(f)
-    tu,tp=_continuation_tangent!(f,w,u0,p0,parameter,weights,qscale;analytic,fluxbase)
-    pts=CounterflowContinuationPoint[]; arc=0.; lastsign=sign(tp); step=Float64(ds)
-    r=similar(u0); counterflow_residual!(r,f,u0,w)
-    push!(pts,CounterflowContinuationPoint(p0,maximum(temperature(f)),_continuation_strain_rate(f,u0),copy(u0),norm(r,Inf),arc,false))
+    (f.converged || !isnothing(saved)) || throw(ArgumentError("initial flame must be converged"))
+    p0=isnothing(saved) ? _continuation_parameter(f,parameter,parameter===:inlet_flux_scale ? fb : nothing) : saved.parameter_value
+    u0=copy(f.state)
+    qs=isnothing(parameter_scale) ? (isnothing(saved) ? max(abs(p0),1.) : saved.parameter_scale) : Float64(parameter_scale)
+    ss=isnothing(state_scale) ? (isnothing(saved) ? 1. : saved.state_scale) : Float64(state_scale)
+    isfinite(qs) && qs>0 || throw(ArgumentError("parameter_scale must be positive and finite"))
+    isfinite(ss) && ss>0 || throw(ArgumentError("state_scale must be positive and finite"))
+    step=Float64(isnothing(ds) ? (isnothing(saved) ? .05 : saved.next_step) : ds)
+    mind=Float64(isnothing(min_ds) ? (isnothing(saved) ? step/16 : saved.min_ds) : min_ds)
+    maxd=Float64(isnothing(max_ds) ? (isnothing(saved) ? 2step : saved.max_ds) : max_ds)
+    isfinite(step) && 0<mind<=step<=maxd || throw(ArgumentError("require 0<min_ds<=ds<=max_ds"))
+    weights=ss .* [max(.05*maximum(abs,@view(u0[k,:])),1e-7) for k in axes(u0,1)]
+    w=CounterflowWorkspace(f); r=similar(u0); counterflow_residual!(r,f,u0,w); rn0=norm(r,Inf)
+    rn0<=tolerance || throw(ArgumentError("initial/restart residual $rn0 exceeds tolerance $tolerance"))
+    if isnothing(saved)
+        tu,tp=_continuation_tangent!(f,w,u0,p0,parameter,weights,qs;analytic,fluxbase=parameter===:inlet_flux_scale ? fb : nothing)
+        arc=0.
+    else
+        tu,tp,arc=saved.tangent_state,saved.tangent_parameter,saved.arclength
+    end
+    f.state .= u0; _continuation_set_parameter!(f,parameter,p0,parameter===:inlet_flux_scale ? fb : nothing); f.converged=true
+    pts=CounterflowContinuationPoint[]; lastsign=sign(tp)
+    push!(pts,_continuation_point(f,p0,u0,rn0,arc,false,tu,tp,step,mind,maxd,qs,ss,fb))
     for _ in 1:steps
         corrected=nothing
         while corrected===nothing
-            corrected=_continuation_correct!(f,w,u0,p0,tu,tp,parameter,weights,qscale,step;
-                tolerance,maxiters=max_corrector_iters,analytic,fluxbase)
+            corrected=_continuation_correct!(f,w,u0,p0,tu,tp,parameter,weights,qs,step;
+                tolerance,maxiters=max_corrector_iters,analytic,fluxbase=parameter===:inlet_flux_scale ? fb : nothing)
             if corrected===nothing
                 step*=.5
-                if step<min_ds
-                    _continuation_set_parameter!(f,parameter,p0,fluxbase)
-                    f.state .= u0; f.converged=true
-                    error("pseudo-arclength corrector failed at min_ds=$min_ds")
+                if step<mind
+                    _continuation_set_parameter!(f,parameter,p0,parameter===:inlet_flux_scale ? fb : nothing)
+                    f.state .= u0; f.converged=true; error("pseudo-arclength corrector failed at min_ds=$mind")
                 end
             end
         end
         u1,p1,rn,nit=corrected; arc+=step
         turn=sign(p1-p0)!=0 && sign(p1-p0)!=lastsign
         du=u1.-u0; dp=p1-p0
-        orient=sum(du.*tu./reshape(weights.^2,size(u0,1),1))+dp*tp/qscale^2
+        orient=sum(du.*tu./reshape(weights.^2,size(u0,1),1))+dp*tp/qs^2
         orient<0 && (du .*= -1; dp *= -1)
-        nt=sqrt(sum((du./weights).^2)+(dp/qscale)^2); tu=du./nt; tp=dp/nt
-        _continuation_set_parameter!(f,parameter,p1,fluxbase); f.state .= u1; f.converged=true
-        push!(pts,CounterflowContinuationPoint(p1,maximum(temperature(f)),_continuation_strain_rate(f,u1),copy(u1),rn,arc,turn))
+        nt=sqrt(sum((du./weights).^2)+(dp/qs)^2); tu=du./nt; tp=dp/nt
+        _continuation_set_parameter!(f,parameter,p1,parameter===:inlet_flux_scale ? fb : nothing); f.state .= u1; f.converged=true
+        step=min(maxd,step*(nit<=5 ? 1.25 : nit>=12 ? .7 : 1.0))
+        push!(pts,_continuation_point(f,p1,u1,rn,arc,turn,tu,tp,step,mind,maxd,qs,ss,fb))
         u0=copy(u1); p0=p1; lastsign=sign(tp)
-        step=min(max_ds,step*(nit<=5 ? 1.25 : nit>=12 ? .7 : 1.0))
     end
-    return pts
+    pts
 end
-export CounterflowContinuationPoint, pseudo_arclength!
+export CounterflowContinuationPoint, pseudo_arclength!, save_continuation_checkpoint, restore_continuation_checkpoint!
