@@ -32,7 +32,8 @@ for base_path in paths:
             if a.shape != b.shape or not np.array_equal(a, b):
                 print(f"{name[:-4]},{field},COUNT_MISMATCH,{a.tolist()},{b.tolist()}")
                 failures += 1
-        if "batch_means" in base and "batch_means" in cand:
+        if ("batch_means" in base and "batch_means" in cand
+                and np.size(base["batch_means"]) and np.size(cand["batch_means"])):
             base_time = float(np.mean(base["batch_means"]))
             candidate_time = float(np.mean(cand["batch_means"]))
             print(f"{name[:-4]},timing_seconds,{base_time:.9g},{candidate_time:.9g},ratio={candidate_time/base_time:.9g}")
