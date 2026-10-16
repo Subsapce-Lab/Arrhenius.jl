@@ -1,5 +1,6 @@
 import json, statistics, sys, time
 import cantera as ct
+import numpy as np
 
 spec = json.load(open(sys.argv[1]))
 gas = ct.Solution(spec["mechanism"] + ".yaml")
