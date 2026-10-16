@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo=$1; manifest=$2; out=$3; batches=$4; per_batch=$5
-cd "$HOME/work/nh3-parity"
+cd "${NH3_HARNESS_DIR:?set NH3_HARNESS_DIR to the validation harness directory}"
 source ./env.sh
 export LC_ALL=C OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 mkdir -p "$out"
