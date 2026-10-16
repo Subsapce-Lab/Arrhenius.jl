@@ -260,6 +260,26 @@ end
     @test f.residual_calls==3
 end
 
+@testset "counterflow negative bound fraction fails before trial evaluation" begin
+    # Exercise the production Newton path, not just boundStep: the native
+    # species value is already below its lower bound and Newton points farther
+    # out. Cantera's asymmetric boundStep returns a negative fraction, which
+    # dampStep rejects (<1e-10) before evaluating any trial residual.
+    lower=-1e-7
+    state=ones(4,1); state[2]=lower-1e-7
+    f=BoundRefreshNewtonFixture(state,(n_species=1,),nothing,1,0)
+    band=zeros(22,4)
+    for k in 1:4
+        band[15,k]=1
+    end
+    _,pivots=LinearAlgebra.LAPACK.gbtrf!(7,7,4,band)
+    w=BoundRefreshWorkspace(copy(band),copy(band),pivots,0,Inf,false,0)
+    @test Arrhenius._counterflow_bound_fraction(state[2,1],-1.0,lower,1.00001)<0
+    @test !Arrhenius._counterflow_newton!(f,w;maxiters=1)
+    @test f.residual_calls==1 # initial residual only; no damped trial was evaluated
+    @test w.jac_evals==1
+end
+
 @testset "counterflow time-step budget and steady cadence" begin
     # The transient budget caps successful steps (the first two attempts fail
     # in this oracle), and an accepted final step returns before another steady
