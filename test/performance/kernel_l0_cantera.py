@@ -9,7 +9,7 @@ T = 1500.0
 P = spec["P_atm"] * ct.one_atm
 if len(sys.argv) > 2 and sys.argv[2].endswith(".npz"):
     with np.load(sys.argv[2], allow_pickle=False) as state:
-        state_index = max(0, state["T"].size // 2)
+        state_index = max(0, (state["T"].size - 1) // 2)
         T = float(state["T"][state_index])
         Y = np.asarray(state["Y"][:, state_index], dtype=np.float64)
     gas.TPY = T, P, Y
@@ -48,7 +48,7 @@ def measured(prop):
     total, samples = measure(call)
     return max(0, total - setter), total, samples
 
-print(f"Cantera={ct.__version__} mechanism={spec['mechanism']} nspecies={gas.n_species} nreactions={gas.n_reactions} T={T} P={P} state_index={state_index}")
+print(f"Cantera={ct.__version__} mechanism={spec['mechanism']} nspecies={gas.n_species} nreactions={gas.n_reactions} T={T} P={P} state_index={state_index + 1}")
 print(f"state_setter_ns={setter} samples_ns={setter_samples}")
 for label, prop in (("cp", "partial_molar_cp"), ("h", "partial_molar_enthalpies"),
                     ("s", "partial_molar_entropies"), ("forward_rates", "forward_rate_constants"),
