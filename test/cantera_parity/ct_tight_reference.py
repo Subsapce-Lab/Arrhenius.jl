@@ -82,9 +82,9 @@ def main(spec_path, output_path):
     data = dict(
         grid=flame.grid.copy(), T=flame.T.copy(), Y=flame.Y.copy(),
         velocity=flame.velocity.copy(),
-        SL=np.asarray([float(flame.velocity[0]) if spec["kind"] == "free"
-                       else float(np.max(flame.T))]),
-        mdot=np.asarray([float(flame.density[0] * flame.velocity[0])]),
+        SL=np.asarray(float(flame.velocity[0]) if spec["kind"] == "free"
+                       else float(np.max(flame.T))),
+        mdot=np.asarray(float(flame.density[0] * flame.velocity[0])),
         species_names=np.asarray(flame.gas.species_names),
         newton_ok=np.asarray([1], dtype=np.int8),
         solver_rtol=np.asarray([RTOL]), solver_atol=np.asarray([ATOL]),
