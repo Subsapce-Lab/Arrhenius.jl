@@ -152,6 +152,11 @@ end
     # Newton direction must return zero, matching Cantera's refresh trigger.
     @test bound(0.0,-1e-6,lower,upper)==0.1
     @test bound(lower,-1e-12,lower,upper)==0.0
+    # Cantera's lower branch intentionally has no zero clamp: if the current
+    # value is already below lower and the step moves farther down, the
+    # returned fraction is negative. The upper branch does clamp this case.
+    @test bound(lower-1e-7,-1e-6,lower,upper)≈-0.1 rtol=1e-14
+    @test bound(upper+1e-7,1e-6,lower,upper)==0.0
 end
 
 @testset "counterflow transient Jacobian algebraic mask" begin

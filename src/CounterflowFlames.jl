@@ -622,7 +622,10 @@ _counterflow_retry_steady(successful_steps) =
     if trial>upper
         return max(0.0,min(1.0,(upper-value)/(trial-value)))
     elseif trial<lower
-        return max(0.0,min(1.0,(value-lower)/(value-trial)))
+        # Match MultiNewton::boundStep's asymmetric lower-bound branch. It
+        # does not clamp to zero when the current value is already below the
+        # bound and the proposed step moves farther out of range.
+        return min(1.0,(value-lower)/(value-trial))
     end
     return 1.0
 end
