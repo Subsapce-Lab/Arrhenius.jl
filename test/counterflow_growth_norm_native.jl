@@ -190,17 +190,19 @@ mutable struct CounterflowBudgetFixture
     state::Matrix{Float64}
     transient_calls::Int
     steady_calls::Int
+    defer_flags::Vector{Bool}
 end
 mutable struct CounterflowBudgetWorkspace
     jac_evals::Int
     source_gradient::Matrix{Float64}
 end
 Arrhenius.CounterflowWorkspace(::CounterflowBudgetFixture)=CounterflowBudgetWorkspace(0,zeros(0,1))
-function Arrhenius._counterflow_newton!(f::CounterflowBudgetFixture,w;previous=nothing,kwargs...)
+function Arrhenius._counterflow_newton!(f::CounterflowBudgetFixture,w;previous=nothing,defer_failed_refresh=false,kwargs...)
     if previous===nothing
         f.steady_calls+=1
         return false
     end
+    push!(f.defer_flags,defer_failed_refresh)
     f.transient_calls+=1
     w.jac_evals+=1 # no growth in this oracle
     f.transient_calls>2 || return false
@@ -264,7 +266,7 @@ end
     # retry, matching Cantera's timeStep(nsteps) check in SteadyStateSystem.cpp.
     # Steady retries use the Cantera cadence: every ten successful steps.
     for (budget,steadies,accepted) in ((10,1,10),(21,3,21))
-        f=CounterflowBudgetFixture([0.],zeros(1,1),0,0)
+        f=CounterflowBudgetFixture([0.],zeros(1,1),0,0,Bool[])
         dts=Float64[]
         steps0=Arrhenius.COUNTERFLOW_STATS.time_steps
         failures0=Arrhenius.COUNTERFLOW_STATS.time_step_failures
@@ -273,6 +275,7 @@ end
         @test Arrhenius.COUNTERFLOW_STATS.time_steps-steps0==budget
         @test Arrhenius.COUNTERFLOW_STATS.time_step_failures-failures0==2
         @test f.transient_calls==budget+2
+        @test f.defer_flags[1:2]==[true,false]
         @test f.steady_calls==steadies
     end
 end
