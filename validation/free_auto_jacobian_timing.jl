@@ -1,4 +1,4 @@
-using Arrhenius, LinearAlgebra, Statistics
+using Arrhenius, LinearAlgebra
 BLAS.set_num_threads(1)
 
 root = joinpath(@__DIR__, "..", "test", "data", "cantera")
@@ -28,5 +28,5 @@ for analytic in (false, true)
     for _ in 1:15
         push!(samples, @elapsed Arrhenius._flame_jacobian(f, f.state, w, r; analytic))
     end
-    println("analytic=$analytic points=$N median_s=$(median(samples)) min_s=$(minimum(samples))")
+    println("analytic=$analytic points=$N median_s=$(sort(samples)[cld(length(samples),2)]) min_s=$(minimum(samples))")
 end
