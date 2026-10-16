@@ -19,21 +19,6 @@ function build_diffusion(spec,snapshot,gas)
     f.state[end,:].=getvec(snapshot,"flame/density").*getvec(snapshot,"flame/velocity")
     return f
 end
-function cantera_refresh_counts(path,n)
-    lines=readlines(path); counts=Int[]; current=0
-    for line in lines
-        if occursin(r"^Timestep \([0-9]+\) dt=",line)
-            length(counts)<n && push!(counts,0)
-            current=length(counts)
-        elseif current>0 && current<=n &&
-                (occursin("Re-evaluating Jacobian",line) || occursin("Maximum Jacobian age reached",line))
-            counts[current]+=1
-        elseif current>0 && occursin(r"Timestep \([0-9]+\) (failed|succeeded)",line)
-            current=0
-        end
-    end
-    return counts
-end
 function first_damping(log)
     m=match(r"Counterflow Newton [0-9]+ .*?damping=([0-9.eE+-]+)",log)
     return m===nothing ? nothing : parse(Float64,m.captures[1])
@@ -51,8 +36,6 @@ function main(specpath,capture,outpath)
     manifest=YAML.load_file(joinpath(capture,"manifest.json"))
     trace=YAML.load_file(joinpath(capture,"ct_decisions.json"))
     attempts=trace["attempts"]
-    ct_refresh=cantera_refresh_counts(joinpath(capture,"ct_decisions.log"),length(attempts))
-    length(ct_refresh)==length(attempts) || error("Cantera trace attempt count mismatch")
     gas=CreateSolution(spec["mechanism"]*".yaml")
     snap=npzread(joinpath(capture,manifest["stages"][1]["file"]))
     f=build_diffusion(spec,snap,gas); initial=copy(f.state)
@@ -67,14 +50,17 @@ function main(specpath,capture,outpath)
         log=open(logpath,"w"); iterations=Ref(0); before=w.jac_evals
         accepted=redirect_stdout(log) do
             Arrhenius._counterflow_newton!(f,w;previous,dt=Float64(ct["dt"]),
-                maxiters=20,loglevel=3,iterations)
+                maxiters=200,loglevel=3,iterations)
         end
         close(log)
         native_log=read(logpath,String)
         native=Dict("accepted"=>accepted,"jacobians"=>w.jac_evals-before,
             "damping"=>first_damping(native_log),"iterations"=>iterations[])
+        # ct_decisions.json stores the per-solve Jacobian delta. Log markers
+        # are cumulative across retries and may be emitted before the next
+        # attempt consumes a refreshed Jacobian.
         ctrow=Dict("dt"=>ct["dt"],"accepted"=>ct["accepted"],
-            "jacobians"=>ct_refresh[i],"damping"=>ct["damping"])
+            "jacobians"=>ct["jacobians"],"damping"=>ct["damping"])
         matched,damping_ok=first_difference(ctrow,native)
         push!(rows,Dict("attempt"=>i,"cantera"=>ctrow,"native"=>native,
             "damping_matches_print_precision"=>damping_ok,"decisions_match"=>matched))
