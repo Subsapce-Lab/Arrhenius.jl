@@ -210,3 +210,37 @@ end
     @test maxerr < 2e-7
 
 end
+
+@testset "Cantera auto Jacobian fixture: free flame source species columns" begin
+    root=joinpath(@__DIR__,"data","cantera")
+    ref=Arrhenius.npzread(joinpath(root,"free_auto_stagni.npz"))
+    expected=Arrhenius.npzread(joinpath(root,"free_auto_stagni_source.npz"))["source_jacobian"]
+    mechanism=joinpath(@__DIR__,"..","mechanism","stagni_2023.yaml")
+    gas=CreateSolution(mechanism); grid=vec(ref["grid"])
+    f=FreeFlame(gas;T=300.0,P=one_atm,X="NH3:0.7,H2:0.3,O2:0.5625,N2:2.115",
+        grid,width=grid[end]-grid[1],transport_model=:mixture_averaged,
+        discretization=:finite_difference)
+    n,N=gas.n_species,length(grid)
+    f.state[1,:].=vec(ref["values/T"])./1000
+    for (k,name) in enumerate(gas.species_names)
+        f.state[k+1,:].=vec(ref["values/"*name])
+    end
+    for j in 1:N
+        rho=Arrhenius._flame_density(f,1000f.state[1,j],@view(f.state[2:n+1,j])).density
+        f.state[end,j]=rho*ref["values/velocity"][j]
+    end
+    w=Arrhenius.FlameWorkspace(f)
+    flame_residual!(similar(f.state),f,f.state,w)
+    d=Arrhenius._ConservativeFlameDerivatives(gas,N)
+    G=zeros(n,n+1)
+    maxrel=0.0
+    for j in 2:N-1
+        ok=Arrhenius._flame_source_jacobian!(G,d,gas,f.pressure,1000f.state[1,j],
+            @view(f.state[2:n+1,j]),@view(w.X[:,j]),@view(w.h[:,j]),w.rate_caches[j])
+        @test ok
+        diff=G[:,2:end]-expected[:,:,j]
+        maxrel=max(maxrel,norm(diff)/max(norm(expected[:,:,j]),1e-300))
+    end
+    @info "Cantera source derivative fixture comparison" maxrel
+    @test maxrel < 1e-12
+end
