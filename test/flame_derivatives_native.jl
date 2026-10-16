@@ -168,3 +168,49 @@ end
     legacy=FreeFlame(gas;X="H2:1.1,O2:1,AR:5",grid,discretization=:finite_difference)
     @test !Arrhenius._flame_correction_enabled(legacy)
 end
+
+
+@testset "auto finite-difference flame interior species Jacobian" begin
+    mechanism=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas=CreateSolution(mechanism)
+    grid=collect(range(0.,.01;length=5))
+    f=FreeFlame(gas;X="H2:1.1,O2:1,AR:5",grid,discretization=:finite_difference)
+    n=gas.n_species;B=n+2
+    for j in eachindex(grid)
+        f.state[1,j]=.7+.08j
+        f.state[2:n+1,j].=.01 .+ .001 .* (1:n) .+ .0002j
+        f.state[2:n+1,j]./=sum(@view(f.state[2:n+1,j]))
+        f.state[end,j]=.08+.003j
+    end
+    previous=.997 .* f.state
+    dt=.004
+    w=Arrhenius.FlameWorkspace(f)
+    r=flame_residual!(similar(f.state),f,f.state,w;previous,dt)
+    band=Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=true)
+    J=zeros(B*length(grid),B*length(grid))
+    for col in 1:B*length(grid),row in max(1,col-2B+1):min(B*length(grid),col+2B-1)
+        J[row,col]=band[4B-1+row-col,col]
+    end
+    Jad=flame_test_automatic_jacobian(f,w;previous,dt)
+    maxerr=0.0;worst=(0,0,0,0,0.0,0.0)
+    family=zeros(3)
+    for point in 2:length(grid)-1,component in 2:B-1
+        col=(point-1)*B+component
+        for rowpoint in 2:length(grid)-1, rowcomponent in 1:B
+            row=(rowpoint-1)*B+rowcomponent
+            err=abs(J[row,col]-Jad[row,col])/max(abs(Jad[row,col]),1e-8)
+            fam=rowcomponent==1 ? 1 : rowcomponent==B ? 3 : 2
+            family[fam]=max(family[fam],err)
+            if err>maxerr
+                maxerr=err;worst=(rowcomponent,rowpoint,point,component,J[row,col],Jad[row,col])
+            end
+        end
+        for rowcomponent in 1:B
+            @test J[rowcomponent,col]==0.0
+            @test J[(length(grid)-1)*B+rowcomponent,col]==0.0
+        end
+    end
+    @info "analytic Jacobian derivative diagnostic" maxerr worst family
+    @test maxerr < 2e-7
+
+end

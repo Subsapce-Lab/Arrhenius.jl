@@ -778,13 +778,26 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         previous_enthalpy = _flame_previous_enthalpy!(w.conservative,f,previous)
     end
     for k in 1:B, color in 1:3
+        perturbed_any=false
         for j in color:3:N
+            if analytic && !update_transport && !_conservative_flame(f) &&
+                    f.transport_model == :mixture_averaged && !f.soret_enabled &&
+                    f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+                continue
+            end
             steps[j] = _flame_perturbation(f,u,k,j)
             perturbed[k,j] = u[k,j]+steps[j]
+            perturbed_any=true
         end
+        perturbed_any || continue
         # Transport stays frozen for Newton; adjoint sensitivities update it.
         flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes=color:3:N)
         for j in color:3:N
+            if analytic && !update_transport && !_conservative_flame(f) &&
+                    f.transport_model == :mixture_averaged && !f.soret_enabled &&
+                    f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+                continue
+            end
             column = (j-1)*B+k
             for jj in max(1,j-1):min(N,j+1), kk in 1:B
                 row = (jj-1)*B+kk
@@ -797,6 +810,14 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         w.cp .= base_properties[3]
         w.h .= base_properties[4]
         w.source .= base_properties[5]
+    end
+    if analytic && !update_transport && !_conservative_flame(f)
+        _flame_auto_species_jacobian!(band,f,u,w,r;previous,dt) || begin
+            # Unsupported chemistry derivative metadata falls back to full FD.
+            fill!(band,0)
+            return _flame_jacobian(f,u,w,r;previous,dt,previous_enthalpy,
+                analytic=false,update_transport)
+        end
     end
     return band
 end
