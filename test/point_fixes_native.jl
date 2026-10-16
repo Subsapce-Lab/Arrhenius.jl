@@ -72,7 +72,7 @@ using Arrhenius, LinearAlgebra, Test
     pure_mass = copy(transport.diffusion)
     h2 = findfirst(==("H2"),gas.species_names)
     # Cantera 4.0a2 returns zero for the dominant species on both bases in a pure state.
-    @test pure_mole[h2] == reference[("transport_mole_H2","pure")]
+    @test pure_mole[h2] == reference[("transport_mix_H2","pure")]
     @test pure_mass[h2] == reference[("transport_mass_H2","pure")]
 
     X .= 0
@@ -83,16 +83,16 @@ using Arrhenius, LinearAlgebra, Test
     mixture_transport!(transport, gas, one_atm, 1000.0, X; basis=:mass)
     mass_diffusion = copy(transport.diffusion)
     Xf = max.(X,1e-20)
-    @test mole_diffusion[h2] ≈ reference[("transport_mole_H2","near")] rtol=2e-13
+    @test mole_diffusion[h2] ≈ reference[("transport_mix_H2","near")] rtol=2e-13
     @test mass_diffusion[h2] ≈ reference[("transport_mass_H2","near")] rtol=2e-13
-    @test reference[("transport_mole_H2","pure")] == 0.0
+    @test reference[("transport_mix_H2","pure")] == 0.0
     @test reference[("transport_mass_H2","pure")] == 0.0
     for k in eachindex(X)
         sum1 = sum(Xf[j]*transport.inverse_binary[j,k] for j in eachindex(X) if j != k)
         sum2 = sum(Xf[j]*gas.MW[j]*transport.inverse_binary[j,k] for j in eachindex(X) if j != k)
         meanmw = dot(X,gas.MW)
-        expected_mole = sum1 > 0 ? (1-Xf[k])/sum1 : transport.binary[k,k]
         othermass = meanmw-Xf[k]*gas.MW[k]
+        expected_mole = sum1 > 0 ? othermass/(meanmw*sum1) : transport.binary[k,k]
         expected_mass = sum1 > 0 && othermass > 0 ?
             inv(sum1+Xf[k]*sum2/othermass) : transport.binary[k,k]
         @test mole_diffusion[k] ≈ expected_mole rtol=2e-14

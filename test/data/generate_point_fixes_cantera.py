@@ -30,7 +30,8 @@ for pressure in (0.1*ct.one_atm, 3*ct.one_atm, 100*ct.one_atm):
 for label, X in (("pure", {"H2": 1.0}), ("near", {"H2": 1.0-1e-12, "O2": 1e-12})):
     gas.TPX = 1000.0, ct.one_atm, X
     idx = gas.species_index("H2")
-    rows.append(("transport_mole_H2", label, format(gas.mix_diff_coeffs_mole[idx], ".17g")))
+    # Cantera Flow1D molar-gradient flames use getMixDiffCoeffs (Python mix_diff_coeffs).
+    rows.append(("transport_mix_H2", label, format(gas.mix_diff_coeffs[idx], ".17g")))
     rows.append(("transport_mass_H2", label, format(gas.mix_diff_coeffs_mass[idx], ".17g")))
 with (Path(__file__).parent / "point_fixes_cantera.csv").open("w", newline="") as stream:
     csv.writer(stream, lineterminator="\n").writerows(rows)

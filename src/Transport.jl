@@ -184,7 +184,9 @@ function _mixture_transport!(w::TransportWorkspace, gas::Solution, P, T, X, basi
         elseif basis == :mass
             othermass > 0 ? inv(invdiff+X_floor[k]*mass_invdiff/othermass) : 0.0
         else
-            invdiff > 0 ? (1-X_floor[k]) / invdiff : w.binary[k,k]
+            # Cantera molar-gradient flames call getMixDiffCoeffs,
+            # whose numerator is the non-k mixture molecular weight ratio.
+            invdiff > 0 ? othermass / (mean_MW*invdiff) : w.binary[k,k]
         end
     end
     return viscosity, (arithmetic + 1/harmonic)/2
