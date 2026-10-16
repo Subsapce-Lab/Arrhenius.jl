@@ -21,7 +21,7 @@ makedocs(
             "concepts.md",
         ],
         "reactors.md",
-        "Flames" => ["flames.md", "solver_options.md"],
+        "Flames" => ["flames.md", "solver_options.md", "counterflow_continuation.md"],
         "examples.md",
         "validation.md",
         "api.md",

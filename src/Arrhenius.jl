@@ -48,5 +48,6 @@ include("SignedEquilibrium.jl")
     include("CounterflowFlames.jl")
     include("PremixedCounterflowFlames.jl")
     include("CatalyticFlames.jl")
+    include("CounterflowContinuation.jl")
     include("Precision.jl")
 end
