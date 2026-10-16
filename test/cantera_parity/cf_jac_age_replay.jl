@@ -50,8 +50,7 @@ function main(specpath,capture,outpath)
         log=open(logpath,"w"); iterations=Ref(0); before=w.jac_evals
         accepted=redirect_stdout(log) do
             Arrhenius._counterflow_newton!(f,w;previous,dt=Float64(ct["dt"]),
-                maxiters=200,loglevel=3,iterations,
-                defer_failed_refresh=(i==1 && !steady_ok))
+                maxiters=200,loglevel=3,iterations)
         end
         close(log)
         native_log=read(logpath,String)

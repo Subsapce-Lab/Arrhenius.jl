@@ -230,7 +230,7 @@ function Arrhenius._counterflow_jacobian!(f::BoundRefreshNewtonFixture,u,w,r;kwa
     end
     return w.band
 end
-@testset "initial failed pseudo-time attempt defers stale Jacobian refresh" begin
+@testset "failed counterflow bound step refreshes stale Jacobian" begin
     # At Y=-1e-7 an outward Newton direction has Cantera's bound fraction 0.
     # A stale Jacobian may fail once, then must be refreshed before the solver
     # reports failure with a fresh Jacobian.
@@ -242,15 +242,9 @@ end
     end
     _,pivots=LinearAlgebra.LAPACK.gbtrf!(7,7,4,band)
     w=BoundRefreshWorkspace(copy(band),copy(band),pivots,2,Inf,true,0)
-    previous=copy(state)
-    @test !Arrhenius._counterflow_newton!(f,w;previous,maxiters=8,
-        defer_failed_refresh=true)
-    @test w.jac_evals==0
-    @test w.jac_age==21
-    @test f.residual_calls==1 # no backtracking or in-attempt refresh
-    @test !Arrhenius._counterflow_newton!(f,w;previous,maxiters=8)
-    @test w.jac_evals==1 # consume the deferred refresh on the next attempt
-    @test f.residual_calls==2
+    @test !Arrhenius._counterflow_newton!(f,w;maxiters=8)
+    @test w.jac_evals==1
+    @test f.residual_calls==2 # no seven-step backtracking after the bound failure
 end
 
 @testset "counterflow time-step budget and steady cadence" begin
