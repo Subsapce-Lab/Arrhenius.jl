@@ -25,13 +25,13 @@ function main()
         state_index = max(1, cld(length(state["T"]), 2))
         T = Float64(state["T"][state_index])
         Y = Float64.(state["Y"][:,state_index])
-        X = Y ./ gas.MW
+        X = Vector{Float64}(Y ./ gas.MW)
         X ./= sum(X)
     elseif length(ARGS) >= 2
         T = parse(Float64, ARGS[2])
     end
-    P = spec["P_atm"] * Arrhenius.one_atm
-    C = X .* (P / (Arrhenius.R*T))
+    P = Float64(spec["P_atm"] * Arrhenius.one_atm)
+    C = Vector{Float64}(X .* (P / (Arrhenius.R*T)))
     n = gas.n_species
     h = zeros(n); cp = zeros(n); s = zeros(n)
     hm = zeros(n); sm = zeros(n)
