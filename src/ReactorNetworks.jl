@@ -288,7 +288,7 @@ function _update_network_states!(rhs, u; volumes=nothing)
         state.pressure = state.density * R * state.temperature * inverse_mw
         @inbounds for k in 1:ns
             workspace.X[k] = state.mass_fractions[k] / (gas.MW[k] * inverse_mw)
-            workspace.C[k] = max(state.mass_fractions[k], 0.0) * state.density / gas.MW[k]
+            workspace.C[k] = state.mass_fractions[k] * state.density / gas.MW[k]
         end
         cal_cp_R!(workspace.cp_R, gas, state.temperature, state.pressure, workspace.X)
         cal_h_RT!(workspace.h_mole, gas, state.temperature, state.pressure, workspace.X)

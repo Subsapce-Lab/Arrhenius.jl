@@ -37,13 +37,14 @@ Supported reaction models are elementary Arrhenius, third-body, Lindemann,
 Troe and PLOG. Blowers–Masel reactions are explicitly rejected.
 """
 function redlich_kwong_rates!(output,gas::Solution,model::RedlichKwongThermo,T,rho,X,
-                             work::RealGasKineticsWorkspace;rate_multipliers=nothing)
+                             work::RealGasKineticsWorkspace;rate_multipliers=nothing,kinetic_X=X,kinetic_Y=nothing,kinetic_density=rho)
     _check_real_gas_rate_models(gas.reaction)
     state = redlich_kwong_properties!(work.thermo,model,T,rho,X)
     RT = R*T
     @inbounds for k in eachindex(X)
-        work.C[k] = X[k]/state.v
-        work.activity[k] = X[k]*state.P/RT*exp(state.lnphi[k])
+        work.C[k] = isnothing(kinetic_Y) ? kinetic_X[k]/state.v :
+            kinetic_Y[k]*kinetic_density/gas.MW[k]
+        work.activity[k] = kinetic_X[k]*state.P/RT*exp(state.lnphi[k])
         work.h0[k] = RT*work.thermo.h0[k]
         work.s0[k] = R*work.thermo.s0[k]
     end
@@ -112,14 +113,21 @@ function (rhs::ReactorRHS{<:RedlichKwongReactor})(du,u,p,t)
     n = gas.n_species
     length(u) == length(du) == n+1 || throw(DimensionMismatch("reactor state must have n_species+1 entries"))
     total = zero(u[end])
+    inverse_mw = zero(u[end])
     @inbounds for k in 1:n
         work.X[k] = max(u[k],zero(u[k]))/gas.MW[k]
         total += work.X[k]
+        inverse_mw += u[k]/gas.MW[k]
     end
     total > 0 || throw(DomainError(total,"positive total composition required"))
     work.X ./= total
+    kinetic_X = work.activity
+    @inbounds for k in 1:n
+        kinetic_X[k] = (u[k]/gas.MW[k])/inverse_mw
+    end
     state = redlich_kwong_rates!(work.wdot,gas,reactor.model,u[end],reactor.density,work.X,work;
-        rate_multipliers=reactor.rate_multipliers)
+        rate_multipliers=reactor.rate_multipliers,kinetic_X,kinetic_Y=u,
+        kinetic_density=reactor.density)
     source = zero(u[end])
     @inbounds for k in 1:n
         du[k] = work.wdot[k]*gas.MW[k]/reactor.density

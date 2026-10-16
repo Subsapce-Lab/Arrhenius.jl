@@ -281,16 +281,17 @@ end
 function (rhs::_SignedTrialRHS{<:RedlichKwongReactor})(du,u,p,t)
     reactor,work=rhs.reactor,rhs.workspace
     gas=reactor.gas;T=u[end];n=gas.n_species
-    total=zero(T)
+    total=zero(T);inverse_mw=zero(T)
     @inbounds for k in 1:n
-        work.X[k]=u[k]/gas.MW[k]
+    inverse_mw+=u[k]/gas.MW[k]
+        work.X[k]=max(u[k],zero(T))/gas.MW[k]
         total+=work.X[k]
     end
     work.X./=total
     properties=_signed_trial_caloric!(work.thermo,reactor.model,T,reactor.density,work.X)
     @inbounds for k in 1:n
-        work.C[k]=work.X[k]/properties.v
-        work.activity[k]=work.X[k]*properties.P/(R*T)*exp(properties.lnphi[k])
+        work.C[k]=u[k]*reactor.density/gas.MW[k]
+        work.activity[k]=(u[k]/gas.MW[k])/inverse_mw*properties.P/(R*T)*exp(properties.lnphi[k])
         work.h0[k]=R*T*work.thermo.h0[k];work.s0[k]=R*work.thermo.s0[k]
     end
     _integer_trial_wdot!(work.wdot,gas.reaction,T,work.C,work.s0,work.h0,work.kinetics;

@@ -10,33 +10,37 @@
     return rate
 end
 
+@inline function _plog_group_log_rate(plog::PlogData, group, T, logT)
+    rate = _plog_group_rate(plog, group, T, logT)
+    first = plog.rate_offsets[group]
+    last = plog.rate_offsets[group+1]-1
+    return first == last ? log(rate) : log(rate + _positive_floor(rate))
+end
+
 @inline function _plog_rate(plog::PlogData, plog_index, T, P, logT)
     first_group = plog.group_offsets[plog_index]
     last_group = plog.group_offsets[plog_index + 1] - 1
-
-    if P <= plog.pressures[first_group]
-        return _plog_group_rate(plog, first_group, T, logT)
-    elseif P >= plog.pressures[last_group]
-        return _plog_group_rate(plog, last_group, T, logT)
-    end
-
     lower_group = first_group
-    @inbounds while P > plog.pressures[lower_group + 1]
-        lower_group += 1
+    if P >= plog.pressures[last_group]
+        lower_group = last_group
+    elseif P > plog.pressures[first_group]
+        @inbounds while P > plog.pressures[lower_group + 1]
+            lower_group += 1
+        end
+    end
+    lower_log_rate = _plog_group_log_rate(plog, lower_group, T, logT)
+    if lower_group == last_group || P <= plog.pressures[first_group]
+        return exp(lower_log_rate)
     end
     upper_group = lower_group + 1
-    lower_rate = _plog_group_rate(plog, lower_group, T, logT)
-    upper_rate = _plog_group_rate(plog, upper_group, T, logT)
+    upper_log_rate = _plog_group_log_rate(plog, upper_group, T, logT)
     @inbounds fraction =
         log(P / plog.pressures[lower_group]) /
         log(plog.pressures[upper_group] / plog.pressures[lower_group])
-    # Cantera sums duplicate expressions at one pressure before taking the log.
-    tiny = _positive_floor(lower_rate)
-    return exp(log(lower_rate + tiny) +
-               fraction * (log(upper_rate + tiny) - log(lower_rate + tiny)))
+    return exp(lower_log_rate + fraction * (upper_log_rate - lower_log_rate))
 end
 
-@inline _positive_floor(value::T) where {T<:AbstractFloat} = nextfloat(zero(T))
+@inline _positive_floor(value::T) where {T<:AbstractFloat} = oftype(value, 1e-300)
 
 # Effective pressure P*eps_mix of a linear-Burke (LMR-R) reaction: listed
 # colliders weigh their mole fraction by eps_i(T); all other species by one.
@@ -72,6 +76,10 @@ end
         log(plog.pressures[lower_group + 1] / plog.pressures[lower_group])
 end
 @inline _positive_floor(value) = oftype(value, 1.0e-300)
+@inline _capped_reverse_rate(kf, Kc) =
+    min(kf / Kc, oftype(kf, 1e300))
+@inline _falloff_reduced_pressure(k0, collider, kinf) =
+    k0 * collider / (kinf + oftype(kinf, 1e-300))
 
 """Log-domain Arrhenius parameters for mixed-precision rate evaluation.
 
@@ -141,6 +149,14 @@ end
     return rate
 end
 
+@inline function _plog_group_log_rate(rate_data::LogRateData, plog::PlogData,
+        group, T, rate_logT, rate_activation_scale)
+    rate = _plog_group_rate(rate_data, plog, group, T, rate_logT, rate_activation_scale)
+    first = plog.rate_offsets[group]
+    last = plog.rate_offsets[group+1]-1
+    return first == last ? log(rate) : log(rate + _positive_floor(rate))
+end
+
 @inline function _plog_rate(
     rate_data::LogRateData,
     plog::PlogData,
@@ -151,55 +167,26 @@ end
     rate_activation_scale,
 )
     first_group = plog.group_offsets[plog_index]
-    last_group = plog.group_offsets[plog_index + 1] - 1
-    if P <= plog.pressures[first_group]
-        return _plog_group_rate(
-            rate_data,
-            plog,
-            first_group,
-            T,
-            rate_logT,
-            rate_activation_scale,
-        )
-    elseif P >= plog.pressures[last_group]
-        return _plog_group_rate(
-            rate_data,
-            plog,
-            last_group,
-            T,
-            rate_logT,
-            rate_activation_scale,
-        )
-    end
+    last_group = plog.group_offsets[plog_index+1]-1
     lower_group = first_group
-    @inbounds while P > plog.pressures[lower_group + 1]
-        lower_group += 1
+    if P >= plog.pressures[last_group]
+        lower_group = last_group
+    elseif P > plog.pressures[first_group]
+        @inbounds while P > plog.pressures[lower_group+1]
+            lower_group += 1
+        end
     end
-    upper_group = lower_group + 1
-    lower_rate = _plog_group_rate(
-        rate_data,
-        plog,
-        lower_group,
-        T,
-        rate_logT,
-        rate_activation_scale,
-    )
-    upper_rate = _plog_group_rate(
-        rate_data,
-        plog,
-        upper_group,
-        T,
-        rate_logT,
-        rate_activation_scale,
-    )
-    @inbounds fraction =
-        log(P / plog.pressures[lower_group]) /
-        log(plog.pressures[upper_group] / plog.pressures[lower_group])
-    tiny = _positive_floor(lower_rate)
-    return exp(
-        log(lower_rate + tiny) +
-        fraction * (log(upper_rate + tiny) - log(lower_rate + tiny)),
-    )
+    lower_log_rate = _plog_group_log_rate(rate_data,plog,lower_group,T,
+        rate_logT,rate_activation_scale)
+    if lower_group == last_group || P <= plog.pressures[first_group]
+        return exp(lower_log_rate)
+    end
+    upper_group = lower_group+1
+    upper_log_rate = _plog_group_log_rate(rate_data,plog,upper_group,T,
+        rate_logT,rate_activation_scale)
+    @inbounds fraction = log(P/plog.pressures[lower_group]) /
+        log(plog.pressures[upper_group]/plog.pressures[lower_group])
+    return exp(lower_log_rate + fraction*(upper_log_rate-lower_log_rate))
 end
 
 @inline function _plog_rate_with_collider(
@@ -593,16 +580,8 @@ function _rate_factors!(reaction,T,C,S0,h_mole,workspace,reverse_plan=nothing;
             )
         end
         @inbounds collider = dot(@view(reaction.efficiencies_coeffs[:, i]), C)
-        if collider <= zero(collider)
-            kf[i] = zero(collider)
-            continue
-        end
-        @inbounds Pr = k0 * collider / kf[i]
-        if Pr <= zero(Pr)
-            kf[i] = zero(Pr)
-            continue
-        end
-        lPr = log10(Pr)
+        @inbounds Pr = _falloff_reduced_pressure(k0, collider, kf[i])
+        lPr = log10(max(Pr, oftype(Pr, 1e-300)))
         @inbounds kf[i] *= Pr / (1 + Pr)
 
         if reaction.index_falloff_Troe[j] > 0
@@ -672,7 +651,7 @@ function _rate_factors!(reaction,T,C,S0,h_mole,workspace,reverse_plan=nothing;
     end
     @inbounds for i in eachindex(kf)
         kr[i] = reaction.is_reversible[i] ?
-            kf[i] / workspace.equilibrium_constants[i] : zero(T)
+            _capped_reverse_rate(kf[i],workspace.equilibrium_constants[i]) : zero(T)
     end
 
     return nothing
