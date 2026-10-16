@@ -1,4 +1,5 @@
 using Arrhenius, NPZ, Printf
+using LinearAlgebra
 
 np=parse(Int,get(ENV,"CONTINUATION_GRID_POINTS","266"))
 steps=parse(Int,get(ENV,"CONTINUATION_STEPS","140"))
@@ -25,3 +26,18 @@ p=curve[peak]
     abs(p.max_strain_rate-only(ref["turning_strain_rate_per_s"]))/only(ref["turning_strain_rate_per_s"]),
     abs(p.max_temperature-only(ref["turning_Tmax_K"]))/only(ref["turning_Tmax_K"]))
 @printf("max residual over native curve=%.3g\n",maximum(x.residual_inf for x in curve))
+let sumYmax=0., element_source_relmax=0., mass_flux_bc_max=0.
+for x in curve
+    Y=x.state[2:gas.n_species+1,:]
+    sumYmax=max(sumYmax,maximum(abs.(sum(Y;dims=1).-1)))
+    mass_flux_bc_max=max(mass_flux_bc_max,abs(x.state[end,1]-.5*x.parameter),abs(x.state[end,end]+3*x.parameter))
+    for j in axes(Y,2)
+        source=Arrhenius.set_states(gas,1000*x.state[1,j],1e5,@view(Y[:,j]))
+        for e in axes(gas.ele_matrix,1)
+            atoms=@view gas.ele_matrix[e,:]
+            element_source_relmax=max(element_source_relmax,abs(dot(atoms,source))/max(dot(abs.(atoms),abs.(source)),floatmin(Float64)))
+        end
+    end
+end
+@printf("invariants sumY_max=%.3g element_source_relmax=%.3g mass_flux_boundary_error=%.3g\n",sumYmax,element_source_relmax,mass_flux_bc_max)
+end
