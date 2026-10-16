@@ -1,4 +1,4 @@
-using Arrhenius, YAML, LinearAlgebra, Statistics, InteractiveUtils, SHA
+using Arrhenius, YAML, LinearAlgebra, Statistics, InteractiveUtils, SHA, NPZ
 BLAS.set_num_threads(1)
 
 function measure(label, f; reps=9, n=1000)
@@ -18,7 +18,18 @@ function main()
     gas = Arrhenius.CreateSolution(mechanism * ".yaml")
     Xdict = Dict(String(k) => parse(Float64, v) for (k,v) in split.(split(spec["X"], ","), ":"))
     X = Arrhenius.mole_fractions(gas, Xdict)
-    T = length(ARGS) >= 2 ? parse(Float64, ARGS[2]) : 1500.0
+    T = 1500.0
+    state_index = 0
+    if length(ARGS) >= 2 && endswith(ARGS[2], ".npz")
+        state = NPZ.npzread(ARGS[2])
+        state_index = max(1, cld(length(state["T"]), 2))
+        T = Float64(state["T"][state_index])
+        Y = Float64.(state["Y"][:,state_index])
+        X = Y ./ gas.MW
+        X ./= sum(X)
+    elseif length(ARGS) >= 2
+        T = parse(Float64, ARGS[2])
+    end
     P = spec["P_atm"] * Arrhenius.one_atm
     C = X .* (P / (Arrhenius.R*T))
     n = gas.n_species
@@ -44,7 +55,7 @@ function main()
     report_measure(label,f) = measure(label, () -> composition_perturb!(f))
     uncached!() = Arrhenius.wdot!(out,gas.reaction,T,C,sm,hm,kw;pressure=P,get_rate_constants=true)
 
-    println("L0 mechanism=",mechanism," nspecies=",n," nreactions=",gas.reaction.n_reactions," T=",T," P=",P)
+    println("L0 mechanism=",mechanism," nspecies=",n," nreactions=",gas.reaction.n_reactions," T=",T," P=",P," state_index=",state_index)
     measure("thermo_h_cp_s",thermo!)
     report_measure("rate_factors_cached",rates!)
     report_measure("mass_action_qdot_cached",qdot!)
