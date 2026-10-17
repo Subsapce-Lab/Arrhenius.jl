@@ -29,11 +29,11 @@ for domain in f.domains:
         tolerances.append(np.full(x.shape, 1e-8 * np.mean(np.abs(x)) + 1e-14))
 # Cantera's OneDim ordering is point-major within each domain.
 blocks_x = [np.column_stack([values[i] for i in range(k, k + d.n_components)])
-            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+            for d in f.domains if d.n_components for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
 blocks_r = [np.column_stack([residuals[i] for i in range(k, k + d.n_components)])
-            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+            for d in f.domains if d.n_components for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
 blocks_w = [np.column_stack([tolerances[i] for i in range(k, k + d.n_components)])
-            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+            for d in f.domains if d.n_components for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
 x = np.concatenate([b.ravel() for b in blocks_x])
 r = np.concatenate([b.ravel() for b in blocks_r])
 w = np.concatenate([b.ravel() for b in blocks_w])
