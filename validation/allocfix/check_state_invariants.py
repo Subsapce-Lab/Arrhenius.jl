@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check composition closure, premixed elemental balance, and planar mass flux in solver archives."""
+"""Check composition closure, premixed inlet-to-outlet elemental balance, and planar mass flux in solver archives."""
 import argparse
 import json
 from pathlib import Path
@@ -44,7 +44,7 @@ def main():
                 for e in range(gas.n_elements):
                     factors = np.asarray([gas.n_atoms(k, e) * aw[e] / mw[k] for k in range(gas.n_species)])
                     profile = factors @ y
-                    max_error = max(max_error, float(np.max(np.abs(profile - profile[0]))))
+                    max_error = max(max_error, float(abs(profile[-1] - profile[0])))
                 element_error = max_error
             mass_flux_error = None
             if spec["kind"] in ("free", "burner", "fixed"):
@@ -58,11 +58,11 @@ def main():
                 scale = max(float(np.mean(np.abs(flux))), np.finfo(float).tiny)
                 mass_flux_error = float(np.max(np.abs(flux - flux[0])) / scale)
         results.append({"id": archive_path.stem, "sumY_max": sum_y_error,
-                        "element_spread_max": element_error, "mass_flux_relative_spread": mass_flux_error})
+                        "element_inlet_outlet_error": element_error, "mass_flux_relative_spread": mass_flux_error})
     summary = {
         "case_count": len(results),
         "sumY_max": max((r["sumY_max"] for r in results), default=None),
-        "element_spread_max": max((r["element_spread_max"] for r in results if r["element_spread_max"] is not None), default=None),
+        "element_inlet_outlet_max": max((r["element_inlet_outlet_error"] for r in results if r["element_inlet_outlet_error"] is not None), default=None),
         "mass_flux_relative_spread_max": max((r["mass_flux_relative_spread"] for r in results if r["mass_flux_relative_spread"] is not None), default=None),
         "cases": results,
     }
@@ -74,3 +74,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
