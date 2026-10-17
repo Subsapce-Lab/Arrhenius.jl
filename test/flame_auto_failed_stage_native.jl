@@ -13,10 +13,12 @@ using Arrhenius, Test
     original_fixed_temperature = burner.fixed_temperature
     original_converged = burner.converged
     attempted_grids = Int[]
+    attempt = Ref(0)
     fail_after_mutating!(f; kwargs...) = begin
+        attempt[] += 1
         push!(attempted_grids, length(f.grid))
         f.state .+= 0.01
-        false
+        mod(attempt[], 3) == 2
     end
 
     @test_throws ErrorException Arrhenius._auto_staged!(burner;
@@ -25,7 +27,7 @@ using Arrhenius, Test
         timestep=Ref(1e-6), controls=(;), ts_regrid=3,
         steady_solve=fail_after_mutating!)
 
-    @test attempted_grids == [6, 6, 12, 12, 24, 24, 48, 48]
+    @test attempted_grids == [6, 6, 6, 12, 12, 12, 24, 24, 24, 48, 48, 48]
     @test burner.grid == original_grid
     @test burner.state == original_state
     @test burner.anchor == original_anchor
