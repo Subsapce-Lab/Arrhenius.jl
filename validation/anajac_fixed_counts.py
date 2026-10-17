@@ -4,7 +4,9 @@ Usage: ct_fixed_counts.py SPEC [auto=true|false] [prune=0.0]
 """
 import json
 import os
+import re
 import sys
+import tempfile
 
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["OMP_NUM_THREADS"] = "1"
@@ -25,9 +27,22 @@ flame.energy_enabled = False
 flame.transport_model = spec["transport"]
 prune = float(overrides.get("prune", min(spec.get("prune", 0.0), spec["slope"], spec["curve"])))
 auto = overrides.get("auto", "false").lower() == "true"
+loglevel = int(overrides.get("loglevel", "0"))
 criteria = (spec["ratio"], spec["slope"], spec["curve"], prune)
 flame.set_refine_criteria(ratio=criteria[0], slope=criteria[1], curve=criteria[2], prune=criteria[3])
-flame.solve(loglevel=0, auto=auto)
+with tempfile.TemporaryFile() as logfile:
+    saved_stdout = os.dup(1)
+    os.dup2(logfile.fileno(), 1)
+    try:
+        flame.solve(loglevel=loglevel, auto=auto)
+    finally:
+        os.dup2(saved_stdout, 1)
+        os.close(saved_stdout)
+    logfile.seek(0)
+    solver_log = logfile.read().decode(errors="replace")
+if "trace" in overrides:
+    with open(overrides["trace"], "w") as stream:
+        stream.write(solver_log)
 stats = flame.solver_stats
 print("CTFIXED", json.dumps({
     "id": spec["id"], "auto": auto, "ratio_slope_curve_prune": criteria,
@@ -41,3 +56,8 @@ print("CTFIXED", json.dumps({
     "regrids": max(0, len(stats.get("grid_points", [])) - 1),
     "points": len(flame.grid), "converged": True
 }, sort_keys=True))
+if loglevel:
+    decisions = [line for line in solver_log.splitlines()
+                 if re.search(r"Solving on|Damped Newton iteration|Newton iteration|Time step|time step|Refin|Grid", line)]
+    for line in decisions[:24]:
+        print("CTDEC", line)
