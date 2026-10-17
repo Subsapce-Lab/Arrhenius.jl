@@ -37,5 +37,7 @@ function run_case(spec_path, output_path)
         "sumY_inf=$(sumY) mdot_spread=$(mdot_spread)")
 end
 
-length(ARGS) == 2 || error("usage: fixed_t_six_counts.jl spec.json output.npz")
-run_case(ARGS[1], ARGS[2])
+length(ARGS) >= 2 && iseven(length(ARGS)) || error("usage: fixed_t_six_counts.jl spec.json output.npz [spec.json output.npz ...]")
+for i in 1:2:length(ARGS)
+    run_case(ARGS[i], ARGS[i + 1])
+end
