@@ -221,8 +221,9 @@ end
 
 """Fill Cantera-auto interior species columns for the native finite-difference residual.
 
-The mixture-averaged transport coefficients are frozen. Boundary rows stay finite
-difference, and unsupported transport configurations return false for full FD.
+The mixture-averaged transport coefficients are frozen. This helper fills only
+interior residual rows; the caller applies kind-specific endpoint handling. Unsupported
+transport configurations return false for full finite differences.
 """
 function _flame_auto_species_jacobian!(band,f,u,w,r;previous=nothing,dt=Inf)
     f isa Union{FreeFlame,BurnerFlame} || return false

@@ -244,11 +244,10 @@ end
         end
         @info "burner analytic species Jacobian versus ForwardDiff" prescribed_temperature worst worst_entry
         @test worst < 2e-4
-        # Cantera intentionally omits the inlet boundary-row coupling from
-        # interior species columns in auto mode. The native residual has this
-        # derivative, so assert that the auto Jacobian preserves the omission.
+        # The native burner inlet balance includes the face flux, so keep
+        # the adjacent species-column boundary entry finite-differenced.
         col=B+2; inlet_row=2
-        @test analytic[2kl+1+inlet_row-col,col] == 0.0
+        @test analytic[2kl+1+inlet_row-col,col] ≈ automatic[inlet_row,col] rtol=2e-4
         @test automatic[inlet_row,col] ≈ 0.02936003949483076 rtol=1e-8
         if prescribed_temperature
             for point in 2:length(grid)-1,component in 2:B-1

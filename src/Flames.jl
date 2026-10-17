@@ -777,12 +777,17 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     if _conservative_flame(f) && previous !== nothing && previous_enthalpy === nothing
         previous_enthalpy = _flame_previous_enthalpy!(w.conservative,f,previous)
     end
+    # Burner inlet/outlet residuals include face-flux terms from the adjacent
+    # interior node. Keep only those endpoint-row finite differences; the
+    # analytic helper fills the interior stencil. FreeFlame follows Cantera
+    # auto mode and omits the corresponding endpoint entries.
     for k in 1:B, color in 1:3
         perturbed_any=false
         for j in color:3:N
-            if analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
-                    f.transport_model == :mixture_averaged && !f.soret_enabled &&
-                    f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+            auto_species_column = analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
+                f.transport_model == :mixture_averaged && !f.soret_enabled &&
+                f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+            if auto_species_column && !(f isa BurnerFlame && (j == 2 || j == N-1))
                 continue
             end
             steps[j] = _flame_perturbation(f,u,k,j)
@@ -793,13 +798,18 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         # Transport stays frozen for Newton; adjoint sensitivities update it.
         flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes=color:3:N)
         for j in color:3:N
-            if analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
-                    f.transport_model == :mixture_averaged && !f.soret_enabled &&
-                    f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+            auto_species_column = analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
+                f.transport_model == :mixture_averaged && !f.soret_enabled &&
+                f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
+            if auto_species_column && !(f isa BurnerFlame && (j == 2 || j == N-1))
                 continue
             end
             column = (j-1)*B+k
             for jj in max(1,j-1):min(N,j+1), kk in 1:B
+                if auto_species_column &&
+                        !((j == 2 && jj == 1) || (j == N-1 && jj == N))
+                    continue
+                end
                 row = (jj-1)*B+kk
                 band[kl+ku+1+row-column,column] = (rp[kk,jj]-r[kk,jj])/steps[j]
             end
