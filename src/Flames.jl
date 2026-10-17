@@ -939,7 +939,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             end
             column = (j-1)*B+k
             for jj in max(1,j-1):min(N,j+1), kk in 1:B
-                cantera_boundary_species_omission = cantera_omission && analytic && !update_transport &&
+                cantera_boundary_species_omission = cantera_omission && !update_transport &&
                     f isa BurnerFlame && f.transport_model == :mixture_averaged &&
                     !f.soret_enabled && f.flux_gradient_basis == :mole &&
                     2 <= k <= B-1 && ((j == 2 && jj == 1) || (j == N-1 && jj == N))
@@ -964,7 +964,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             # Unsupported chemistry derivative metadata falls back to full FD.
             fill!(band,0)
             fallback=_flame_jacobian(f,u,w,r;previous,dt,previous_enthalpy,
-                analytic=false,update_transport)
+                analytic=false,update_transport,cantera_omission)
             return fallback
         end
     end

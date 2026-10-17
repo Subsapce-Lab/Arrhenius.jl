@@ -283,7 +283,7 @@ end
         @test auto_jacobian[2kl+1+inlet_row-col,col] == 0.0
         @test analytic[2kl+1+inlet_row-col,col] ≈ finite_difference[2kl+1+inlet_row-col,col] rtol=2e-4
         @test finite_difference[2kl+1+inlet_row-col,col] ≈ automatic[inlet_row,col] rtol=2e-4
-        @test finite_difference == Arrhenius._flame_jacobian(f,f.state,w,residual;analytic=false,cantera_omission=true)
+        @test finite_difference == Arrhenius._flame_jacobian(f,f.state,w,residual;analytic=false,cantera_omission=false)
         @test automatic[inlet_row,col] ≈ 0.02936003949483076 rtol=1e-8
         for component in 2:B-1
             inlet_col=B+component
