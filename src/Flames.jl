@@ -756,7 +756,9 @@ function _flame_bounds(f,k,B)
     high=k==1 ? 6.0 : k==B ? 100.0 : 1.00001
     return low,high
 end
-_cantera_flame_temperature_bounds(f) = (0.2,2*minimum(@view(f.gas.thermo.Trange[:,3]))/1000)
+# IdealGasThermo stores each species maximum temperature in the third Trange column.
+# Cantera bounds T by twice the minimum species maximum.
+_cantera_flame_temperature_bounds(f) = (0.2,2*minimum(@view(f.gas.thermo.Trange[:,end]))/1000)
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.

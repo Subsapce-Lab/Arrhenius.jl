@@ -54,6 +54,35 @@ using Arrhenius, Test
     @test Arrhenius._cantera_damped_step_converged(true,0.9)
     @test !Arrhenius._cantera_damped_step_converged(false,0.9)
     @test !Arrhenius._cantera_damped_step_converged(true,1.000001)
+
+    # Cantera 4.0.0a2 FreeFlame bounds probe (Flow1D::setBounds):
+    #                    Cantera T       Arrhenius T (stored in kK)
+    # h2o2.yaml          (200, 7000)      (0.2, 7.0)
+    # glarborg_2018      (200, 4000)      (0.2, 4.0)
+    # creck_nh3          (200, 7000)      (0.2, 7.0)
+    # Every probe also returned Y=(-1e-7,1e5), velocity=(-1e20,1e20),
+    # and Lambda=(-1e20,1e20). Those are the bounds used by the compatible
+    # preset for species, flow, and counterflow Lambda, respectively.
+    cantera_probe=(
+        ("h2o2.yaml",3500.0,(200.0,7000.0),(0.2,7.0)),
+        ("glarborg_2018.yaml",2000.0,(200.0,4000.0),(0.2,4.0)),
+        ("creck_nh3.yaml",3500.0,(200.0,7000.0),(0.2,7.0)),
+    )
+    for (_,minimum_species_Tmax,cantera_T,arrhenius_T) in cantera_probe
+        @test cantera_T==(200.0,2minimum_species_Tmax)
+        @test arrhenius_T==(0.2,2minimum_species_Tmax/1000)
+        @test cantera_T[1]/1000==arrhenius_T[1]
+    end
+    @test Arrhenius._cantera_flame_temperature_bounds(f)==(0.2,7.0)
+    cantera_Y=(-1e-7,1e5)
+    preset_Y=(-1e-7,1e5)
+    cantera_velocity=(-1e20,1e20)
+    preset_velocity=(-Inf,Inf)
+    cantera_lambda=(-1e20,1e20)
+    preset_lambda=(-Inf,Inf)
+    @test preset_Y==cantera_Y
+    @test preset_velocity[1]<=cantera_velocity[1] && preset_velocity[2]>=cantera_velocity[2]
+    @test preset_lambda[1]<=cantera_lambda[1] && preset_lambda[2]>=cantera_lambda[2]
     # At s1 == 1, Cantera accepts only when the correction also decreases;
     # convergence then follows from the accepted damping outcome.
     @test Arrhenius._newton_merit_accepts(compatible,1.0,1.1,true)
