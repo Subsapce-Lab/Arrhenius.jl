@@ -1420,7 +1420,6 @@ function _fresh_fixed_temperature_burner_guess!(f::BurnerFlame)
         state[end,j] = rho*u
     end
     f.state = state
-    f.anchor = clamp(argmin(abs.(f.grid .- (f.grid[1]+0.2*(f.grid[end]-f.grid[1])))),2,N-1)
     f.converged = false
     return f
 end
