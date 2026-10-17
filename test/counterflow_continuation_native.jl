@@ -1,4 +1,4 @@
-using Test, Arrhenius, NPZ, Printf
+using Test, Arrhenius, NPZ
 
 @testset "counterflow pseudo-arclength continuation" begin
     mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml")
@@ -118,7 +118,7 @@ end
                 @test abs(arc[1].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
                 @test all(p->p.residual_inf<1e-7,arc)
                 @test isapprox(maximum(p.max_strain_rate for p in arc),refA[cantera_peak];rtol=1e-3)
-                @printf("CONTROLLED_ARC_N12 steps=%d points=%d elapsed_s=%.6g peak_strain=%.12g peak_Tmax=%.12g\n",length(arc)-1,length(arc),arc_seconds,maximum(p.max_strain_rate for p in arc),arc[argmax(p.max_strain_rate for p in arc)].max_temperature)
+                println("CONTROLLED_ARC_N12 ", (steps=length(arc)-1, points=length(arc), elapsed_s=arc_seconds, peak_strain=maximum(p.max_strain_rate for p in arc), peak_Tmax=arc[argmax(p.max_strain_rate for p in arc)].max_temperature))
                 plus=arc; plus_seconds=arc_seconds
                 f.state .= fold_state; f.control_points=fold_control
                 f.fuel_mass_flux=fold_mf; f.oxidizer_mass_flux=fold_mo; f.converged=true
@@ -131,8 +131,8 @@ end
                 @test isapprox(maximum(p.max_strain_rate for p in plus),refA[cantera_peak];rtol=1e-3)
                 @test abs(minus[1].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
                 @test abs(minus[1].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
-                @printf("CONTROLLED_ARC_N12 direction=+1 steps=%d seconds=%.6g end_control_T=%.9g peak_strain=%.12g\n",length(plus)-1,plus_seconds,plus[end].parameter,maximum(p.max_strain_rate for p in plus))
-                @printf("CONTROLLED_ARC_N12 direction=-1 steps=%d seconds=%.6g end_control_T=%.9g peak_strain=%.12g\n",length(minus)-1,minus_seconds,minus[end].parameter,maximum(p.max_strain_rate for p in minus))
+                println("CONTROLLED_ARC_N12 direction=+1 ", (steps=length(plus)-1, seconds=plus_seconds, end_control_T=plus[end].parameter, peak_strain=maximum(p.max_strain_rate for p in plus)))
+                println("CONTROLLED_ARC_N12 direction=-1 ", (steps=length(minus)-1, seconds=minus_seconds, end_control_T=minus[end].parameter, peak_strain=maximum(p.max_strain_rate for p in minus)))
             end
         end
     end

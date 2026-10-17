@@ -49,6 +49,21 @@ relT=maximum(abs(curve[i].max_temperature-refT[i])/max(abs(refT[i]),1.) for i in
 relA=maximum(abs(curve[i].max_strain_rate-refA[i])/max(abs(refA[i]),1.) for i in 1:nmatch)
 @printf("pointwise matched=%d native=%d cantera=%d max_relative_Tmax=%.9g max_relative_strain=%.9g\n",
     nmatch,length(curve),length(refT),relT,relA)
+sumYmax=0.; element_source_relmax=0.
+for q in curve
+    Yq=q.state[2:gas.n_species+1,:]
+    sumYmax=max(sumYmax,maximum(abs.(sum(Yq;dims=1).-1)))
+    for j in axes(Yq,2)
+        source=Arrhenius.set_states(gas,1000q.state[1,j],P,@view(Yq[:,j]))
+        for e in axes(gas.ele_matrix,1)
+            atoms=@view gas.ele_matrix[e,:]
+            element_source_relmax=max(element_source_relmax,
+                abs(dot(atoms,source))/max(dot(abs.(atoms),abs.(source)),floatmin(Float64)))
+        end
+    end
+end
+@printf("invariants sumY_max=%.3g element_source_relmax=%.3g
+",sumYmax,element_source_relmax)
 NPZ.npzwrite(out,Dict("Tmax_curve_K"=>[q.max_temperature for q in curve],
     "strain_rate_curve_per_s"=>[q.max_strain_rate for q in curve],
     "fuel_mdot"=>[q.fuel_mass_flux for q in curve],"oxidizer_mdot"=>[q.oxidizer_mass_flux for q in curve],
