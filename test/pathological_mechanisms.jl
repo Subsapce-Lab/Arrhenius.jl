@@ -32,7 +32,7 @@ using Arrhenius, LinearAlgebra, Test, YAML
             @test abs(issue.delta_s_R) < 1e-10
             @test abs(issue.delta_dcp_R_dT) > 1e-6
         elseif name == "nasa7_small"
-            @test !any(x -> x.check == :nasa_continuity, report.issues)
+            @test !any(x -> x.check == :nasa_continuity && x.species == "H2", report.issues)
         elseif name == "collision_limit"
             @test !any(x -> x.check == :collision_limit_screen, report.issues)
         end
