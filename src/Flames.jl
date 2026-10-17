@@ -846,7 +846,7 @@ function _flame_solve_correction!(correction,band,pivots,residual,bandwidth)
         correction[i] = -correction[i]
     end
     LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(residual),band,pivots,correction)
-    return reshape(correction,size(residual))
+    return correction
 end
 # Prescribed-temperature systems retain residual merit; correction merit helps
 # the coupled species and energy solve.
@@ -953,7 +953,8 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 age[] = 0
                 force_new_jacobian = false
             end
-            _flame_solve_correction!(w.correction,w.band,pivots,r,bandwidth)
+            correction = _flame_solve_correction!(w.correction,w.band,pivots,r,bandwidth)
+            reshape(correction,size(u))
         catch e
             _flame_recoverable_factorization_error(e) || rethrow()
             return false
