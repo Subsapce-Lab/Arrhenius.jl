@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Evaluate Cantera's fixed-grid Newton correction and conditioning at a stored state."""
+import os, sys
+for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
+    os.environ[key] = "1"
+import numpy as np
+import cantera as ct
+from scipy import sparse
+from scipy.sparse.linalg import LinearOperator, onenormest, splu
+sys.path.insert(0, os.path.dirname(__file__))
+import xresid
+spec = xresid.load_spec(sys.argv[1])
+species = ct.Solution(xresid.mechanism_path(spec)).species_names
+can = xresid.canonical(sys.argv[2], species)
+f = xresid.build(spec, can["grid"])
+xresid.install(f, can)
+f.eval(rdt=0.0)
+components, values, residuals, tolerances = [], [], [], []
+for domain in f.domains:
+    for i in range(domain.n_components):
+        name = domain.component_name(i)
+        x = np.asarray(domain.values(name), float)
+        r = np.asarray(domain.residuals(name), float)
+        components.append((domain.name, name))
+        values.append(x)
+        residuals.append(r)
+        tolerances.append(np.full(x.shape, 1e-8 * np.mean(np.abs(x)) + 1e-14))
+# Cantera's OneDim ordering is point-major within each domain.
+blocks_x = [np.column_stack([values[i] for i in range(k, k + d.n_components)])
+            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+blocks_r = [np.column_stack([residuals[i] for i in range(k, k + d.n_components)])
+            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+blocks_w = [np.column_stack([tolerances[i] for i in range(k, k + d.n_components)])
+            for d in f.domains for k in [sum(x.n_components for x in f.domains[:f.domains.index(d)])]]
+x = np.concatenate([b.ravel() for b in blocks_x])
+r = np.concatenate([b.ravel() for b in blocks_r])
+w = np.concatenate([b.ravel() for b in blocks_w])
+f.linear_solver = ct.EigenSparseDirectJacobian()
+f.eval_jacobian()
+J = f.linear_solver.jacobian
+if not sparse.issparse(J):
+    raise TypeError(f"expected sparse Jacobian, got {type(J)} shape={getattr(J, 'shape', None)}")
+J = J.tocsc()
+lu = splu(J)
+dx = lu.solve(-r)
+step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))
+op = LinearOperator(J.shape, matvec=lambda v: J @ v, rmatvec=lambda v: J.T @ v, dtype=float)
+iop = LinearOperator(J.shape, matvec=lambda v: lu.solve(v), rmatvec=lambda v: lu.solve(v, trans="T"), dtype=float)
+cond1 = float(onenormest(op) * onenormest(iop))
+print(f"case={spec['id']} points={len(can['grid'])} dofs={len(r)} sparse_nnz={J.nnz}")
+print(f"residual_inf={np.linalg.norm(r, np.inf):.9g} weighted_step_rms={step:.9g} cond1_est={cond1:.9g}")
+print("component_order=" + ",".join(f"{d}:{c}" for d,c in components))
