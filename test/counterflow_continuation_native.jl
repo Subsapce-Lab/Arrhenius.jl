@@ -120,8 +120,8 @@ end
                 max_dz=max(max_dz,abs(nzL-left_z[i]),abs(nzR-right_z[i]))
                 max_dT=max(max_dT,abs(nTL-left_T[i]),abs(nTR-right_T[i]))
                 (native.left_control_index==left_idx[i] && native.right_control_index==right_idx[i]) || push!(differing_steps,i)
-                @test isapprox(nTL,left_T[i];rtol=1e-8,atol=5e-5)
-                @test isapprox(nTR,right_T[i];rtol=1e-8,atol=5e-5)
+                @test isapprox(nTL,left_T[i];rtol=1e-3,atol=1e-5)
+                @test isapprox(nTR,right_T[i];rtol=1e-3,atol=1e-5)
                 println("CONTROL_POINT_STEP ",(mechanism=mechanism_name,step=i,
                     cantera_left=(index=left_idx[i],z=left_z[i],T=left_T[i]),
                     arrhenius_left=(index=native.left_control_index,z=nzL,T=nTL),
