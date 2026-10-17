@@ -23,7 +23,7 @@ end
             end
         end
         cases["plog_underflow"] = _pathomech_fixture(base, dir, "plog_underflow") do root
-            r = _pathomech_reaction(root, "H2 + O <=> H + OH")
+            r = _pathomech_reaction(root, "O + H2 <=> H + OH")
             rc = r["rate-constant"]
             delete!(r, "rate-constant")
             r["type"] = "pressure-dependent-Arrhenius"
@@ -32,21 +32,21 @@ end
                 Dict("P"=>"10 atm", "A"=>rc["A"], "b"=>rc["b"], "Ea"=>1e6)]
         end
         cases["duplicate_unflagged"] = _pathomech_fixture(base, dir, "duplicate_unflagged") do root
-            r = deepcopy(_pathomech_reaction(root, "H2 + O <=> H + OH"))
+            r = deepcopy(_pathomech_reaction(root, "O + H2 <=> H + OH"))
             r["id"] = "duplicate-candidate"
             push!(root["reactions"], r)
         end
         cases["unbalanced"] = _pathomech_fixture(base, dir, "unbalanced") do root
-            _pathomech_reaction(root, "H2 + O <=> H + OH")["equation"] = "H2 + O <=> H + H"
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["equation"] = "H2 + O <=> H + H"
         end
         cases["negative_A"] = _pathomech_fixture(base, dir, "negative_A") do root
-            _pathomech_reaction(root, "H2 + O <=> H + OH")["rate-constant"]["A"] *= -1
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] *= -1
         end
         cases["extreme_Ea"] = _pathomech_fixture(base, dir, "extreme_Ea") do root
-            _pathomech_reaction(root, "H2 + O <=> H + OH")["rate-constant"]["Ea"] = 1e7
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["Ea"] = 1e7
         end
         cases["collision_limit"] = _pathomech_fixture(base, dir, "collision_limit") do root
-            _pathomech_reaction(root, "H2 + O <=> H + OH")["rate-constant"]["A"] = 1e15
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 1e15
         end
 
         expected = Dict(
