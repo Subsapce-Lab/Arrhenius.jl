@@ -39,13 +39,17 @@ end
 Y = mass_fractions(flame)
 sumy_error = maximum(abs.(vec(sum(Y; dims=1)) .- 1.0))
 mass_flux_error = maximum(abs.(flame.state[end, :] .- flame.mass_flux))
-element_inventory = flame.gas.ele_matrix * (Y ./ reshape(flame.gas.MW, :, 1))
-element_endpoint_relative = norm(element_inventory[:, end] - element_inventory[:, 1], Inf) /
-    max(norm(element_inventory[:, 1], Inf), 1e-300)
+workspace = Arrhenius.FlameWorkspace(flame)
+Arrhenius._flame_properties!(workspace, flame, flame.state)
+species_flux = flame.state[end, :] .* Y
+species_flux[:, 1:end-1] .+= workspace.flux
+element_flux = flame.gas.ele_matrix * (species_flux ./ reshape(flame.gas.MW, :, 1))
+element_flux_relative = maximum(abs.(element_flux .- element_flux[:, 1])) /
+    max(maximum(abs.(element_flux[:, 1])), 1e-300)
 println("R6RESULT row=$row case=$(spec["id"]) converged=$(flame.converged) " *
     "jacobians=$(stats.jacobians) newton=$(stats.newton_iterations) " *
     "accepted_steps=$(stats.time_steps) failures=$(stats.time_step_failures + stats.steady_failures) " *
     "regrids=$(stats.regrids) points=$(length(flame.grid)) " *
     "sumY_max=$(sumy_error) mass_flux_max=$(mass_flux_error) " *
-    "element_endpoint_rel=$(element_endpoint_relative)")
+    "element_flux_rel=$(element_flux_relative)")
 flame.converged || error("$(spec["id"]) row $row did not converge")
