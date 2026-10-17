@@ -70,7 +70,7 @@ def evaluate(path, solves):
     try:
         gas = ct.Solution(str(path))
     except Exception as exc:
-        row.update(load="error", message=str(exc).splitlines()[0])
+        row.update(load="error", message=str(exc).strip().splitlines()[0])
         return row
     temps = (250.0, 999.999, 1000.0, 1000.001, 2500.0, 3500.0)
     finite = True
@@ -130,3 +130,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
