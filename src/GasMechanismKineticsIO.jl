@@ -238,6 +238,9 @@ function _native_gas_arrays(root, phase, names; mechanism="", data_paths=String[
         ctx="reaction $j ($(get(r,"equation","?")))"
         lhs,rhs,rev,collider=_gas_reaction_equation(get(r,"equation",nothing),index,ctx)
         typ=String(get(r,"type","elementary")); units=_gas_units(root,get(r,"units",Dict{Any,Any}()))
+        supported_types=("elementary","three-body","falloff","chemically-activated",
+            "linear-Burke","pressure-dependent-Arrhenius","Blowers-Masel","Blowers-Masel-rate")
+        typ in supported_types || throw(ArgumentError("unsupported reaction rate type $typ in $ctx"))
         explicit=collider!==nothing
         typ=="chemically-activated" && throw(ArgumentError("chemically-activated rates are not supported in $ctx"))
         any(haskey(r,k) for k in ("SRI","Tsang","Chebyshev")) &&

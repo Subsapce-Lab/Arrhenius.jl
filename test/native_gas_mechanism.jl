@@ -277,6 +277,17 @@ end
         unknown=edge_reaction("H2 => 2 H",
             Dict("type"=>"unrecognized-rate-type","rate-constant"=>Dict("A"=>1.0)))
         @test_throws ArgumentError edge_arrays(unknown)
+        err=try
+            edge_arrays(unknown)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("unrecognized-rate-type", sprint(showerror,err))
+        @test occursin("H2 => 2 H", sprint(showerror,err))
+        # Validation opt-out covers Cantera input checks, not unsupported formulas.
+        @test_throws ArgumentError edge_arrays(unknown;validate=false)
     end
 
     @testset "PLOG logarithmic groups" begin
