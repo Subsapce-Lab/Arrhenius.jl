@@ -17,8 +17,9 @@ for j in 1:N
     f.state[end,j]=rho*ref["values/velocity"][j]
 end
 w=Arrhenius.FlameWorkspace(f); r=similar(f.state)
-flame_residual!(r,f,f.state,w)
-band=Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true)
+previous=copy(f.state); dt=1e-5
+flame_residual!(r,f,f.state,w;previous,dt)
+band=Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=true)
 B=size(f.state,1); bw=2B-1; dense=zeros(N*B,N*B)
 for col in 1:N*B, row in max(1,col-bw):min(N*B,col+bw)
     dense[row,col]=band[2bw+1+row-col,col]
@@ -31,5 +32,5 @@ for j in 1:N,k in 1:B
     if a<alpha; alpha=a; limiter=(j,k); end
 end
 println("alpha=",alpha," limiter=",limiter," norm_step=",norm(step))
-Arrhenius.npzwrite(ARGS[1],Dict("state"=>f.state,"grid"=>grid,"residual"=>r,"jacobian_band"=>band,"newton_step"=>step))
+Arrhenius.npzwrite(ARGS[1],Dict("state"=>f.state,"grid"=>grid,"residual"=>r,"previous"=>previous,"dt"=>[dt],"jacobian_band"=>band,"newton_step"=>step))
 end
