@@ -850,6 +850,21 @@ end
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
+function _flame_omit_cantera_boundary_species_block!(band,f,u)
+    f isa BurnerFlame || return band
+    (f.transport_model == :mixture_averaged && !f.soret_enabled &&
+        f.flux_gradient_basis == :mole) || return band
+    B,N=size(u)
+    @inbounds for (j,boundary) in ((2,1),(N-1,N)), k in 2:B-1
+        column=(j-1)*B+k
+        for rowcomponent in 1:B
+            row=(boundary-1)*B+rowcomponent
+            band[4B-1+row-column,column]=0.0
+        end
+    end
+    return band
+end
+
 function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing,analytic=true,
         update_transport=false,local_property_updates=true)
     if analytic && !update_transport && _conservative_flame(f) && _conservative_flame_jacobian!(f,u,w,r;previous,dt,previous_enthalpy)
@@ -919,6 +934,15 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             end
             column = (j-1)*B+k
             for jj in max(1,j-1):min(N,j+1), kk in 1:B
+                # Cantera's analytic Flow1D fill omits boundary residual rows
+                # for interior species columns. Burner flames otherwise
+                # finite-difference the first/last interior species columns;
+                # omit both boundary blocks from the analytic species-column matrix.
+                cantera_boundary_species_omission = analytic && !update_transport &&
+                    f isa BurnerFlame && f.transport_model == :mixture_averaged &&
+                    !f.soret_enabled && f.flux_gradient_basis == :mole &&
+                    2 <= k <= B-1 && ((j == 2 && jj == 1) || (j == N-1 && jj == N))
+                cantera_boundary_species_omission && continue
                 if auto_species_column &&
                         !((j == 2 && jj == 1) || (j == N-1 && jj == N))
                     continue
@@ -938,10 +962,13 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         _flame_auto_species_jacobian!(band,f,u,w,r;previous,dt) || begin
             # Unsupported chemistry derivative metadata falls back to full FD.
             fill!(band,0)
-            return _flame_jacobian(f,u,w,r;previous,dt,previous_enthalpy,
+            fallback=_flame_jacobian(f,u,w,r;previous,dt,previous_enthalpy,
                 analytic=false,update_transport)
+            analytic && !update_transport && _flame_omit_cantera_boundary_species_block!(fallback,f,u)
+            return fallback
         end
     end
+    analytic && !update_transport && _flame_omit_cantera_boundary_species_block!(band,f,u)
     return band
 end
 
