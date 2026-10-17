@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cantera reference behavior for generated pathological h2o2 fixtures.
+"""Cantera reference behavior for committed pathological h2o2 fixtures.
 
 Run in the pinned Cantera environment:
   python test/pathological_mechanisms_cantera.py --case clean
@@ -8,69 +8,29 @@ Run in the pinned Cantera environment:
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 import math
-import tempfile
+import warnings
 from pathlib import Path
 
 import cantera as ct
 import numpy as np
-import yaml
 
 
-def reaction(root, equation):
-    return next(r for r in root["reactions"] if r.get("equation") == equation)
-
-
-def fixtures(base, out):
-    clean = yaml.safe_load(base.read_text(encoding="utf-8"))
-    result = {"clean": copy.deepcopy(clean)}
-    for name, delta in (("nasa7_small", 1e-3), ("nasa7_large", 1.0)):
-        root = copy.deepcopy(clean)
-        h2 = next(s for s in root["species"] if s["name"] == "H2")
-        h2["thermo"]["data"][1][0] += delta
-        result[name] = root
-    root = copy.deepcopy(clean)
-    r = reaction(root, "O + H2 <=> H + OH")
-    rc = r.pop("rate-constant")
-    r["type"] = "pressure-dependent-Arrhenius"
-    r["rate-constants"] = [
-        {"P": "0.1 atm", "A": rc["A"], "b": rc["b"], "Ea": 1e6},
-        {"P": "10 atm", "A": rc["A"], "b": rc["b"], "Ea": 1e6},
-    ]
-    result["plog_underflow"] = root
-    root = copy.deepcopy(clean)
-    r = copy.deepcopy(reaction(root, "O + H2 <=> H + OH"))
-    r["id"] = "duplicate-candidate"
-    root["reactions"].append(r)
-    result["duplicate_unflagged"] = root
-    root = copy.deepcopy(clean)
-    reaction(root, "O + H2 <=> H + OH")["equation"] = "O + H2 <=> H + H"
-    result["unbalanced"] = root
-    root = copy.deepcopy(clean)
-    reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] *= -1
-    result["negative_A"] = root
-    root = copy.deepcopy(clean)
-    reaction(root, "O + H2 <=> H + OH")["rate-constant"]["Ea"] = 1e7
-    result["extreme_Ea"] = root
-    root = copy.deepcopy(clean)
-    reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 3.348e10
-    result["collision_limit"] = root
-    paths = {}
-    for name, root in result.items():
-        path = out / f"{name}.yaml"
-        path.write_text(yaml.safe_dump(root, sort_keys=False), encoding="utf-8")
-        paths[name] = path
-    return paths
-
+def fixtures(directory):
+    return {path.stem: path for path in sorted(directory.glob("*.yaml"))}
 
 def evaluate(path, solves):
     row = {"path": path.name, "load": "ok", "evaluation": "not-run"}
     try:
-        gas = ct.Solution(str(path))
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            gas = ct.Solution(str(path))
+        row["warnings"] = [str(item.message).splitlines()[0] for item in caught]
     except Exception as exc:
-        row.update(load="error", message=str(exc).strip().splitlines()[0])
+        lines = [line.strip() for line in str(exc).splitlines()]
+        message = next((line for line in lines if line and set(line) != {"*"}), "load failed")
+        row.update(load="error", message=message)
         return row
     temps = (250.0, 999.999, 1000.0, 1000.001, 2500.0, 3500.0)
     finite = True
@@ -88,11 +48,16 @@ def evaluate(path, solves):
         flame = ct.FreeFlame(flame_gas, width=0.03)
         flame.set_refine_criteria(ratio=3.0, slope=0.06, curve=0.12)
         flame.solve(loglevel=0, auto=True)
+        solver_stats = flame.solver_stats
         row["free_flame"] = {
             "converged": True, "grid_points": len(flame.grid),
-            "speed_m_s": float(flame.velocity[0]), "solver_stats": flame.solver_stats}
+            "speed_m_s": float(flame.velocity[0]),
+            "steps_total": sum(solver_stats.get("steps", [])),
+            "jacobian_evals_total": sum(solver_stats.get("jacobian_evals", [])),
+            "residual_evals_total": sum(solver_stats.get("residual_evals", [])),
+            "solver_stats": solver_stats}
     except Exception as exc:
-        row["free_flame"] = {"converged": False, "message": str(exc).splitlines()[0]}
+        row["free_flame"] = {"converged": False, "message": next((line.strip() for line in str(exc).splitlines() if line.strip() and set(line.strip()) != {"*"}), "solve failed")}
     try:
         ignition_gas = ct.Solution(str(path))
         ignition_gas.TPX = 1001.0, 3 * ct.one_atm, "H2:2, O2:1, AR:4"
@@ -104,9 +69,11 @@ def evaluate(path, solves):
         row["ignition"] = {
             "converged": math.isfinite(reactor.T), "time_s": float(network.time),
             "temperature_K": float(reactor.T),
+            "ignited": bool(reactor.T >= 1600),
+            "reached_t_end": bool(network.time >= t_end),
             "steps": int(network.solver_stats.get("steps", 0))}
     except Exception as exc:
-        row["ignition"] = {"converged": False, "message": str(exc).splitlines()[0]}
+        row["ignition"] = {"converged": False, "message": next((line.strip() for line in str(exc).splitlines() if line.strip() and set(line.strip()) != {"*"}), "solve failed")}
     return row
 
 
@@ -114,20 +81,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--solves", action="store_true")
     parser.add_argument("--case")
-    parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()
-    base = Path(__file__).resolve().parents[1] / "mechanism" / "h2o2.yaml"
-    with tempfile.TemporaryDirectory(prefix="pathomech-") as tmp:
-        out = args.output_dir or Path(tmp)
-        out.mkdir(parents=True, exist_ok=True)
-        paths = fixtures(base, out)
-        selected = [(n, p) for n, p in paths.items() if args.case is None or n == args.case]
-        if args.case is not None and not selected:
-            raise SystemExit(f"unknown case: {args.case}")
-        rows = [evaluate(p, args.solves) for _, p in selected]
-        print(json.dumps({"cantera_version": ct.__version__, "fixtures": rows}, indent=2))
+    fixture_dir = Path(__file__).resolve().parent / "data" / "pathological_mechanisms"
+    paths = fixtures(fixture_dir)
+    selected = [(n, p) for n, p in paths.items() if args.case is None or n == args.case]
+    if args.case is not None and not selected:
+        raise SystemExit(f"unknown case: {args.case}")
+    rows = [evaluate(p, args.solves) for _, p in selected]
+    print(json.dumps({"cantera_version": ct.__version__, "fixtures": rows}, indent=2))
 
 
 if __name__ == "__main__":
     main()
-
