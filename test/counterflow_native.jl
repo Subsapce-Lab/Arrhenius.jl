@@ -158,14 +158,18 @@ end
                 @test all(==(1.),scales)
 
                 guards=zeros(size(cf.state)); tol=1e-8
+                excess_left=argmax(@view cf.state[2:n+1,1])
+                excess_right=argmax(@view cf.state[2:n+1,N])
                 @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
                 for (row,col) in ((1,1),(1,N),(B-1,3),(B,3),(n+2,3),
-                                  (cf.dependent_species+1,3))
+                                  (excess_left+1,1),(excess_right+1,N))
                     guards[row,col]=2tol
                     @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
                     guards[row,col]=0.
                 end
-                guards[cf.dependent_species+1,3]=2e-9
+                guards[cf.dependent_species+1,3]=2tol
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                guards .= 0.; guards[excess_left+1,1]=2e-9
                 @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
                 guards .= 0.; guards[B-2,3]=1.
                 @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
