@@ -1211,8 +1211,8 @@ function _flame_steady_with_workspace!(f,w; loglevel=0,max_time_steps=500,timest
     residual_at!(r,x,previous,dt) = flame_residual!(r,f,x,w; previous,dt)
     for step in 1:max_time_steps
         copyto!(previous,f.state)
-        _premixed_stats(f).time_steps+=1; PREMIXED_STATS.time_steps+=1
         if _flame_newton!(f,w; previous,dt,maxiters=20,loglevel=0,analytic,iterations)
+            _premixed_stats(f).time_steps+=1; PREMIXED_STATS.time_steps+=1
             failures = 0
             dt = min(dt*_timestep_growth(residual_at!,growth_residual,growth_strategy,growth_factor,
                 previous,f.state,dt,iterations[]),1.0)
@@ -1270,6 +1270,7 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
         if _flame_newton!(f,w; previous,dt,maxiters=200,loglevel=0,analytic,iterations)
             successive_failures = 0
             successes += 1
+            _premixed_stats(f).time_steps+=1; PREMIXED_STATS.time_steps+=1
             batch += 1
             # A step that refreshed the Jacobian does not grow dt.
             if _flame_jacobian_count(w,f) == jacobians_before

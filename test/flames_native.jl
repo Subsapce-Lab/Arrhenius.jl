@@ -48,6 +48,7 @@ using Arrhenius, LinearAlgebra, Test
     solve!(fresh)
     run1=counts(solver_stats(fresh))
     @test run1[1]>0 && run1[2]>0 && run1[3]>0            # jacobians, newton_calls, newton_iterations
+    @test run1[5]>0                                       # accepted pseudo-time steps are counted
     @test run1[3]>=run1[1]                                # every Jacobian serves a Newton iteration
     @test run1[4]>=run1[3]                                # every iteration evaluated a residual
     @test last(run1[9])==length(fresh.grid)               # final steady attempt kept the final grid
