@@ -63,6 +63,14 @@ using Arrhenius, Test
     @test !Arrhenius._cantera_damped_step_converged(false,0.9)
     @test !Arrhenius._cantera_damped_step_converged(true,1.000001)
 
+    # A five-point startup can fail to converge, but its bound-rejection path
+    # must return the solver's ordinary failure instead of reading an undefined
+    # correction merit (the regression that arose while preparing these traces).
+    bound_failure_flame=FreeFlame(gas;X,grid=collect(range(0.,1.;length=5)),
+        discretization=:finite_difference)
+    @test_throws ErrorException solve!(bound_failure_flame;refine_grid=false,auto=false,
+        max_time_steps=100,cantera_compatible=true)
+
     # Cantera 4.0.0a2 FreeFlame bounds probe (Flow1D::setBounds):
     #                    Cantera T       Arrhenius T (stored in kK)
     # h2o2.yaml          (200, 7000)      (0.2, 7.0)
@@ -104,24 +112,38 @@ using Arrhenius, Test
     @test Arrhenius._newton_merit_accepts(compatible,1.0,1.1,true)
     @test !Arrhenius._newton_merit_accepts(compatible,1.0,0.9,true)
 
-    # Hand-evaluate the Cantera rule for actual one-iteration five-point traces.
-    # Both captured cases have s1>s0>1, so damping rejects and cannot converge.
+    # Start each hand trace from a converged premixed/counterflow state, then perturb its
+    # center temperature by 2% so the Newton call must accept a damped step and
+    # subsequently report convergence under Cantera's weighted-step rule.
+    premixed=FreeFlame(gas;X,grid=collect(range(0.,1.;length=17)),discretization=:finite_difference)
+    solve!(premixed;refine_grid=false,auto=false,max_time_steps=100,cantera_compatible=true)
+    @test premixed.converged
+    premixed.state[1,9] *= 1.02
     premixed_trace=Tuple{Bool,Float64,Float64,Bool}[]
-    premixed_converged=Arrhenius._flame_newton!(f,Arrhenius.FlameWorkspace(f);maxiters=1,
+    premixed_converged=Arrhenius._flame_newton!(premixed,Arrhenius.FlameWorkspace(premixed);maxiters=20,
         newton_options=compatible,step_trace=premixed_trace)
     @test !isempty(premixed_trace)
-    expected_premixed_sequence=[(false,false)]
+    # Cantera accepts the first step because 3.067909053575063 <
+    # 23.39533432218312, but it does not converge because s1 >= 1.
+    # It accepts and converges the second because 0.3086583470757785 < 1.
+    expected_premixed_sequence=[(true,false),(true,true)]
     @test [(accepted,converged) for (accepted,_,_,converged) in premixed_trace]==expected_premixed_sequence
     @test premixed_converged==last(expected_premixed_sequence)[2]
 
     cf=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1,AR:3",
         mdot_fuel=.12,mdot_oxidizer=.12,P=.05*one_atm,width=.02,
         grid=collect(range(0.,.02;length=5)))
+    solve!(cf;refine_grid=false,auto=false,max_time_steps=100,cantera_compatible=true)
+    @test cf.converged
+    cf.state[1,3] *= 1.02
     counterflow_trace=Tuple{Bool,Float64,Float64,Bool}[]
-    counterflow_converged=Arrhenius._counterflow_newton!(cf,Arrhenius.CounterflowWorkspace(cf);maxiters=1,
+    counterflow_converged=Arrhenius._counterflow_newton!(cf,Arrhenius.CounterflowWorkspace(cf);maxiters=20,
         analytic=false,newton_options=compatible,step_trace=counterflow_trace)
     @test !isempty(counterflow_trace)
-    expected_counterflow_sequence=[(false,false)]
+    # Cantera accepts the first step because 8.315338762561373 <
+    # 35.61845052974506, but s1 >= 1 so it does not converge.
+    # The next step converges because 0.25362760981519045 < 1.
+    expected_counterflow_sequence=[(true,false),(true,true)]
     @test [(accepted,converged) for (accepted,_,_,converged) in counterflow_trace]==expected_counterflow_sequence
     @test counterflow_converged==last(expected_counterflow_sequence)[2]
 

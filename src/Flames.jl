@@ -1281,6 +1281,9 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             end
             alpha = min(alpha,a)
         end
+        # Compute the current correction merit before the bound rejection path
+        # so its trace and failure fallback have a defined s0 as well.
+        step_merit = correction_enabled ? _flame_policy_correction_norm(step,correction_weights,f,newton_options) : 0.0
         # Cantera MultiNewton::boundStep lands exactly on its bounds, and
         # dampStep rejects a bound factor no greater than 1e-10.
         if alpha <= 1e-10
@@ -1301,7 +1304,6 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             continue
         end
         # Trial correction merit uses the already factored (lagged) Newton J.
-        step_merit = correction_enabled ? _flame_policy_correction_norm(step,correction_weights,f,newton_options) : 0.0
         accepted = false
         trial_merit = Inf
         # Cantera's MultiNewton::dampStep: at most seven trials, each sqrt(2)
