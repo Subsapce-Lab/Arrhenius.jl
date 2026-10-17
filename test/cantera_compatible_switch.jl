@@ -39,6 +39,26 @@ function check_solver_options(flame, compatible, expected)
     @test all(getproperty(settings, name) == value for (name, value) in pairs(expected.defaults))
 end
 
+function check_solver_options_reset(flame, expected)
+    solve!(flame; jacobian_mode=:finite_difference)
+    @test flame.converged
+    first = solver_options(flame)
+    @test first !== nothing
+    @test first.jacobian_mode == :finite_difference
+
+    Arrhenius.reset!(solver_stats(flame))
+    @test solver_options(flame) === nothing
+
+    solve!(flame; jacobian_mode=:auto, newton_options=NewtonPolicyOptions(damping_trials=5))
+    @test flame.converged
+    latest = solver_options(flame)
+    @test latest !== nothing
+    @test latest.jacobian_mode == :auto
+    @test latest.newton_options.damping_trials == 5
+    @test latest !== first
+    @test all(getproperty(latest, name) == value for (name, value) in pairs(expected.defaults))
+end
+
 @testset "cantera_compatible solve switch integration" begin
     X = "H2:2,O2:1,AR:3"
     premixed_defaults = (refine_grid=true, ratio=3.0, slope=.06, curve=.12,
@@ -89,5 +109,24 @@ end
                 T_surface=500.0, P=.05*one_atm, width=.2)
         end
         check_solver_options(flame, compatible, pcf_expected())
+    end
+
+    @testset "counterflow solver options reset and refresh" begin
+        diffusion = CounterflowDiffusionFlame(newgas(); fuel="H2:1,AR:1",
+            oxidizer="O2:.2,AR:.8", mdot_fuel=.24, mdot_oxidizer=.72,
+            P=one_atm, width=.02, grid=collect(range(0.0,.02;length=5)))
+        check_solver_options_reset(diffusion, cf_expected())
+
+        composition = "H2:1.6,O2:1,AR:7"
+        premixed = CounterflowPremixedFlame(newgas(); reactants=composition,
+            mdot_reactants=.12, mdot_products=.06, T_reactants=373.0,
+            P=.05*one_atm, width=.2)
+        twin = CounterflowTwinPremixedFlame(newgas(); reactants=composition,
+            mdot=.12, T=373.0, P=.05*one_atm, width=.2)
+        jet = ImpingingJet(newgas(); reactants=composition, mdot=.06,
+            T_inlet=373.0, T_surface=500.0, P=.05*one_atm, width=.2)
+        for flame in (premixed, twin, jet)
+            check_solver_options_reset(flame, pcf_expected())
+        end
     end
 end
