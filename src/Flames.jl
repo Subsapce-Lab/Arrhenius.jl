@@ -1124,7 +1124,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         # Cantera MultiNewton::boundStep lands exactly on its bounds, and
         # dampStep rejects a bound factor no greater than 1e-10.
         if alpha <= 1e-10
-            step_trace === nothing || push!(step_trace,(false,Inf,false))
+            step_trace === nothing || push!(step_trace,(false,step_merit,Inf,false))
             at_floor && return true
             if policy
                 # MultiNewton::solve: a damping failure re-evaluates an old
@@ -1175,7 +1175,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             alpha /= newton_options.damping_factor
         end
         cantera_converged = _cantera_damped_step_converged(accepted,trial_merit)
-        step_trace === nothing || push!(step_trace,(accepted,trial_merit,cantera_converged))
+        step_trace === nothing || push!(step_trace,(accepted,step_merit,trial_merit,cantera_converged))
         loglevel > 1 && println("Newton ",iteration," residual=",residual_norm," damping=",alpha)
         if accepted && ((newton_options.steady_convergence === :weighted_step && cantera_converged) ||
                 (newton_options.steady_convergence !== :weighted_step && cantera_transient && trial_merit <= 1))

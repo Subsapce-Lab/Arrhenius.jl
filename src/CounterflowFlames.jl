@@ -777,7 +777,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
             end
         end
         cantera_converged=_cantera_damped_step_converged(accepted,trial_merit)
-        step_trace === nothing || push!(step_trace,(accepted,trial_merit,cantera_converged))
+        step_trace === nothing || push!(step_trace,(accepted,step_merit,trial_merit,cantera_converged))
         loglevel>1 && println("Counterflow Newton ",iteration," residual=",residualnorm," damping=",alpha)
         if !accepted
             if loglevel>2
