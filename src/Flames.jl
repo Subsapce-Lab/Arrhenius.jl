@@ -1632,8 +1632,10 @@ function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
     f isa BurnerFlame && !isempty(f.imposed_temperature) && throw(ArgumentError(
         "cantera_compatible auto staging is for energy-enabled burner flames"))
     if f isa FreeFlame && cantera_compatible && domain_check
-        controls = merge(controls, (; steady_callback=()->(
-            _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())))
+        controls = merge(controls, (; steady_callback = () -> begin
+            _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
+            nothing
+        end))
     elseif f isa BurnerFlame
         domain_check = false
         if cantera_compatible
