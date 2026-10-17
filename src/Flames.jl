@@ -1644,7 +1644,7 @@ domain and restarts the ladder. Cantera's time-step controls:
 `time_step_growth_factor`, `time_step_growth_strategy` (`:fixed_growth`,
 `:steady_norm`, `:transient_residual`, `:residual_ratio`, `:newton_iterations`),
 `time_step_callback(dt)`, `time_step_regrid` and `jacobian_mode` (`:auto` or
-`:finite_difference`). `prune` is Cantera's fourth refine criterion: grid
+`:finite_difference`), and `cantera_compatible=true` requires residual infinity norm below 1e-8 for fixed-temperature transient Newton convergence. `prune` is Cantera's fourth refine criterion: grid
 points whose slope/curve indicators fall below it are removed on each
 refinement pass (0 disables pruning; it must not exceed `slope` or `curve`).
 """
