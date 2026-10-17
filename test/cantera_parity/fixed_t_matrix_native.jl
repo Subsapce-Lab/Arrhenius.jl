@@ -2,7 +2,8 @@
 # Usage: julia --project=<Arrhenius> fixed_t_matrix_native.jl spec.json state.npz out.npz
 using Arrhenius, YAML, NPZ, LinearAlgebra
 BLAS.set_num_threads(1)
-spec=YAML.load_file(ARGS[1]); d=npzread(ARGS[2]); out=ARGS[3]
+function run_case(specpath,statepath,outfile)
+spec=YAML.load_file(specpath); d=npzread(statepath); out=outfile
 gas=CreateSolution(spec["mechanism"]*".yaml")
 z=vec(d["grid"]); T=vec(d["T"]); Y=Matrix{Float64}(d["Y"]); U=vec(d["velocity"])
 X=Dict(String(k)=>parse(Float64,v) for (k,v) in split.(split(spec["X"],","),":"))
@@ -33,4 +34,11 @@ end
 scales=repeat(vcat(0.001,ones(n),rho),N)
 bands .*= reshape(scales,1,:)
 npzwrite(out,Dict("r_arr"=>vec(r),"bands_arr"=>bands,"bw"=>[bw],"rho"=>rho))
-println("exported points=$N dofs=$m band=$bw residual_inf=$(norm(r,Inf)) file=$out")
+println("case=$(spec["id"]) exported points=$N dofs=$m band=$bw residual_inf=$(norm(r,Inf)) file=$out")
+
+end
+
+length(ARGS)%3==0 && !isempty(ARGS) || error("provide spec/state/output triples")
+for i in 1:3:length(ARGS)
+    run_case(ARGS[i],ARGS[i+1],ARGS[i+2])
+end
