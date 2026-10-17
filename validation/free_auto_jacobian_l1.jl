@@ -20,11 +20,11 @@ end
 w=Arrhenius.FlameWorkspace(f); r=similar(f.state)
 flame_residual!(r,f,f.state,w)
 band=Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true)
-B=size(f.state,1); bw=2B-1; dense=zeros(N*B,N*B)
-for col in 1:N*B, row in max(1,col-bw):min(N*B,col+bw)
-    dense[row,col]=band[2bw+1+row-col,col]
-end
-step=permutedims(reshape(dense\(-vec(permutedims(r))),N,B))
+B=size(f.state,1); bw=2B-1; factored=copy(band)
+_,pivots=LinearAlgebra.LAPACK.gbtrf!(bw,bw,N*B,factored)
+correction=-vec(permutedims(r))
+LinearAlgebra.LAPACK.gbtrs!('N',bw,bw,N*B,factored,pivots,correction)
+step=permutedims(reshape(correction,N,B))
 alpha=Inf; limiter=(0,0)
 for j in 1:N,k in 1:B
     lo,hi=Arrhenius._flame_bounds(f,k,B); x=f.state[k,j]; d=step[k,j]
