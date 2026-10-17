@@ -329,6 +329,12 @@ end
     end
     full_jacobian_relative_error=norm(dense_jac-expected_full)/norm(expected_full)
     @info "Cantera full auto Jacobian fixture comparison" full_jacobian_relative_error
+    for (name,cols) in (("interior species",[j*B+k for j in 1:N-2 for k in 2:B-1]),
+            ("boundary species",[j*B+k for j in (0,N-1) for k in 2:B-1]),
+            ("temperature",[j*B+1 for j in 0:N-1]),("mass flux",[j*B+B for j in 0:N-1]))
+        rel=norm(dense_jac[:,cols]-expected_full[:,cols])/norm(expected_full[:,cols])
+        @info "Cantera Jacobian block" name rel
+    end
     @test full_jacobian_relative_error < 2e-10
     d=Arrhenius._ConservativeFlameDerivatives(gas,N)
     G=zeros(n,n+1)
