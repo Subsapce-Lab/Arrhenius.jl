@@ -1033,11 +1033,12 @@ function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,
     isfinite(ratio) && ratio>1 && 0<slope<=1 && 0<curve<=1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(prune) && prune<=min(slope,curve) || throw(ArgumentError("invalid pruning criterion"))
     isfinite(initial_time_step) && initial_time_step>0 || throw(ArgumentError("positive finite initial time step required"))
+    cantera_compatible && (jacobian_mode = :auto)
     _check_timestep_controls(time_step_growth_factor,time_step_growth_strategy,time_step_regrid,jacobian_mode)
     newton_options = _newton_policy(newton_options,cantera_compatible)
     reset!(_counterflow_stats(f))  # per-flame counters report this solve only
     controls=(;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
-        step_callback=time_step_callback,analytic=jacobian_mode===:auto,newton_options)
+        step_callback=time_step_callback,analytic=jacobian_mode!==:finite_difference,newton_options)
     timestep=Ref(Float64(initial_time_step))
     steady!(flow)=_counterflow_steady!(flow;max_time_steps,timestep,loglevel,controls...,
         newton_maxiters=newton_options.counterflow_steady_maxiters,
