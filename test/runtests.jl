@@ -295,4 +295,5 @@ end
 include("native_gas_mechanism.jl")
 
 include("gas_mechanism_audit.jl")
+include("pathological_mechanisms.jl")
 include("common_tmid_refit.jl")
