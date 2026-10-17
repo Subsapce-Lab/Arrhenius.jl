@@ -266,6 +266,7 @@ function main(specfile, dir, reportfile, max_transitions=typemax(Int), first_tra
 
 
     println("replayed transitions=$(length(rows)) first_divergence=$firstdiv report=$reportfile")
+    return rows
 end
 if abspath(PROGRAM_FILE)==@__FILE__
     options=length(ARGS)>=6 && ARGS[6]=="cantera" ? Arrhenius._newton_policy(nothing,true) : NewtonPolicyOptions()

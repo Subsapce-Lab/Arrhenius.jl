@@ -1,10 +1,10 @@
 #!/usr/bin/env julia
-"""Compare default and Cantera-compatible Newton policy at snapshot and adaptive levels.
-
-Input is TOML with repeated `[[case]]` entries: `id`, `spec`, and `capture_dir`.
-Capture directories use the format produced by `test/cantera_parity/snapshots/capture.py`.
-Run under `run_capped`; snapshot replay runs one fixed-grid transition per policy.
-"""
+# """Compare default and Cantera-compatible Newton policy at snapshot and adaptive levels.
+#
+# Input is TOML with repeated `[[case]]` entries: `id`, `spec`, and `capture_dir`.
+# Capture directories use the format produced by `test/cantera_parity/snapshots/capture.py`.
+# Run under `run_capped`; snapshot replay runs one fixed-grid transition per policy.
+# """
 using Arrhenius, YAML, NPZ, TOML, LinearAlgebra
 BLAS.set_num_threads(1)
 include(joinpath(@__DIR__,"..","test","cantera_parity","snapshots","replay.jl"))
@@ -15,7 +15,9 @@ function json_value(x)
     x isa Number && return isfinite(x) ? string(x) : "null"
     x isa AbstractString && return "\""*replace(x,"\\"=>"\\\\","\""=>"\\\"","\n"=>"\\n")*"\""
     x isa AbstractDict && return "{"*join((json_value(string(k))*":"*json_value(v) for (k,v) in x),",")*"}"
-    x isa Tuple || x isa AbstractVector ? (return "["*join(json_value.(collect(x)),",")*"]")
+    if x isa Tuple || x isa AbstractVector
+        return "["*join(json_value.(collect(x)),",")*"]"
+    end
     error("unsupported JSON value $(typeof(x))")
 end
 
@@ -54,7 +56,7 @@ function element_error(gas,Y)
     end
     return maxerr
 end
-element_error(f)=element_error(f.gas,mass_fractions(f))
+element_error(f) = f isa CounterflowDiffusionFlame ? nothing : element_error(f.gas,mass_fractions(f))
 
 function interpolate_profile(x,y,xnew)
     out=similar(xnew,Float64)
@@ -100,28 +102,28 @@ function adaptive_result(specfile, capture_dir, policy, label, root)
         "reference_accuracy"=>isempty(err) ? reference_accuracy(f,capture_dir) : nothing)
 end
 
-function snapshot_result(specfile,capture_dir,policy,label)
+function snapshot_result(specfile,capture_dir,policy,label,transition)
     out=mktempdir(); csv=joinpath(out,"replay.csv")
-    main(specfile,capture_dir,csv,1,1,policy)
-    lines=readlines(csv); row=split(lines[2],',')
-    header=split(lines[1],','); values=Dict(strip(k,'"')=>strip(v,'"') for (k,v) in zip(header,row))
+    rows=main(specfile,capture_dir,csv,1,transition,policy)
+    values=rows[1]
     native=NPZ.npzread(values["native_state"])
     Y=permutedims(native["Y"])
     spec=YAML.load_file(specfile)
     mechanism=normpath(get(spec,"mechanism_path",joinpath(@__DIR__,"..",spec["mechanism"]*".yaml")))
     gas=CreateSolution(mechanism)
-    return Dict("level"=>"snapshot_replay","case"=>label,
+    return Dict("level"=>"snapshot_replay","case"=>label,"transition"=>transition,
         "policy"=>policy.cantera_compatible ? "cantera" : "default",
-        "converged"=>values["error"]=="" && values["within_tolerance"]=="true",
-        "grid_size"=>length(native["grid"]),"seconds"=>parse(Float64,values["native_seconds"]),
+        "converged"=>values["error"]=="",
+        "within_snapshot_tolerance"=>values["within_tolerance"],
+        "grid_size"=>length(native["grid"]),"seconds"=>values["native_seconds"],
         "max_sumY_error"=>maximum(abs.(sum(Y;dims=1).-1)),
-        "max_element_error"=>element_error(gas,Y),
-        "snapshot_relative_state_error"=>parse(Float64,values["relative_state_error"]),
-        "solver_stats"=>Dict("newton_iterations"=>parse(Int,values["native_iterations"]),
-            "jacobians"=>parse(Int,values["native_jacobians"]),
-            "cantera_jacobians"=>parse(Int,values["cantera_jacobians"]),
-            "native_steps"=>parse(Int,values["native_steps"]),
-            "cantera_steps"=>parse(Int,values["cantera_steps"])),"error"=>values["error"])
+        "max_element_error"=>spec["kind"]=="diffusion" ? nothing : element_error(gas,Y),
+        "snapshot_relative_state_error"=>values["relative_state_error"],
+        "solver_stats"=>Dict("newton_iterations"=>values["native_iterations"],
+            "jacobians"=>values["native_jacobians"],
+            "cantera_jacobians"=>values["cantera_jacobians"],
+            "native_steps"=>values["native_steps"],
+            "cantera_steps"=>values["cantera_steps"]),"error"=>values["error"])
 end
 
 function main(casefile,outfile)
@@ -136,7 +138,8 @@ function main(casefile,outfile)
         isfile(spec) || error("missing spec: $spec")
         isfile(joinpath(capture,"manifest.json")) || error("missing snapshot manifest: $capture")
         for policy in policies
-            push!(results,snapshot_result(spec,capture,policy,c["id"]))
+            transition=get(c,"transition",1)
+            push!(results,snapshot_result(spec,capture,policy,c["id"],transition))
             push!(results,adaptive_result(spec,capture,policy,c["id"],root))
         end
     end
