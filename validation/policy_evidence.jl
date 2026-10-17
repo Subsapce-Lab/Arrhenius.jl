@@ -42,7 +42,7 @@ function case_flame(spec, root)
     return f
 end
 
-function element_error(gas,Y)
+function element_profile_drift(gas,Y)
     base=zeros(length(gas.elements))
     maxerr=0.0
     for e in eachindex(gas.elements)
@@ -56,7 +56,33 @@ function element_error(gas,Y)
     end
     return maxerr
 end
-element_error(f) = f isa CounterflowDiffusionFlame ? nothing : element_error(f.gas,mass_fractions(f))
+element_profile_drift(f) = f isa CounterflowDiffusionFlame ? nothing : element_profile_drift(f.gas,mass_fractions(f))
+
+function element_source_balance(f)
+    r=similar(f.state)
+    if f isa CounterflowDiffusionFlame
+        w=Arrhenius.CounterflowWorkspace(f)
+        Arrhenius.counterflow_residual!(r,f,f.state,w)
+        source=w.properties.source
+    else
+        w=Arrhenius.FlameWorkspace(f)
+        flame_residual!(r,f,f.state,w)
+        source=w.source
+    end
+    max_relative=0.0
+    max_absolute=0.0
+    for e in eachindex(f.gas.elements), j in axes(source,2)
+        imbalance=0.0; magnitude=0.0
+        for k in eachindex(f.gas.species_names)
+            contribution=f.gas.ele_matrix[e,k]*source[k,j]
+            imbalance+=contribution
+            magnitude+=abs(contribution)
+        end
+        max_absolute=max(max_absolute,abs(imbalance))
+        max_relative=max(max_relative,abs(imbalance)/max(magnitude,1e-300))
+    end
+    return (relative=max_relative,absolute=max_absolute)
+end
 
 function interpolate_profile(x,y,xnew)
     out=similar(xnew,Float64)
@@ -93,10 +119,14 @@ function adaptive_result(specfile, capture_dir, policy, label, root)
         err=sprint(showerror,e)
     end
     stats=solver_stats(f); Y=mass_fractions(f)
+    element_balance=element_source_balance(f)
     return Dict("level"=>"adaptive","case"=>label,"policy"=>policy.cantera_compatible ? "cantera" : "default",
         "converged"=>isempty(err) && f.converged,"error"=>err,"seconds"=>time()-t0,
         "grid_size"=>length(f.grid),"max_sumY_error"=>maximum(abs.(sum(Y;dims=1).-1)),
-        "max_element_error"=>element_error(f),"solver_stats"=>Dict("newton_calls"=>stats.newton_calls,
+        "max_element_profile_drift"=>element_profile_drift(f),
+        "max_element_source_balance_relative_error"=>element_balance.relative,
+        "max_element_source_balance_absolute"=>element_balance.absolute,
+        "solver_stats"=>Dict("newton_calls"=>stats.newton_calls,
             "newton_iterations"=>stats.newton_iterations,"jacobians"=>stats.jacobians,
             "time_steps"=>stats.time_steps,"time_step_failures"=>stats.time_step_failures),
         "reference_accuracy"=>isempty(err) ? reference_accuracy(f,capture_dir) : nothing)
@@ -117,7 +147,7 @@ function snapshot_result(specfile,capture_dir,policy,label,transition)
         "within_snapshot_tolerance"=>values["within_tolerance"],
         "grid_size"=>length(native["grid"]),"seconds"=>values["native_seconds"],
         "max_sumY_error"=>maximum(abs.(sum(Y;dims=1).-1)),
-        "max_element_error"=>spec["kind"]=="diffusion" ? nothing : element_error(gas,Y),
+        "max_element_profile_drift"=>spec["kind"]=="diffusion" ? nothing : element_profile_drift(gas,Y),
         "snapshot_relative_state_error"=>values["relative_state_error"],
         "solver_stats"=>Dict("newton_iterations"=>values["native_iterations"],
             "jacobians"=>values["native_jacobians"],
