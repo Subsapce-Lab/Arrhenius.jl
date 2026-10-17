@@ -64,6 +64,7 @@ end
     fresh_multi = solve!(makeflame(:multicomponent,:mole))
     solve!(mixed_mole)
     first_workspace = Arrhenius._take_flame_workspace(mixed_mole)
+    @test length(mixed_mole.workspace) > 1 # adaptive grids keep flame-local workspaces
     solve!(mixed_mass)
     solve!(multi_mole)
     solve!(mixed_mole)
