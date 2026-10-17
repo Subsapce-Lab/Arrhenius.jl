@@ -218,7 +218,7 @@ end
     for prescribed_temperature in (false,true)
         f=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.08,
             discretization=:finite_difference)
-        prescribed_temperature && set_temperature_profile!(f,[grid[1],grid[end]],[700.,900.];relative=false)
+        prescribed_temperature && set_temperature_profile!(f,[grid[1],grid[end]],[f.inlet_temperature,900.];relative=false)
         n=gas.n_species;B=n+2
         for j in eachindex(grid)
             f.state[1,j]=.7+.04j
@@ -231,16 +231,17 @@ end
         analytic=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true))
         finite_difference=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=false))
         kl=2B-1
-        worst=0.0
+        worst=0.0;worst_entry=(0,0,0.0,0.0)
         for point in 2:length(grid)-1,component in 2:B-1
             col=(point-1)*B+component
             for row in max(1,col-kl):min(B*length(grid),col+kl)
                 a=analytic[2kl+1+row-col,col]
                 d=finite_difference[2kl+1+row-col,col]
-                worst=max(worst,abs(a-d)/max(abs(d),1e-6))
+                error=abs(a-d)/max(abs(d),1e-6)
+                if error>worst; worst=error; worst_entry=(row,col,a,d); end
             end
         end
-        @info "burner analytic species Jacobian versus native finite differences" prescribed_temperature worst
+        @info "burner analytic species Jacobian versus native finite differences" prescribed_temperature worst worst_entry
         @test worst < 2e-4
         if prescribed_temperature
             for point in 2:length(grid)-1,component in 2:B-1
@@ -252,7 +253,6 @@ end
             end
         end
     end
-end
 end
 
 @testset "Cantera auto Jacobian fixture: free flame source species columns" begin
