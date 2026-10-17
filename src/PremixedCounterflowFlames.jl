@@ -228,8 +228,9 @@ function counterflow_residual!(residual,f::AbstractPremixedCounterflow,u=f.state
         # The twin boundary is a symmetry plane. The independent zero-gradient
         # equations and normalization are equivalent to equal adjacent Y.
         # This form stays differentiable for negative Newton trial traces.
+        excess=argmax(@view u[2:f.gas.n_species+1,end])
         for k in 1:f.gas.n_species
-            k==f.dependent_species && continue
+            k==excess && continue
             residual[k+1,end]=u[k+1,end]-u[k+1,end-1]
         end
     end
@@ -253,8 +254,14 @@ _counterflow_growth_residual!(r,f::ImpingingJet,x,w;previous=nothing,dt=Inf) =
 
 function _counterflow_growth_residual!(r,f::CounterflowTwinPremixedFlame,x,w;previous=nothing,dt=Inf)
     _counterflow_growth_residual!(r,f.flow,x,w;previous,dt)
-    # Symm1D::eval replaces the storage inlet's Dirichlet rows at the symmetry
-    # plane with zero-gradient rows (physical V and T differences).
+    # Symm1D::eval replaces the storage-inlet Dirichlet rows at the symmetry
+    # plane with zero-gradient rows, except the current excess-species closure.
+    if !f.soret_enabled
+        n=f.gas.n_species; excess=argmax(@view x[2:n+1,end])
+        for k in 1:n
+            k==excess || (r[k+1,end]=x[k+1,end]-x[k+1,end-1])
+        end
+    end
     iv=size(x,1)-2
     r[iv,end]=_counterflow_Vscale*(x[iv,end]-x[iv,end-1])
     isempty(f.fixed_temperature) &&

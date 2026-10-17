@@ -488,7 +488,10 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
         if !isempty(f.fixed_temperature)
             residual[1,j]=u[1,j]-f.fixed_temperature[j]/1000
         end
-        residual[f.dependent_species+1,j]=sum(@view(u[2:n+1,j]))-1
+        if j==1 || j==N
+            excess=argmax(@view u[2:n+1,j])
+            residual[excess+1,j]=sum(@view(u[2:n+1,j]))-1
+        end
     end
     return residual
 end
@@ -560,7 +563,6 @@ function _counterflow_chemistry_jacobian!(f,u,w)
                 _flame_band_add!(w.band,B,j,1,j,l,energy*heat)
             end
             for k in 1:n
-                k==f.dependent_species && continue
                 _flame_band_add!(w.band,B,j,k+1,j,l,species*MW[k]*G[k,l])
             end
         end
@@ -584,7 +586,11 @@ end
 function _counterflow_constraints_converged(f,r,tol)
     B,N=size(r)
     maximum(abs,@view(r[B-1:B,:]))<=tol || return false
-    maximum(abs,@view(r[f.dependent_species+1,:]))<=min(tol,1e-9) || return false
+    n=f.gas.n_species
+    excess_left=argmax(@view f.state[2:n+1,1])
+    excess_right=argmax(@view f.state[2:n+1,N])
+    abs(r[excess_left+1,1])<=min(tol,1e-9) || return false
+    abs(r[excess_right+1,N])<=min(tol,1e-9) || return false
     maximum(abs,@view(r[:,1]))<=tol && maximum(abs,@view(r[:,N]))<=tol || return false
     isnothing(f.control_points) || maximum(abs,@view(r[f.gas.n_species+2,:]))<=tol
 end
@@ -593,7 +599,7 @@ end
 # evaluation: only interior T/species(/spread-rate) diagonal entries carry
 # -_flame_timescale/dt, so a dt change is a constant diagonal shift plus a
 # refactorization (SteadyStateSystem::initTimeInteg / updateTransient).
-function _counterflow_transient_update!(J,f,dt_old,dt_new,skip_dependent=true)
+function _counterflow_transient_update!(J,f,dt_old,dt_new,skip_dependent=false)
     dt_old==dt_new && return J
     B,N=size(f.state); n=f.gas.n_species
     kmax=isnothing(f.control_points) ? n+2 : n+1
@@ -601,7 +607,8 @@ function _counterflow_transient_update!(J,f,dt_old,dt_new,skip_dependent=true)
     delta=_flame_timescale*(1/dt_old-1/dt_new)
     diag=4B-1
     for j in 2:N-1, k in k0:kmax
-        # The eliminated species is sum(Y)=1, an algebraic row at every node.
+        # Interior species PDE rows, including the former dependent species, all
+        # carry the pseudo-time diagonal. Closure is applied only at boundaries.
         skip_dependent && k==f.dependent_species+1 && continue
         J[diag,(j-1)*B+k]+=delta
     end
@@ -631,7 +638,7 @@ _counterflow_retry_steady(successful_steps) =
 end
 
 function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1e-8,loglevel=0,
-        analytic=true,iterations=Ref(0),skip_dependent_transient=true,
+        analytic=true,iterations=Ref(0),skip_dependent_transient=false,
         transient_update! = _counterflow_transient_update!)
     u=f.state; r=similar(u); trial=similar(u); rt=similar(u)
     n=f.gas.n_species; bandwidth=2*size(u,1)-1
@@ -796,7 +803,7 @@ end
 function _counterflow_steady!(f;max_time_steps=800,timestep=Ref(_COUNTERFLOW_INITIAL_TIME_STEP),loglevel=0,
         growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true,
         newton_maxiters=0,transient_newton_maxiters=0,
-        skip_dependent_transient=true,transient_update! = _counterflow_transient_update!)
+        skip_dependent_transient=false,transient_update! = _counterflow_transient_update!)
     # One entry in both the flame's own stats and the family global.
     owned=_counterflow_stats(f)
     objs=(owned,COUNTERFLOW_STATS)
@@ -849,13 +856,6 @@ function _counterflow_growth_residual!(r,f::CounterflowDiffusionFlame,x,w;previo
             for k in 1:n
                 r[k+1,j]/=_flame_timescale
             end
-            # Restore the interior species PDE replaced by native sum(Y)=1.
-            k=f.dependent_species
-            jm,jp=x[im,j]>0 ? (j-1,j) : (j,j+1)
-            cell=.5*(z[j+1]-z[j-1]); dz=z[jp]-z[jm]
-            r[k+1,j]=(f.gas.MW[k]*p.source[k,j]-(p.flux[k,j]-p.flux[k,j-1])/cell-
-                x[im,j]*(x[k+1,jp]-x[k+1,jm])/dz)/p.rho[j]
-            previous===nothing || (r[k+1,j]-=(x[k+1,j]-previous[k+1,j])/dt)
         end
     end
     return r
@@ -864,7 +864,7 @@ end
 function _counterflow_steady_impl!(f;max_time_steps=800,timestep=Ref(_COUNTERFLOW_INITIAL_TIME_STEP),loglevel=0,
         growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true,
         newton_maxiters=0,transient_newton_maxiters=0,
-        skip_dependent_transient=true,transient_update! = _counterflow_transient_update!)
+        skip_dependent_transient=false,transient_update! = _counterflow_transient_update!)
     w=CounterflowWorkspace(f)
     cs=_counterflow_stats(f)
     # A failed steady trial must not replace the pseudo-time state; Cantera

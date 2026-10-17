@@ -220,30 +220,33 @@ end
     @test Arrhenius._counterflow_retry_steady(10)
 end
 
-@testset "diffusion solve skips transient shift on dependent row" begin
+@testset "counterflow species closure is boundary-only" begin
     gas=CreateSolution(joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml"))
     f=CounterflowDiffusionFlame(gas;fuel="H2:1,AR:1",oxidizer="O2:.2,AR:.8",
         mdot_fuel=.24,mdot_oxidizer=.72,grid=collect(range(0.,.02;length=7)))
-    observed=Tuple{Float64,Float64,Bool,Float64}[]
-    recorder=(J,flow,old,new,skip)->begin
-        B=size(flow.state,1); dep=flow.dependent_species+1
-        before=J[4B-1,2B+dep]
-        result=Arrhenius._counterflow_transient_update!(J,flow,old,new,skip)
-        push!(observed,(old,new,skip,J[4B-1,2B+dep]-before))
-        result
-    end
-    solve!(f;refine_grid=false,auto=false,initial_time_step=1e-5,
-        time_step_growth_strategy=:fixed_growth,_transient_update! = recorder)
-    @test f.converged
-    @test !isempty(observed)
-    @test all(t -> t[1]!=t[2] && t[3] && t[4]==0.,observed)
-    old,new,_,_=first(observed)
-    @test abs(Arrhenius._flame_timescale*(1/old-1/new))>1e-14
-    J=zeros(4size(f.state,1)-1,length(f.state)); B=size(f.state,1); dep=f.dependent_species+1
-    recorder(J,f,old,new,false)
-    @test J[4B-1,2B+dep] != 0
+    n,N=gas.n_species,length(f.grid); dep=f.dependent_species
+    u=copy(f.state); other=dep==1 ? 2 : 1
+    u[2:n+1,1].=1e-30; u[dep+1,1]=.1; u[other+1,1]=.9
+    j=3; u[dep+1,j]+=1e-4
+    previous=copy(u); previous[dep+1,j]-=2e-5
+    w=CounterflowWorkspace(f); r=similar(u); dt=1e-5
+    counterflow_residual!(r,f,u,w;previous,dt)
+    p=w.properties; z=f.grid; im=n+4
+    jm,jp=u[im,j]>0 ? (j-1,j) : (j,j+1)
+    cell=.5*(z[j+1]-z[j-1]); dz=z[jp]-z[jm]
+    expected=Arrhenius._flame_timescale/p.rho[j]*(gas.MW[dep]*p.source[dep,j]-
+        (p.flux[dep,j]-p.flux[dep,j-1])/cell-u[im,j]*(u[dep+1,jp]-u[dep+1,jm])/dz)-
+        Arrhenius._flame_timescale/dt*(u[dep+1,j]-previous[dep+1,j])
+    @test r[dep+1,j] ≈ expected rtol=1e-13 atol=1e-13
+    @test !isapprox(r[dep+1,j],sum(@view(u[2:n+1,j]))-1;atol=1e-12)
+    excess=argmax(@view u[2:n+1,1])
+    @test excess!=dep
+    @test r[excess+1,1] ≈ sum(@view(u[2:n+1,1]))-1 atol=1e-14
+    J=zeros(4size(u,1)-1,length(u)); delta=Arrhenius._flame_timescale*(1/1e-5-1/2e-5)
+    Arrhenius._counterflow_transient_update!(J,f,1e-5,2e-5)
+    diag=4size(u,1)-1
+    @test all(J[diag,(j-1)*size(u,1)+k+1]==delta for k in 1:n)
 end
-
 @testset "solver_stats dispatch for every counterflow kind" begin
     # Constructing each public kind must yield its own stats object (Cantera
     # keeps solver_stats per instance); dispatch needs no solve.
