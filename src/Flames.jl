@@ -2190,10 +2190,12 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         # profile directly while retaining its compatible Newton/Jacobian rules.
         _fresh_analytic_guess!(f, f.grid; cantera_compatible=true)
         f.converged = false
-        return _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
+        _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
             max_time_steps,loglevel,domain_check=false,timestep,controls,
             initial_time_step=Float64(initial_time_step),ts_regrid=time_step_regrid,
             cantera_compatible=true)
+        f.converged = true
+        return f
     end
     (auto || cantera_compatible) && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid,
