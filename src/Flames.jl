@@ -826,6 +826,8 @@ end
 _cantera_flame_temperature_bounds(f) = (0.2,2*minimum(@view(f.gas.thermo.Trange[:,end]))/1000)
 _cantera_flame_species_bounds() = (-1e-7,1e5)
 _cantera_flame_velocity_bounds() = (-1e20,1e20)
+@inline _cantera_flame_flow_state_bounds(f,u,j) =
+    _cantera_flame_velocity_bounds() .* _flame_state_density(f,u,j)
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
@@ -1191,7 +1193,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             low,high = _flame_bounds(f,k,size(u,1))
             if newton_options.step_bounds === :cantera
                 low,high = k==1 ? _cantera_flame_temperature_bounds(f) :
-                    k==size(u,1) ? _cantera_flame_velocity_bounds() .* _flame_state_density(f,u,j) :
+                    k==size(u,1) ? _cantera_flame_flow_state_bounds(f,u,j) :
                     _cantera_flame_species_bounds()
             end
             a = Inf

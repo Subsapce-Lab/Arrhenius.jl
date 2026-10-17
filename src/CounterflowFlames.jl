@@ -644,6 +644,25 @@ _counterflow_retry_steady(successful_steps) =
     return 1.0
 end
 
+@inline function _cantera_counterflow_state_bounds(f,u,j,k)
+    n=f.gas.n_species
+    if k==1
+        return _cantera_flame_temperature_bounds(f)
+    elseif k<=n+1
+        return _cantera_flame_species_bounds()
+    elseif k==n+2
+        return (-1e20/_counterflow_Vscale,1e20/_counterflow_Vscale)
+    elseif k==n+3
+        return (-1e20/_counterflow_Lscale,1e20/_counterflow_Lscale)
+    end
+    inv_molecular_weight=0.0
+    @inbounds for m in 1:n
+        inv_molecular_weight+=u[m+1,j]/f.gas.MW[m]
+    end
+    velocity_scale=R*(1000*u[1,j])*inv_molecular_weight/f.pressure
+    return _cantera_flame_velocity_bounds()./velocity_scale
+end
+
 function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1e-8,loglevel=0,
         analytic=true,iterations=Ref(0),skip_dependent_transient=false,
         transient_update! = _counterflow_transient_update!,
@@ -716,22 +735,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
             low=k==1 ? .2 : k<=n+1 ? -1e-7 : -1e5
             high=k==1 ? 6. : k<=n+1 ? 1.00001 : 1e5
             if newton_options.step_bounds === :cantera
-                if k==1
-                    low,high=_cantera_flame_temperature_bounds(f)
-                elseif k<=n+1
-                    low,high=_cantera_flame_species_bounds()
-                elseif k==n+2
-                    low,high=(-1e20/_counterflow_Vscale,1e20/_counterflow_Vscale)
-                elseif k==n+3
-                    low,high=(-1e20/_counterflow_Lscale,1e20/_counterflow_Lscale)
-                else
-                    inv_molecular_weight=0.0
-                    @inbounds for m in 1:n
-                        inv_molecular_weight+=u[m+1,j]/f.gas.MW[m]
-                    end
-                    velocity_scale=R*(1000*u[1,j])*inv_molecular_weight/f.pressure
-                    low,high=_cantera_flame_velocity_bounds()./velocity_scale
-                end
+                low,high=_cantera_counterflow_state_bounds(f,u,j,k)
             end
             if k==size(u,1)-1 && newton_options.step_bounds !== :cantera
                 # Cantera's physical Lambda bounds, converted to stored Lambda/Lscale.

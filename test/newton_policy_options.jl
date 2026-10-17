@@ -80,8 +80,13 @@ using Arrhenius, Test
     @test Arrhenius._cantera_flame_species_bounds()==cantera_Y
     @test Arrhenius._cantera_flame_velocity_bounds()==cantera_velocity
     velocity_scale=Arrhenius._flame_state_density(f,f.state,1)
-    preset_flow_bounds=Arrhenius._cantera_flame_velocity_bounds().*velocity_scale
+    preset_flow_bounds=Arrhenius._cantera_flame_flow_state_bounds(f,f.state,1)
     @test collect(preset_flow_bounds./velocity_scale) ≈ collect(cantera_velocity) rtol=eps(Float64)
+    burner=BurnerFlame(gas;X="H2:2,O2:1,AR:3",mdot=.1,
+        grid=collect(range(0.,.5;length=5)),discretization=:finite_difference)
+    burner_density=Arrhenius._flame_state_density(burner,burner.state,1)
+    burner_flow_bounds=Arrhenius._cantera_flame_flow_state_bounds(burner,burner.state,1)
+    @test collect(burner_flow_bounds./burner_density) ≈ collect(cantera_velocity) rtol=eps(Float64)
     @test (cantera_velocity[1]/Arrhenius._counterflow_Vscale,
         cantera_velocity[2]/Arrhenius._counterflow_Vscale)==(-1e18,1e18)
     @test (cantera_lambda[1]/Arrhenius._counterflow_Lscale,
