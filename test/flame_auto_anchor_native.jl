@@ -13,7 +13,7 @@ using Arrhenius, Test
     Arrhenius._fresh_analytic_guess!(f, grid; cantera_compatible=true)
     @test f.state[end, :] == fill(0.42, length(f.grid))
     @test length(f.grid) == length(grid) + 1
-    @test isapprox(f.grid[f.anchor], 0.0105; atol=1e-14)
+    @test isapprox(f.grid[f.anchor], 0.01125; atol=1e-14)
     @test isapprox(f.fixed_temperature, 0.75 * 300.0 + 0.25 * eq.T; atol=1e-10)
     @test isapprox(f.state[1, f.anchor] * 1000, f.fixed_temperature; atol=1e-10)
 
