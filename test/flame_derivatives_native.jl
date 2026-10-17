@@ -234,7 +234,8 @@ end
         worst=0.0;worst_entry=(0,0,0.0,0.0)
         for point in 2:length(grid)-1,component in 2:B-1
             col=(point-1)*B+component
-            for row in max(1,col-kl):min(B*length(grid),col+kl)
+            for rowpoint in max(2,point-1):min(length(grid)-1,point+1),rowcomponent in 1:B
+                row=(rowpoint-1)*B+rowcomponent
                 a=analytic[2kl+1+row-col,col]
                 d=automatic[row,col]
                 error=abs(a-d)/max(abs(d),1e-6)
@@ -243,6 +244,12 @@ end
         end
         @info "burner analytic species Jacobian versus ForwardDiff" prescribed_temperature worst worst_entry
         @test worst < 2e-4
+        # Cantera intentionally omits the inlet boundary-row coupling from
+        # interior species columns in auto mode. The native residual has this
+        # derivative, so assert that the auto Jacobian preserves the omission.
+        col=B+2; inlet_row=2
+        @test analytic[2kl+1+inlet_row-col,col] == 0.0
+        @test automatic[inlet_row,col] ≈ 0.02936003949483076 rtol=1e-8
         if prescribed_temperature
             for point in 2:length(grid)-1,component in 2:B-1
                 col=(point-1)*B+component
