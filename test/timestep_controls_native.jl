@@ -22,7 +22,8 @@ using Arrhenius,Test
     analytic=solve!(FreeFlame(gas;X);jacobian_mode=:analytic)
     @test analytic.converged && isapprox(flame_speed(analytic),speed;rtol=1e-6)
     compatible=solve!(FreeFlame(gas;X);jacobian_mode=:finite_difference,cantera_compatible=true)
-    @test compatible.converged && compatible.state==analytic.state
+    compatible_auto=solve!(FreeFlame(gas;X);jacobian_mode=:auto,cantera_compatible=true)
+    @test compatible.converged && compatible.state==compatible_auto.state
     @test solve!(FreeFlame(gas;X);time_step_regrid=3).state==reference.state
     for bad in ((;time_step_growth_factor=.5),(;time_step_growth_factor=Inf),
             (;time_step_growth_strategy=:invalid),(;time_step_regrid=-1),(;jacobian_mode=:unknown))
