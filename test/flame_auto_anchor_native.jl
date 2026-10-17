@@ -11,7 +11,7 @@ using Arrhenius, Test
 
     f.state[end, :] .= 0.42
     Arrhenius._fresh_analytic_guess!(f, grid; cantera_compatible=true)
-    @test f.state[end, :] == fill(0.42, length(f.grid))
+    @test all(isapprox.(f.state[end, :], 0.42; rtol=4eps()))  # 1-ulp platform (FMA) differences
     @test length(f.grid) == length(grid) + 1
     @test isapprox(f.grid[f.anchor], 0.01125; atol=1e-14)
     @test isapprox(f.fixed_temperature, 0.75 * 300.0 + 0.25 * eq.T; atol=1e-10)
