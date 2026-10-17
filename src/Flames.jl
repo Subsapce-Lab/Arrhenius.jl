@@ -1804,7 +1804,9 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
     # (or user tolerances, which Arrhenius does not expose yet) were requested.
     # The compatibility switch retains Arrhenius's historical unconditional
     # final stage when false.
-    if !cantera_compatible || f.transport_model == :multicomponent || soret0
+    # Cantera _onedim.py:1587: `if have_user_tolerances or solve_multi or soret_doms:` with solve_multi and soret_doms
+    # saved BEFORE the stages switched them off; transport0/soret0 are those saved flags.
+    if !cantera_compatible || transport0 == :multicomponent || soret0
         _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune, max_points,
             max_time_steps, loglevel, domain_check, timestep, controls,
             initial_time_step = initial_step, ts_regrid = ts_regrid,
