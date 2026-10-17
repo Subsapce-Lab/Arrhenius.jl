@@ -39,6 +39,10 @@ using Arrhenius, Test
     @test burner.state[end, :] == fill(burner.mass_flux, length(grid))
     @test isapprox(burner.state[1, end] * 1000, eq.T; atol=1e-8)
     @test !Arrhenius._burner_blown_off(burner)
+    flat = copy(burner.state)
+    flat[1, :] .= burner.inlet_temperature / 1000
+    burner.state .= flat
+    @test Arrhenius._burner_blown_off(burner)
     blown = copy(burner.state)
     blown[1, :] .= 300.0 / 1000
     blown[1, 4] += 1e-8

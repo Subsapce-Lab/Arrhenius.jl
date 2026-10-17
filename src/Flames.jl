@@ -1624,7 +1624,11 @@ struct FlameBlownOff <: Exception end
 
 function _burner_blown_off(f::BurnerFlame)
     n = max(3, length(f.grid) ÷ 5) + 1
-    rise = f.state[1, end] - f.state[1, 1]
+    T0, Tend = f.state[1, 1], f.state[1, end]
+    rise = Tend - T0
+    # Cantera tests the near-inlet rise against the total rise. Treat a
+    # machine-flat profile as zero rise before evaluating that ratio.
+    abs(rise) <= eps(Float64) * max(abs(T0), abs(Tend), 1.0) && return true
     return abs(f.state[1, n] - f.state[1, 1]) / rise < 1e-6
 end
 
@@ -1650,7 +1654,7 @@ end
 # enters refinement. The expensive-options solve is conditional after restore.
 function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
-        cantera_compatible=true)
+        cantera_compatible=true,steady_solve=_flame_steady!)
     initial_step = timestep[]
     soret0 = f.soret_enabled
     transport0 = f.transport_model
@@ -1662,10 +1666,16 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
         for N in (length(f.grid), 12, 24, 48)
             N > max_points &&
                 error("flame refinement exceeds max_points=$max_points")
+            # A failed fixed-grid solve must not become the starting state of
+            # the next ladder rung. Cantera initializes a fresh guess per N.
+            grid_before = copy(f.grid)
+            state_before = copy(f.state)
+            anchor_before, fixed_temperature_before = f.anchor, f.fixed_temperature
+            converged_before = f.converged
             z = N == length(f.grid) ? f.grid : range(zmin, zmax, length = N)
             _fresh_analytic_guess!(f, z; cantera_compatible)
             timestep[] = initial_step
-            solved = _flame_steady!(f; loglevel, max_time_steps, timestep,
+            solved = steady_solve(f; loglevel, max_time_steps, timestep,
                 tolerance = 1e-6, controls...)
             if !solved && cantera_compatible
                 # Cantera retries a failed energy-enabled fixed grid with
@@ -1673,18 +1683,23 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
                 FLAME_TEMPERATURE_LOCKS[f] = copy(@view f.state[1, :])
                 fixed_temperature_solved = try
                     timestep[] = initial_step
-                    _flame_steady!(f; loglevel, max_time_steps, timestep,
+                    steady_solve(f; loglevel, max_time_steps, timestep,
                         tolerance = 1e-6, controls...)
                 finally
                     delete!(FLAME_TEMPERATURE_LOCKS, f)
                 end
                 if fixed_temperature_solved
                     timestep[] = initial_step
-                    solved = _flame_steady!(f; loglevel, max_time_steps, timestep,
+                    solved = steady_solve(f; loglevel, max_time_steps, timestep,
                         tolerance = 1e-6, controls...)
                 end
             end
             if !solved
+                f.grid = grid_before
+                f.state = state_before
+                f.anchor = anchor_before
+                f.fixed_temperature = fixed_temperature_before
+                f.converged = converged_before
                 refine_grid || break
                 continue
             end
