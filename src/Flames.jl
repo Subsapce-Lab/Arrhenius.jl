@@ -1143,13 +1143,13 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         # Trial correction merit uses the already factored (lagged) Newton J.
         step_merit = correction_enabled ? _flame_policy_correction_norm(step,correction_weights,f,newton_options) : 0.0
         accepted = false
+        trial_merit = Inf
         # Cantera's MultiNewton::dampStep: at most seven trials, each sqrt(2)
         # shorter, before the Jacobian is refreshed or the step fails.
         for backtrack in 1:newton_options.damping_trials
             @. trial = u + alpha*step
             flame_residual!(rt,f,trial,w; previous,dt,previous_enthalpy)
             trial_contracts = false
-            trial_merit = Inf
             if all(isfinite,rt)
                 if correction_enabled
                     copyto!(trial_correction,vec(rt))
