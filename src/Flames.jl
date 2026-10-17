@@ -653,7 +653,8 @@ function _conservative_flame_residual!(residual,f,u,w;previous=nothing,dt=Inf,
         if f isa BurnerFlame && !isempty(f.imposed_temperature)
             residual[1,j] = u[1,j]-f.imposed_temperature[j]/1000
         end
-        if !(f isa BurnerFlame && !isempty(f.imposed_temperature))
+        if f isa Union{FreeFlame,BurnerFlame} &&
+                !(f isa BurnerFlame && !isempty(f.imposed_temperature))
             temperature_lock = get(FLAME_TEMPERATURE_LOCKS, f, nothing)
             temperature_lock === nothing || (residual[1,j] = u[1,j]-temperature_lock[j])
         end
@@ -728,7 +729,8 @@ function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameW
         if f isa BurnerFlame && !isempty(f.imposed_temperature)
             residual[1,j] = u[1,j]-f.imposed_temperature[j]/1000
         end
-        if !(f isa BurnerFlame && !isempty(f.imposed_temperature))
+        if f isa Union{FreeFlame,BurnerFlame} &&
+                !(f isa BurnerFlame && !isempty(f.imposed_temperature))
             temperature_lock = get(FLAME_TEMPERATURE_LOCKS, f, nothing)
             temperature_lock === nothing || (residual[1,j] = u[1,j]-temperature_lock[j])
         end
@@ -1629,7 +1631,10 @@ function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         "Cantera-compatible auto staging supports FreeFlame and BurnerFlame"))
     f isa BurnerFlame && !isempty(f.imposed_temperature) && throw(ArgumentError(
         "cantera_compatible auto staging is for energy-enabled burner flames"))
-    if f isa BurnerFlame
+    if f isa FreeFlame && cantera_compatible && domain_check
+        controls = merge(controls, (; steady_callback=()->(
+            _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())))
+    elseif f isa BurnerFlame
         domain_check = false
         if cantera_compatible
             controls = merge(controls, (; steady_callback=()->_burner_blowoff_check!(f)))

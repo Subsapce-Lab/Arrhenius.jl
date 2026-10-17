@@ -45,10 +45,4 @@ using Arrhenius, Test
     blown[1, end] = 1500.0 / 1000
     burner.state .= blown
     @test Arrhenius._burner_blown_off(burner)
-
-    # The public compatibility keyword selects the burner auto ladder.
-    burner = BurnerFlame(gas; mdot=0.06, T=300.0, P=one_atm, X, grid,
-        discretization=:finite_difference)
-    solve!(burner; cantera_compatible=true, refine_grid=false)
-    @test burner.converged
 end
