@@ -3,11 +3,12 @@ using Arrhenius, LinearAlgebra, Test, YAML
 @testset "pathological mechanism diagnostics and finite evaluation" begin
     fixture_dir = joinpath(@__DIR__, "data", "pathological_mechanisms")
     cases = Dict(name => joinpath(fixture_dir, "$name.yaml") for name in (
-        "clean", "nasa7_small", "nasa7_large", "plog_underflow",
+        "clean", "nasa7_small", "nasa7_large", "nasa7_slope_only", "plog_underflow",
         "duplicate_unflagged", "unbalanced", "negative_A", "extreme_Ea",
         "collision_limit"))
     expected = Dict(
         "nasa7_large" => (:nasa_continuity, :warning),
+        "nasa7_slope_only" => (:nasa_continuity, :warning),
         "plog_underflow" => (:plog_zero_rate, :error),
         "duplicate_unflagged" => (:duplicate_unflagged_candidates, :error),
         "unbalanced" => (:element_balance, :error),
@@ -24,7 +25,13 @@ using Arrhenius, LinearAlgebra, Test, YAML
                 @test !any(x -> x.temperature in (5000.0, 10000.0), matching)
             end
         end
-        if name == "nasa7_small"
+        if name == "nasa7_slope_only"
+            issue = only(filter(x -> x.check == :nasa_continuity, report.issues))
+            @test abs(issue.delta_cp_R) < 1e-10
+            @test abs(issue.delta_h_RT) < 1e-10
+            @test abs(issue.delta_s_R) < 1e-10
+            @test abs(issue.delta_dcp_R_dT) > 1e-6
+        elseif name == "nasa7_small"
             @test !any(x -> x.check == :nasa_continuity, report.issues)
         elseif name == "collision_limit"
             @test !any(x -> x.check == :collision_limit_screen, report.issues)

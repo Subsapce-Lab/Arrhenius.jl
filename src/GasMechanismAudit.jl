@@ -225,7 +225,8 @@ function _audit_nasa_continuity(root,ph,names,defs)
             cp_low=cp(lo,mid); s_low=s(lo,mid)
             report_warning = abs(vals[1]/(abs(cp_low)+1e-4)) > 0.01 ||
                 abs(vals[2]/cp_low) > 0.001 ||
-                abs(vals[3]/(abs(s_low)+cp_low)) > 0.001
+                abs(vals[3]/(abs(s_low)+cp_low)) > 0.001 ||
+                abs(valslope)*mid/max(scale[1],1.0) > 1e-6
         else
             report_warning = maxrel > 1e-6 || abs(valslope)*mid/max(scale[1],1.0) > 1e-6
         end
