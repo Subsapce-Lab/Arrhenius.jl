@@ -9,6 +9,9 @@ using Arrhenius, Test
         discretization=:finite_difference)
     solve!(burner; cantera_compatible=true, refine_grid=false)
     @test burner.converged
-    @test maximum(abs.(sum(burner.state[2:end-1, :]; dims=1) .- 1)) < 1e-10
-    @test maximum(abs.(burner.state[end, :] ./ burner.mass_flux .- 1)) < 1e-12
+    sum_y_error = maximum(abs.(sum(burner.state[2:end-1, :]; dims=1) .- 1))
+    mass_flux_error = maximum(abs.(burner.state[end, :] ./ burner.mass_flux .- 1))
+    @info "burner invariants" sum_y_error mass_flux_error
+    @test sum_y_error < 1e-10
+    @test mass_flux_error < 1e-12
 end
