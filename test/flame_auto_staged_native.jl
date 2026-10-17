@@ -8,8 +8,9 @@ using Arrhenius, LinearAlgebra, Test
         mechanism)
     grid0 = 0.03 .* [0.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0]
 
-    # The staged ladder's fresh analytic guess rebuilds the constructor's
-    # initial state on the target grid.
+    # The staged ladder's fresh analytic guess rebuilds the constructor state
+    # and inserts the Cantera Tmid anchor when the adjacent temperatures fall
+    # outside the fixed-temperature snap band.
     flame = FreeFlame(gas; T=300.0, P=one_atm, X,
         multicomponent_data=transport, soret=true,
         discretization=:finite_difference, grid=grid0)
