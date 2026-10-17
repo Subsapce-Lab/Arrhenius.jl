@@ -1705,6 +1705,7 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
             expansions += 1
             loglevel > 0 && println("Expanding domain to ",f.grid[end]-f.grid[1]," m")
             refine_grid && _refine_flame!(f;ratio,slope,curve,prune,max_points)
+            size(workspace.band,2) == length(f.state) || (workspace = FlameWorkspace(f))
             strict = !refine_grid || !_flame_step_sequencing(f)
             continue
         end
