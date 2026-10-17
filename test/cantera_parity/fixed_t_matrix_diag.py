@@ -41,8 +41,9 @@ f.linear_solver = ct.EigenSparseDirectJacobian()
 f.eval_jacobian()
 J = f.linear_solver.jacobian
 if not sparse.issparse(J):
-    raise TypeError(f"expected sparse Jacobian, got {type(J)} shape={getattr(J, 'shape', None)}")
-J = J.tocsc()
+    J = sparse.csc_matrix(J)
+else:
+    J = J.tocsc()
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))
