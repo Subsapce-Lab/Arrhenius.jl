@@ -338,6 +338,42 @@ function FlameWorkspace(f::AbstractPremixedFlame)
         _conservative_flame(f) ? ConservativeFlameWorkspace(n,N,f.gas) : nothing,Ref(false),
         zeros(6*(n+2)-2,(n+2)*N),Ref(LinearAlgebra.BlasInt[]),Ref(100000),Ref(false),Ref(NaN),Ref(0))
 end
+
+# Steady attempts on consecutive flames from the same gas object revisit the
+# same small set of adaptive grid sizes. Pool their large workspaces by gas
+# and equation configuration so repeated solves do not rebuild band buffers.
+const FLAME_WORKSPACE_CACHE = WeakKeyDict{Any,Dict{Any,Vector{FlameWorkspace}}}()
+const FLAME_WORKSPACE_CACHE_LOCK = ReentrantLock()
+
+function _flame_workspace_key(f)
+    data = hasproperty(f,:multicomponent_data) && f.multicomponent_data !== nothing ?
+        Base.objectid(f.multicomponent_data) : UInt(0)
+    return (typeof(f),length(f.grid),f.transport_model,f.soret_enabled,
+        _conservative_flame(f),data)
+end
+
+function _take_flame_workspace(f)
+    key = _flame_workspace_key(f)
+    cached = lock(FLAME_WORKSPACE_CACHE_LOCK) do
+        by_key = get!(FLAME_WORKSPACE_CACHE,f.gas) do
+            Dict{Any,Vector{FlameWorkspace}}()
+        end
+        pool = get(by_key,key,nothing)
+        pool === nothing || isempty(pool) ? nothing : pop!(pool)
+    end
+    return cached === nothing ? FlameWorkspace(f) : cached
+end
+
+function _return_flame_workspace!(f,w)
+    key = _flame_workspace_key(f)
+    lock(FLAME_WORKSPACE_CACHE_LOCK) do
+        by_key = get!(FLAME_WORKSPACE_CACHE,f.gas) do
+            Dict{Any,Vector{FlameWorkspace}}()
+        end
+        push!(get!(by_key,key,FlameWorkspace[]),w)
+    end
+    return nothing
+end
 _flame_clipped(w) = w isa FlameWorkspace && w.clip_species[]
 # Node species value and derivative weight under the active species form.
 @inline _flame_node_species(w,y) = _flame_clipped(w) ? max(y,0.0) : y
@@ -1087,7 +1123,17 @@ end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
         clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
-    w = FlameWorkspace(f)
+    w = _take_flame_workspace(f)
+    try
+        return _flame_steady_with_workspace!(f,w;loglevel,max_time_steps,timestep,tolerance,
+            clip_species,growth_factor,growth_strategy,step_callback,analytic)
+    finally
+        _return_flame_workspace!(f,w)
+    end
+end
+
+function _flame_steady_with_workspace!(f,w; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
+        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
     # flames keep signed charged species.
