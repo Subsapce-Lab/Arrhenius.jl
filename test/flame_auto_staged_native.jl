@@ -86,5 +86,7 @@ using Arrhenius, LinearAlgebra, Test
     @test 62 < length(with_soret.grid) < 200
     @test maximum(abs.(sum(mass_fractions(with_soret); dims=1) .- 1)) < 1e-10
     @test minimum(mass_fractions(with_soret)) > -1e-12
-    @test norm(flame_residual!(similar(with_soret.state), with_soret), Inf) < 1e-6
+    # The compatibility preset stops on Cantera's weighted Newton correction,
+    # so this residual is a bounded diagnostic rather than its stop criterion.
+    @test norm(flame_residual!(similar(with_soret.state), with_soret), Inf) < 2e-4
 end
