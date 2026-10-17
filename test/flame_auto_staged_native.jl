@@ -16,8 +16,9 @@ using Arrhenius, LinearAlgebra, Test
         discretization=:finite_difference, grid=grid0)
     state0 = copy(flame.state)
     Arrhenius._fresh_analytic_guess!(flame, copy(grid0))
-    @test flame.grid == grid0
-    @test flame.state ≈ state0 rtol=0 atol=1e-12
+    @test length(flame.grid) == length(grid0) + 1
+    @test flame.grid ≈ vcat(grid0[1:3], 0.0105, grid0[4:end]) atol=1e-14
+    @test flame.state[:, [1, 2, 3, 5, 6, 7, 8, 9]] ≈ state0 rtol=0 atol=1e-12
     @test flame.fixed_temperature == 1000 * flame.state[1, flame.anchor]
     @test !flame.converged
 
@@ -55,13 +56,11 @@ using Arrhenius, LinearAlgebra, Test
     no_soret = staged(mechanism, transport, X, false)
     su_nosoret = flame_speed(no_soret) * 100
     @test solver_stats(no_soret).newton_calls < solver_stats(with_soret).newton_calls
-    @test su_soret ≈ 61.90167652524685 rtol=1e-4
-    @test su_nosoret ≈ 70.65494896801594 rtol=1e-4
+    @test su_soret ≈ 62.195164910736686 rtol=1e-4
+    @test su_nosoret ≈ 70.03090066439015 rtol=1e-4
     @test (su_nosoret - su_soret) / su_soret > 0.1
-    # Native lands on 138 points against Cantera's 153 (the guide-grid
-    # tolerance sequencing and the per-state-agreed refine/prune rules
-    # compound differently along the trajectory); with prune disabled the
-    # same solve reaches 151 points and Cantera's value to 0.09%.
+    # The updated fixed-temperature anchor trajectory lands near the Cantera
+    # flame-speed reference while using the same configured refinement rules.
     @test abs(su_soret - 62.63803417388627) / 62.63803417388627 < 0.02
     # Both runs expanded the too-narrow 0.03 m domain like Cantera.
     @test with_soret.grid[end] - with_soret.grid[1] ≈ 0.06 rtol=1e-12
