@@ -58,3 +58,35 @@ end
     @test maximum(abs.(sum(mass_fractions(burner); dims=1) .- 1)) < 1e-10
     @test solver_stats(burner).jacobians > 0
 end
+
+
+@testset "staged burner guess compatibility control" begin
+    mechanism = joinpath(@__DIR__, "..", "mechanism", "h2o2.yaml")
+    grid = 0.03 .* [0.0, 0.05, 0.1, 0.2, 0.4, 1.0]
+    controls = (;growth_factor=1.5, growth_strategy=:fixed_growth, step_callback=nothing,
+        analytic=true, cantera_omission=true,
+        newton_options=Arrhenius._newton_policy(nothing, true))
+
+    function stop_after_guess!(guess_compatible)
+        gas = CreateSolution(mechanism)
+        flame = BurnerFlame(gas; mdot=0.06, T=300.0, P=one_atm,
+            X="H2:1.1,O2:1,AR:5", grid, discretization=:finite_difference)
+        stop_solve = (f; kwargs...) -> error("stop after staged guess")
+        @test_throws ErrorException Arrhenius._auto_staged!(flame; refine_grid=false,
+            ratio=3.0, slope=0.06, curve=0.12, prune=0.0, max_points=100,
+            max_time_steps=1, loglevel=0, domain_check=false, timestep=Ref(1e-5),
+            controls, ts_regrid=3, cantera_compatible=true, guess_compatible,
+            steady_solve=stop_solve)
+        return copy(flame.state)
+    end
+
+    expected_compat = BurnerFlame(CreateSolution(mechanism); mdot=0.06, T=300.0,
+        P=one_atm, X="H2:1.1,O2:1,AR:5", grid, discretization=:finite_difference)
+    Arrhenius._fresh_analytic_guess!(expected_compat, grid; cantera_compatible=true)
+    expected_legacy = BurnerFlame(CreateSolution(mechanism); mdot=0.06, T=300.0,
+        P=one_atm, X="H2:1.1,O2:1,AR:5", grid, discretization=:finite_difference)
+    Arrhenius._fresh_analytic_guess!(expected_legacy, grid; cantera_compatible=false)
+
+    @test stop_after_guess!(true) ≈ expected_compat.state rtol=1e-14 atol=1e-14
+    @test stop_after_guess!(false) ≈ expected_legacy.state rtol=1e-14 atol=1e-14
+end
