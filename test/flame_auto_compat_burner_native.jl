@@ -9,4 +9,6 @@ using Arrhenius, Test
         discretization=:finite_difference)
     solve!(burner; cantera_compatible=true, refine_grid=false)
     @test burner.converged
+    @test maximum(abs.(sum(burner.state[2:end-1, :]; dims=1) .- 1)) < 1e-10
+    @test maximum(abs.(burner.state[end, :] ./ burner.mass_flux .- 1)) < 1e-12
 end
