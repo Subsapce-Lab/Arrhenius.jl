@@ -118,7 +118,10 @@ function snapshot_result(specfile,capture_dir,policy,label)
         "max_element_error"=>element_error(gas,Y),
         "snapshot_relative_state_error"=>parse(Float64,values["relative_state_error"]),
         "solver_stats"=>Dict("newton_iterations"=>parse(Int,values["native_iterations"]),
-            "jacobians"=>parse(Int,values["native_jacobians"])),"error"=>values["error"])
+            "jacobians"=>parse(Int,values["native_jacobians"]),
+            "cantera_jacobians"=>parse(Int,values["cantera_jacobians"]),
+            "native_steps"=>parse(Int,values["native_steps"]),
+            "cantera_steps"=>parse(Int,values["cantera_steps"])),"error"=>values["error"])
 end
 
 function main(casefile,outfile)
