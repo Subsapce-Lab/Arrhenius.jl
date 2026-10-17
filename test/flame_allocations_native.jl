@@ -14,3 +14,16 @@ using Arrhenius, LinearAlgebra, Test
     Arrhenius._flame_solve_correction!(correction,band,pivots,residual,bandwidth)
     @test (@allocated Arrhenius._flame_solve_correction!(correction,band,pivots,residual,bandwidth)) == 0
 end
+
+@testset "premixed residual and Jacobian allocation" begin
+    mechanism = joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas = CreateSolution(mechanism)
+    X = mole_fractions(gas,"H2:1.1,O2:1,AR:5")
+    flame = solve!(FreeFlame(gas;X,discretization=:finite_difference))
+    workspace = Arrhenius.FlameWorkspace(flame)
+    residual = similar(flame.state)
+    Arrhenius.flame_residual!(residual,flame,flame.state,workspace)
+    @test (@allocated Arrhenius.flame_residual!(residual,flame,flame.state,workspace)) == 0
+    Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)
+    @test (@allocated Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)) == 0
+end

@@ -291,6 +291,7 @@ struct FlameWorkspace{K}
     cp::Matrix{Float64}
     h::Matrix{Float64}
     source::Matrix{Float64}
+    source_scratch::Vector{Float64}
     flux::Matrix{Float64}
     conductivity::Vector{Float64}
     diffusion_prefactor::Matrix{Float64}
@@ -303,6 +304,11 @@ struct FlameWorkspace{K}
     residual_perturbed::Matrix{Float64}
     steps::Vector{Float64}
     correction::Vector{Float64}
+    base_X::Matrix{Float64}
+    base_rho::Vector{Float64}
+    base_cp::Matrix{Float64}
+    base_h::Matrix{Float64}
+    base_source::Matrix{Float64}
     multi_transport::Union{Nothing,MultiTransportWorkspace}
     multi_prefactor::Array{Float64,3}
     thermal_diffusion::Matrix{Float64}
@@ -327,9 +333,10 @@ end
 function FlameWorkspace(f::AbstractPremixedFlame)
     n, N = f.gas.n_species, length(f.grid)
     return FlameWorkspace(KineticsWorkspace(f.gas.reaction),TransportWorkspace(f.gas),
-        zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),zeros(n,N-1),zeros(N-1),
+        zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),zeros(n),zeros(n,N-1),zeros(N-1),
         zeros(n,N-1),zeros(n),zeros(n),zeros(n),zeros(n),
         zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),zeros((n+2)*N),
+        zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),
         f.transport_model == :multicomponent ? MultiTransportWorkspace(f.multicomponent_data) : nothing,
         zeros(n,n,f.transport_model == :multicomponent ? N-1 : 0),zeros(n,N-1),
         f.transport_model == :mixture_averaged && f.soret_enabled ?
@@ -450,8 +457,13 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
         @view(w.cp[:,j]) .*= R
         w.entropy .*= R
         # A frozen source keeps the base chemistry for hybrid Jacobian columns.
-        freeze_source || wdot!(@view(w.source[:,j]),gas.reaction,T,w.C,w.entropy,@view(w.h[:,j]),w.kinetics;
-            temperature_cache=w.rate_caches[j],pressure=f.pressure)
+        if !freeze_source
+            wdot!(w.source_scratch,gas.reaction,T,w.C,w.entropy,@view(w.h[:,j]),w.kinetics;
+                temperature_cache=w.rate_caches[j],pressure=f.pressure)
+            for k in 1:n
+                w.source[k,j] = w.source_scratch[k]
+            end
+        end
     end
     @inbounds for j in 1:N-1
         Tmid = 500*(u[1,j]+u[1,j+1])
@@ -822,7 +834,11 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     perturbed .= u
     rp = w.residual_perturbed
     steps = w.steps
-    base_properties = (copy(w.X),copy(w.rho),copy(w.cp),copy(w.h),copy(w.source))
+    copyto!(w.base_X,w.X)
+    copyto!(w.base_rho,w.rho)
+    copyto!(w.base_cp,w.cp)
+    copyto!(w.base_h,w.h)
+    copyto!(w.base_source,w.source)
     if _conservative_flame(f) && previous !== nothing && previous_enthalpy === nothing
         previous_enthalpy = _flame_previous_enthalpy!(w.conservative,f,previous)
     end
@@ -841,11 +857,11 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             end
             perturbed[k,j] = u[k,j]
         end
-        w.X .= base_properties[1]
-        w.rho .= base_properties[2]
-        w.cp .= base_properties[3]
-        w.h .= base_properties[4]
-        w.source .= base_properties[5]
+        copyto!(w.X,w.base_X)
+        copyto!(w.rho,w.base_rho)
+        copyto!(w.cp,w.base_cp)
+        copyto!(w.h,w.base_h)
+        copyto!(w.source,w.base_source)
     end
     return band
 end
