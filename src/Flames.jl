@@ -382,10 +382,12 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
         viscosity=nothing)
     gas, n, N = f.gas, f.gas.n_species, length(f.grid)
     conservative = _conservative_flame(f)
-    stats = _premixed_stats(f)
+    stats = (f isa FreeFlame || f isa BurnerFlame) ? _premixed_stats(f) : nothing
     @inbounds for j in nodes
-        stats.property_nodes += 1
-        PREMIXED_STATS.property_nodes += 1
+        if stats !== nothing
+            stats.property_nodes += 1
+            PREMIXED_STATS.property_nodes += 1
+        end
         T = 1000*u[1,j]
         # Node thermochemistry uses signed mass fractions, as Cantera's flow
         # residual does; only transport inputs at faces are clipped below.
