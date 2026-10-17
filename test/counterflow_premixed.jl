@@ -168,6 +168,11 @@ end
     for k in 1:n
         col=(N-1)*B+k+1; row=(N-1)*B+frozen+1
         packed=stride+1+row-col
-        @test jac[packed,col]≈1 atol=2e-8
+        h=1e-7*max(abs(x[k+1,end]),k+1<=n+1 ? 1e-5 : .01)
+        trial=copy(x); trial[k+1,end]+=h
+        fd=similar(x)
+        Arrhenius.counterflow_residual!(fd,twin,trial,w;update_excess=false)
+        expected=(fd[frozen+1,end]-r[frozen+1,end])/h
+        @test jac[packed,col]≈expected atol=2e-8
     end
 end
