@@ -43,3 +43,18 @@ end
         @test maximum(abs.(compatible_state[end, :] .- burner.state[end, :])) > 1e-6
     end
 end
+
+
+@testset "Cantera-compatible fixed-temperature burner solve" begin
+    gas = CreateSolution(joinpath(@__DIR__, "..", "mechanism", "h2o2.yaml"))
+    grid = collect(range(0.0, 0.03; length=5))
+    burner = BurnerFlame(gas; mdot=0.07, T=300.0, P=one_atm,
+        X="H2:1.1,O2:1,AR:5", grid, discretization=:finite_difference)
+    set_temperature_profile!(burner, [0.0, 0.25, 1.0], [300.0, 1600.0, 300.0])
+    prescribed = copy(burner.imposed_temperature)
+    solve!(burner; cantera_compatible=true, refine_grid=false)
+    @test burner.converged
+    @test temperature(burner) ≈ prescribed
+    @test maximum(abs.(sum(mass_fractions(burner); dims=1) .- 1)) < 1e-10
+    @test solver_stats(burner).jacobians > 0
+end
