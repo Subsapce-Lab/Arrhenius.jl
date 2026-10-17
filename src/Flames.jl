@@ -283,9 +283,23 @@ end
 ConservativeFlameWorkspace(n,N,gas) = ConservativeFlameWorkspace(zeros(n,N-1),
     zeros(n,N),zeros(N),zeros(N),zeros(N),zeros(N),zeros(n),_ConservativeFlameDerivatives(gas,N))
 
+mutable struct PremixedStats
+    newton_calls::Int
+    newton_iterations::Int
+    jacobians::Int
+    residual_evals::Int
+    time_steps::Int
+    time_step_failures::Int
+    steady_failures::Int
+    regrids::Int
+    grids::Vector{Int}
+end
+PremixedStats()=PremixedStats(0,0,0,0,0,0,0,0,Int[])
+
 struct FlameWorkspace{K}
     kinetics::K
     transport::TransportWorkspace
+    stats::Base.RefValue{PremixedStats}
     X::Matrix{Float64}
     rho::Vector{Float64}
     cp::Matrix{Float64}
@@ -332,7 +346,7 @@ struct FlameWorkspace{K}
 end
 function FlameWorkspace(f::AbstractPremixedFlame)
     n, N = f.gas.n_species, length(f.grid)
-    return FlameWorkspace(KineticsWorkspace(f.gas.reaction),TransportWorkspace(f.gas),
+    return FlameWorkspace(KineticsWorkspace(f.gas.reaction),TransportWorkspace(f.gas),Ref(_premixed_stats(f)),
         zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),zeros(n),zeros(n,N-1),zeros(N-1),
         zeros(n,N-1),zeros(n),zeros(n),zeros(n),zeros(n),
         zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),zeros((n+2)*N),
@@ -725,7 +739,7 @@ function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameW
         previous_enthalpy=nothing)
     # Counted at entry, before any work: every call to the public residual
     # evaluator increments residual_evals, mirroring counterflow_residual!.
-    _premixed_stats(f).residual_evals+=1; PREMIXED_STATS.residual_evals+=1
+    w.stats[].residual_evals+=1; PREMIXED_STATS.residual_evals+=1
     n,N = f.gas.n_species,length(f.grid)
     _flame_properties!(w,f,u; update_transport,nodes)
     if _conservative_flame(f)
@@ -1162,6 +1176,7 @@ end
 
 function _flame_steady_with_workspace!(f,w; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
         clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
+    w.stats[] = _premixed_stats(f)
     w.jacobian_valid[] = false
     w.jacobian_age[] = 100000
     w.jacobian_rdt[] = NaN
@@ -1637,18 +1652,6 @@ end
 # premixed counterpart of COUNTERFLOW_STATS. Stats live per flame object
 # (Cantera keeps solver_stats on the instance); the exported PREMIXED_STATS
 # mirrors the accumulated family total for whole-run consumers.
-mutable struct PremixedStats
-    newton_calls::Int
-    newton_iterations::Int
-    jacobians::Int
-    residual_evals::Int
-    time_steps::Int
-    time_step_failures::Int
-    steady_failures::Int
-    regrids::Int
-    grids::Vector{Int}
-end
-PremixedStats()=PremixedStats(0,0,0,0,0,0,0,0,Int[])
 const PREMIXED_STATS=PremixedStats()
 # Per-flame stats storage; entries die with their flame (weak keys).
 const FLAME_STATS=WeakKeyDict{Any,Any}()
