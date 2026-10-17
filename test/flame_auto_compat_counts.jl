@@ -21,8 +21,8 @@ function make_flame(spec)
     error("only free and burner specs are supported: $(spec["kind"])")
 end
 
-dry_run = "--dry-run" in ARGS
-spec_paths = filter(!=("--dry-run"), ARGS)
+dry_run = any(arg -> strip(arg) == "--dry-run", ARGS)
+spec_paths = filter(arg -> strip(arg) != "--dry-run", ARGS)
 isempty(spec_paths) && error("provide one or more flame spec paths")
 for path in spec_paths
     spec = YAML.load_file(path)
