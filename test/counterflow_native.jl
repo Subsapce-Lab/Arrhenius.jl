@@ -134,7 +134,7 @@ end
             for j in 1:N, k in 1:B
                 h=1e-7*max(abs(cf.state[k,j]),k==1 ? .1 : k<=n+1 ? 1e-5 : .01)
                 trial .= cf.state; trial[k,j]+=h
-                counterflow_residual!(rp,cf,trial,wp;update_transport=false)
+                counterflow_residual!(rp,cf,trial,wp;update_transport=false,update_excess=false)
                 ref[:,(j-1)*B+k].=vec((rp.-base)./h)
             end
             @test norm(J-ref,Inf)/max(1.,norm(ref,Inf))<1e-7
@@ -160,23 +160,23 @@ end
                 guards=zeros(size(cf.state)); tol=1e-8
                 excess_left=argmax(@view cf.state[2:n+1,1])
                 excess_right=argmax(@view cf.state[2:n+1,N])
-                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                 for (row,col) in ((1,1),(1,N),(B-1,3),(B,3),(n+2,3),
                                   (excess_left+1,1),(excess_right+1,N))
                     guards[row,col]=2tol
-                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                     guards[row,col]=0.
                 end
                 guards[cf.dependent_species+1,3]=2tol
-                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                 guards .= 0.; guards[excess_left+1,1]=2e-9
-                @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                 guards .= 0.; guards[B-2,3]=1.
-                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                @test Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                 guards .= 0.
                 for value in (NaN,Inf)
                     guards[n+2,3]=value
-                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol)
+                    @test !Arrhenius._counterflow_constraints_converged(cf,guards,tol,w)
                 end
             end
             cp=cf.control_points
@@ -246,6 +246,34 @@ end
     excess=argmax(@view u[2:n+1,1])
     @test excess!=dep
     @test r[excess+1,1] ≈ sum(@view(u[2:n+1,1]))-1 atol=1e-14
+    # Near-equal majors can swap under an FD perturbation. Closure must stay
+    # on the index selected by the preceding full residual until it completes.
+    u[excess+1,1]=.500000000001; u[dep+1,1]=.499999999999
+    counterflow_residual!(r,f,u,w;previous,dt)
+    frozen=w.excess_left
+    u[dep+1,1]+=4e-12; u[excess+1,1]-=4e-12
+    @test argmax(@view u[2:n+1,1]) != frozen
+    counterflow_residual!(r,f,u,w;previous,dt,update_excess=false)
+    @test w.excess_left==frozen
+    @test r[frozen+1,1] ≈ sum(@view(u[2:n+1,1]))-1 atol=1e-14
+    counterflow_residual!(r,f,u,w;previous,dt)
+    @test w.excess_left==argmax(@view u[2:n+1,1])
+    # The actual colored FD Jacobian must preserve the selected closure row
+    # even though its perturbation is much larger than the near-tie gap.
+    u[excess+1,1]=.500000000001; u[dep+1,1]=.499999999999
+    counterflow_residual!(r,f,u,w;previous,dt)
+    frozen=w.excess_left; jac=Arrhenius._counterflow_jacobian!(f,u,w,r;
+        previous,dt,analytic=false)
+    B=size(u,1); stride=4B-2; trial=copy(u); perturbed=similar(u)
+    for k in 1:n
+        col=k+1; row=frozen+1
+        packed=stride+1+row-col
+        h=1e-7*max(abs(u[k+1,1]),1e-5)
+        trial .= u; trial[k+1,1]+=h
+        counterflow_residual!(perturbed,f,trial,w;previous,dt,update_excess=false)
+        expected_fd=(perturbed[row,1]-r[row,1])/h
+        @test jac[packed,col]≈expected_fd atol=2e-8
+    end
     J=zeros(4size(u,1)-1,length(u)); delta=Arrhenius._flame_timescale*(1/1e-5-1/2e-5)
     Arrhenius._counterflow_transient_update!(J,f,1e-5,2e-5)
     diag=4size(u,1)-1

@@ -309,6 +309,8 @@ mutable struct CounterflowWorkspace{F}
     jac_dt::Float64
     jac_valid::Bool
     jac_evals::Int
+    excess_left::Int
+    excess_right::Int
 end
 function CounterflowWorkspace(f::CounterflowDiffusionFlame)
     adapter=_CounterflowPropertyAdapter(f.gas,f.grid,f.transport_model,
@@ -318,7 +320,8 @@ function CounterflowWorkspace(f::CounterflowDiffusionFlame)
     return CounterflowWorkspace(FlameWorkspace(adapter),zeros(N-1),zeros(6B-2,B*N),
         zeros(B,N),zeros(B,N),zeros(N),zeros(N),zeros(N),
         _ConservativeFlameDerivatives(f.gas,N),zeros(n,n+1),
-        zeros(6B-2,B*N),LinearAlgebra.BlasInt[],0,Inf,false,0)
+        zeros(6B-2,B*N),LinearAlgebra.BlasInt[],0,Inf,false,0,
+        argmax(@view f.state[2:n+1,1]),argmax(@view f.state[2:n+1,N]))
 end
 
 # Solve diagnostics: resettable counters comparing solver work against
@@ -388,7 +391,7 @@ end
 "Evaluate continuity, radial momentum, pressure curvature, species and energy."
 function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
         w=CounterflowWorkspace(f);previous=nothing,dt=Inf,update_transport=true,
-        nodes=eachindex(f.grid),freeze_source=false)
+        nodes=eachindex(f.grid),freeze_source=false,update_excess=nodes==eachindex(f.grid))
     _counterflow_stats(f).residual_evals+=1; COUNTERFLOW_STATS.residual_evals+=1
     p=w.properties
     # Mixture-averaged face viscosities come from the same transport evaluation.
@@ -397,6 +400,10 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
         viscosity=shared_viscosity ? w.viscosity : nothing)
     _counterflow_radiation!(w.radiative_heat_loss,w.planck_absorption,f,u,p.X)
     n,N=f.gas.n_species,length(f.grid)
+    if update_excess
+        w.excess_left=argmax(@view u[2:n+1,1])
+        w.excess_right=argmax(@view u[2:n+1,N])
+    end
     z,MW=f.grid,f.gas.MW
     ctrl=f.control_points
     iq=isnothing(ctrl) ? 0 : n+2
@@ -489,7 +496,7 @@ function counterflow_residual!(residual,f::CounterflowDiffusionFlame,u=f.state,
             residual[1,j]=u[1,j]-f.fixed_temperature[j]/1000
         end
         if j==1 || j==N
-            excess=argmax(@view u[2:n+1,j])
+            excess=j==1 ? w.excess_left : w.excess_right
             residual[excess+1,j]=sum(@view(u[2:n+1,j]))-1
         end
     end
@@ -515,9 +522,9 @@ function _counterflow_jacobian!(f,u,w,r;previous=nothing,dt=Inf,analytic=true)
             w.perturbed[k,j]=u[k,j]+w.steps[j]
         end
         hybrid ? counterflow_residual!(w.residual_perturbed,f,w.perturbed,w;
-                previous,dt,update_transport=false,nodes=color:3:N,freeze_source=true) :
+                previous,dt,update_transport=false,nodes=color:3:N,freeze_source=true,update_excess=false) :
             counterflow_residual!(w.residual_perturbed,f,w.perturbed,w;
-                previous,dt,update_transport=false,nodes=color:3:N)
+                previous,dt,update_transport=false,nodes=color:3:N,update_excess=false)
         for j in color:3:N
             column=(j-1)*B+k
             for jj in max(1,j-1):min(N,j+1),kk in 1:B
@@ -583,12 +590,12 @@ function _counterflow_residual_scales!(scales,J,u,bw)
     scales
 end
 
-function _counterflow_constraints_converged(f,r,tol)
+function _counterflow_constraints_converged(f,r,tol,w)
     B,N=size(r)
     maximum(abs,@view(r[B-1:B,:]))<=tol || return false
     n=f.gas.n_species
-    excess_left=argmax(@view f.state[2:n+1,1])
-    excess_right=argmax(@view f.state[2:n+1,N])
+    excess_left=w.excess_left
+    excess_right=w.excess_right
     abs(r[excess_left+1,1])<=min(tol,1e-9) || return false
     abs(r[excess_right+1,N])<=min(tol,1e-9) || return false
     maximum(abs,@view(r[:,1]))<=tol && maximum(abs,@view(r[:,N]))<=tol || return false
@@ -726,7 +733,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
         # A fresh small correction and componentwise backward error can certify
         # a root when the absolute residual is limited by state resolution.
         if correction_enabled && refreshed && within_bounds && step_merit<1 &&
-                _counterflow_constraints_converged(f,r,tolerance) &&
+                _counterflow_constraints_converged(f,r,tolerance,w) &&
                 all(i->abs(r[i])<=tolerance*residual_scales[i],eachindex(r))
             return true
         end
@@ -740,7 +747,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
             # stiff trace species.
             for backtrack in 1:7
                 @. trial=u+alpha*step
-                counterflow_residual!(rt,f,trial,w;previous,dt)
+                counterflow_residual!(rt,f,trial,w;previous,dt,update_excess=false)
                 contracts=false
                 if all(isfinite,rt)
                     # Cantera accepts a damping when the next weighted correction
@@ -771,7 +778,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
                         " weight=",weights[k]," u=",u[k,j]," ratio=",ci)
                 end
             end
-            weighted_converged && _counterflow_constraints_converged(f,r,tolerance) && return true
+            weighted_converged && _counterflow_constraints_converged(f,r,tolerance,w) && return true
             # Cantera retries a failed damped step with a fresh Jacobian when
             # the current one is stale (age>1), at most four times per solve; a
             # failure with a fresh Jacobian fails the solve (MultiNewton.cpp:271-283).
@@ -797,7 +804,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
         correction_enabled && trial_merit<1 && (w.jac_age=21)
     end
     counterflow_residual!(r,f,u,w;previous,dt)
-    return weighted_converged && _counterflow_constraints_converged(f,r,tolerance)
+    return weighted_converged && _counterflow_constraints_converged(f,r,tolerance,w)
 end
 
 function _counterflow_steady!(f;max_time_steps=800,timestep=Ref(_COUNTERFLOW_INITIAL_TIME_STEP),loglevel=0,
@@ -850,7 +857,7 @@ function _counterflow_growth_residual!(r,f::CounterflowDiffusionFlame,x,w;previo
                 r[k+1,j]=j==1 ? flux*yin[k]-x[im,j]*x[k+1,j]-p.flux[k,1] :
                     p.flux[k,N-1]+x[im,j]*x[k+1,j]+flux*yin[k]
             end
-            excess=argmax(@view x[2:n+1,j])
+            excess=j==1 ? w.excess_left : w.excess_right
             r[excess+1,j]=1-sum(@view x[2:n+1,j])
         else
             for k in 1:n

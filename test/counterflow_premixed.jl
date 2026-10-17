@@ -43,6 +43,21 @@ end
     rt=similar(twin.state); Arrhenius.counterflow_residual!(rt,twin)
     @test rt[1,end]==0
     @test rt[end-2,end] ≈ twin.state[end-2,end]-twin.state[end-2,end-1]
+    # Symm1D applies its species equations independently of Soret transport.
+    mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml")
+    transport=MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+    twin.transport_model=:multicomponent
+    twin.multicomponent_data=transport
+    twin.soret_enabled=true
+    tw=Arrhenius.CounterflowWorkspace(twin); rs=similar(twin.state)
+    Arrhenius.counterflow_residual!(rs,twin,twin.state,tw)
+    iex=tw.excess_right
+    for k in 1:gas.n_species
+        k==iex || @test rs[k+1,end] ≈ twin.state[k+1,end]-twin.state[k+1,end-1]
+    end
+    twin.transport_model=:mixture_averaged
+    twin.multicomponent_data=nothing
+    twin.soret_enabled=false
     hydrogen=findfirst(==("H2"),gas.species_names)
     wall.state[hydrogen+1,end]+=1e-4
     wall_workspace=Arrhenius.CounterflowWorkspace(wall)
