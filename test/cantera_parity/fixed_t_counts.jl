@@ -20,9 +20,18 @@ function run_case(path)
         prune=min(get(spec, "prune", 0.0), spec["slope"], spec["curve"]),
         jacobian_mode=:finite_difference, cantera_compatible=true)
     flame.converged || error("$(spec["id"]) did not converge")
+    Y=mass_fractions(flame)
+    sumY=maximum(abs.(sum(Y;dims=1) .- 1))
+    mdot_spread=maximum(abs.(flame.state[end,:] .- flame.mass_flux))
+    w=Arrhenius.FlameWorkspace(flame)
+    Arrhenius._flame_properties!(w,flame,flame.state;update_transport=true)
+    element_source=gas.ele_matrix*w.source
+    element_scale=max(maximum(abs.(gas.ele_matrix)*abs.(w.source)),eps(Float64))
+    element_balance=maximum(abs.(element_source))/element_scale
     println("case=$(spec["id"]) converged=$(flame.converged) points=$(length(flame.grid)) " *
         "jacobians=$(stats.jacobians) newton=$(stats.newton_iterations) " *
-        "steps=$(stats.time_steps) regrids=$(stats.regrids) failures=$(stats.time_step_failures + stats.steady_failures)")
+        "steps=$(stats.time_steps) regrids=$(stats.regrids) failures=$(stats.time_step_failures + stats.steady_failures) " *
+        "sumY_inf=$(sumY) mdot_spread=$(mdot_spread) element_source_rel=$(element_balance)")
 end
 
 isempty(ARGS) && error("provide one or more fixed-case spec paths")
