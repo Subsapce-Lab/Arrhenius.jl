@@ -12,7 +12,7 @@ STATE_KEYS = (
 )
 
 
-def compare(base_dir: Path, candidate_dir: Path, tolerance: float):
+def compare(base_dir: Path, candidate_dir: Path, tolerance: float, ignored_counter_keys=()):
     base_files = {p.name: p for p in base_dir.glob("*.npz")}
     candidate_files = {p.name: p for p in candidate_dir.glob("*.npz")}
     missing = sorted(set(base_files) ^ set(candidate_files))
@@ -49,15 +49,18 @@ def compare(base_dir: Path, candidate_dir: Path, tolerance: float):
                 if rel:
                     errors[key] = {"max_abs": float(np.max(delta)), "max_scaled_relative": rel}
             counter_mismatches = {}
+            ignored_counter_mismatches = {}
             for key in counter_keys:
                 if key in absent:
                     continue
                 if not np.array_equal(base[key], cand[key]):
-                    counter_mismatches[key] = {
+                    target = ignored_counter_mismatches if key in ignored_counter_keys else counter_mismatches
+                    target[key] = {
                         "base": np.asarray(base[key]).tolist(),
                         "candidate": np.asarray(cand[key]).tolist(),
                     }
-                    case_ok = False
+                    if key not in ignored_counter_keys:
+                        case_ok = False
             y = np.asarray(cand["Y"], dtype=np.float64)
             species_count = len(bytes(np.asarray(cand["species_names_utf8"], dtype=np.uint8)).decode("utf-8").splitlines())
             species_axis = 0 if y.shape[0] == species_count else -1
@@ -66,11 +69,13 @@ def compare(base_dir: Path, candidate_dir: Path, tolerance: float):
             cases.append({
                 "id": name.removesuffix(".npz"), "pass": case_ok, "state_bit_identical": identical,
                 "max_sumY_error": sum_y_error, "state_errors": errors,
-                "counter_mismatches": counter_mismatches, "missing_arrays": absent,
+                "counter_mismatches": counter_mismatches,
+                "ignored_counter_mismatches": ignored_counter_mismatches, "missing_arrays": absent,
             })
     result = {
         "base_dir": str(base_dir), "candidate_dir": str(candidate_dir), "tolerance": tolerance,
-        "case_count": len(cases), "missing_cases": missing, "passed": not missing and bool(cases) and all(c["pass"] for c in cases),
+        "case_count": len(cases), "missing_cases": missing, "ignored_counter_keys": sorted(ignored_counter_keys),
+        "passed": not missing and bool(cases) and all(c["pass"] for c in cases),
         "bit_identical_cases": sum(c["state_bit_identical"] and not c["counter_mismatches"] for c in cases),
         "max_sumY_error": max((c["max_sumY_error"] for c in cases), default=None), "cases": cases,
     }
@@ -82,9 +87,11 @@ def main():
     parser.add_argument("base", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--tolerance", type=float, default=1e-10)
+    parser.add_argument("--ignore-counter", action="append", default=[],
+                        help="report but do not fail on this counter key; may be repeated")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    result = compare(args.base, args.candidate, args.tolerance)
+    result = compare(args.base, args.candidate, args.tolerance, args.ignore_counter)
     rendered = json.dumps(result, indent=2, sort_keys=True)
     if args.output:
         args.output.write_text(rendered + "\n", encoding="utf-8")
