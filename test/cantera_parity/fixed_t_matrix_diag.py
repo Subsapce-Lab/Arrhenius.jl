@@ -45,8 +45,16 @@ if not sparse.issparse(J):
 else:
     J = J.tocsc()
 if len(sys.argv) > 3:
-    np.savez_compressed(sys.argv[3], r_ct=r, weights=w, x_ct=x, shape=np.asarray(J.shape),
-                        J_data=J.data, J_indices=J.indices, J_indptr=J.indptr)
+    active_names = ["T", *species, "velocity"]
+    component_names = [name for domain, name in components]
+    active_components = [component_names.index(name) for name in active_names]
+    ncomponents = len(component_names)
+    active = np.asarray([j*ncomponents+k for j in range(len(can["grid"]))
+                         for k in active_components], dtype=np.int64)
+    Jactive = J[active, :][:, active].tocsc()
+    np.savez_compressed(sys.argv[3], r_ct=r[active], weights=w[active],
+                        dofs_full=np.asarray([r.size]), shape=np.asarray(Jactive.shape),
+                        J_data=Jactive.data, J_indices=Jactive.indices, J_indptr=Jactive.indptr)
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))

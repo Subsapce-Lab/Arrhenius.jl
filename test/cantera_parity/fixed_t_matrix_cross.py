@@ -10,7 +10,7 @@ shape=tuple(int(x) for x in ct["shape"])
 Jct=csc_matrix((ct["J_data"],ct["J_indices"],ct["J_indptr"]),shape=shape)
 lu=splu(Jct)
 bw=int(ar["bw"][0]); bands=ar["bands_arr"]
-def norm(dx): return float(np.linalg.norm(dx/weights)/np.sqrt(dx.size))
+def norm(dx): return float(np.linalg.norm(dx/weights)/np.sqrt(int(ct["dofs_full"][0])))
 dx_aa=solve_banded((bw,bw),bands,-rarr,check_finite=False)
 dx_ca=solve_banded((bw,bw),bands,-rct,check_finite=False)
 dx_cc=lu.solve(-rct)
