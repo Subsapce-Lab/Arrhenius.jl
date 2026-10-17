@@ -41,7 +41,7 @@ sumy_error = maximum(abs.(vec(sum(Y; dims=1)) .- 1.0))
 mass_flux_error = maximum(abs.(flame.state[end, :] .- flame.mass_flux))
 workspace = Arrhenius.FlameWorkspace(flame)
 Arrhenius._flame_properties!(workspace, flame, flame.state)
-species_flux = flame.state[end, :] .* Y
+species_flux = reshape(flame.state[end, :], 1, :) .* Y
 species_flux[:, 1:end-1] .+= workspace.flux
 element_flux = flame.gas.ele_matrix * (species_flux ./ reshape(flame.gas.MW, :, 1))
 element_flux_relative = maximum(abs.(element_flux .- element_flux[:, 1])) /
