@@ -20,6 +20,16 @@ using Arrhenius, LinearAlgebra, Test
     @test flame.fixed_temperature == 1000 * flame.state[1, flame.anchor]
     @test !flame.converged
 
+    # Cantera inserts the Tmid crossing on a coarse stage grid when
+    # neither adjacent grid temperature falls within its 20% snap band.
+    eq = equilibrate(gas; T=300.0, P=one_atm, X, mode=:HP)
+    uniform12 = 0.03 .* [0.0, 0.2, 0.3, 0.6, 0.8, 1.0]
+    Arrhenius._fresh_analytic_guess!(flame, uniform12)
+    @test length(flame.grid) == 7
+    @test flame.fixed_temperature ≈ 0.75 * 300.0 + 0.25 * eq.T atol=1e-10
+    Arrhenius._fresh_analytic_guess!(flame, uniform12; cantera_compatible=false)
+    @test length(flame.grid) == 6
+
     # auto staging mirrors Cantera's FreeFlame.solve(auto=True) and is
     # FreeFlame-only.
     burner = BurnerFlame(gas; mdot=0.06, T=300.0, P=one_atm, X,
@@ -41,7 +51,9 @@ using Arrhenius, LinearAlgebra, Test
     with_soret = staged(mechanism, transport, X, true)
     @test with_soret.converged
     su_soret = flame_speed(with_soret) * 100
-    su_nosoret = flame_speed(staged(mechanism, transport, X, false)) * 100
+    no_soret = staged(mechanism, transport, X, false)
+    su_nosoret = flame_speed(no_soret) * 100
+    @test solver_stats(no_soret).newton_calls < solver_stats(with_soret).newton_calls
     @test su_soret ≈ 61.90167652524685 rtol=1e-4
     @test su_nosoret ≈ 70.65494896801594 rtol=1e-4
     @test (su_nosoret - su_soret) / su_soret > 0.1

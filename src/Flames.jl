@@ -1368,7 +1368,7 @@ struct FlameDomainTooNarrow <: Exception end
 # Cantera's Sim1D.solve(auto=True) ladder, each staged grid restarts from this
 # guess instead of continuing from the previous solution; the state is rebuilt
 # for the target grid (Cantera's grid setter reallocates the solution arrays).
-function _fresh_analytic_guess!(f::FreeFlame, z = f.grid)
+function _fresh_analytic_guess!(f::FreeFlame, z = f.grid; cantera_compatible=true)
     x = f.inlet_Y ./ f.gas.MW
     x ./= sum(x)
     eq = equilibrate(f.gas; T=f.inlet_temperature, P=f.pressure, X=x, mode=:HP)
@@ -1382,11 +1382,35 @@ function _fresh_analytic_guess!(f::FreeFlame, z = f.grid)
         state[2:size(state, 1) - 1, j] .= y .+ fraction .* (eq.Y .- y)
         state[end, j] = rho
     end
-    f.grid = collect(Float64, z)
+    grid = collect(Float64, z)
+    target = (0.75 * T0 + 0.25 * eq.T) / 1000
+    anchor = clamp(argmin(abs.(@view(state[1, :]) .- target)), 2, length(grid) - 1)
+    fixed_temperature = 1000 * state[1, anchor]
+    if cantera_compatible
+        # Cantera FreeFlame.set_initial_guess keeps a nearby grid temperature
+        # only within 20% of the corresponding inlet-to-midpoint / midpoint-
+        # to-equilibrium interval. Otherwise it inserts the Tmid crossing.
+        i = findlast(<(target), @view(state[1, :]))
+        if i !== nothing && i < length(grid)
+            if target - state[1, i] < 0.2 * (target - T0 / 1000)
+                anchor, fixed_temperature = i, 1000 * state[1, i]
+            elseif state[1, i + 1] - target < 0.2 * (eq.T / 1000 - target)
+                anchor, fixed_temperature = i + 1, 1000 * state[1, i + 1]
+            else
+                fraction = (target - state[1, i]) / (state[1, i + 1] - state[1, i])
+                zfixed = grid[i] + fraction * (grid[i + 1] - grid[i])
+                grid = vcat(grid[1:i], zfixed, grid[i + 1:end])
+                state = hcat(state[:, 1:i],
+                    (1 - fraction) .* state[:, i] .+ fraction .* state[:, i + 1],
+                    state[:, i + 1:end])
+                anchor, fixed_temperature = i + 1, 1000 * target
+            end
+        end
+    end
+    f.grid = grid
     f.state = state
-    f.anchor = clamp(argmin(abs.(state[1, :] .- (.75 * T0 + .25 * eq.T) / 1000)),
-        2, length(z) - 1)
-    f.fixed_temperature = 1000 * state[1, f.anchor]
+    f.anchor = clamp(anchor, 2, length(grid) - 1)
+    f.fixed_temperature = fixed_temperature
     f.converged = false
     return f
 end
@@ -1452,7 +1476,8 @@ end
 # the first non-failed stage, then the final stage with Soret restored
 # (Cantera's "final call with expensive options enabled").
 function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
-        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid)
+        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
+        cantera_compatible=true)
     initial_step = timestep[]
     soret0 = f.soret_enabled
     f.soret_enabled = false
@@ -1463,7 +1488,7 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
             N > max_points &&
                 error("flame refinement exceeds max_points=$max_points")
             z = N == length(f.grid) ? f.grid : range(zmin, zmax, length = N)
-            _fresh_analytic_guess!(f, z)
+            _fresh_analytic_guess!(f, z; cantera_compatible)
             timestep[] = initial_step
             solved = _flame_steady!(f; loglevel, max_time_steps, timestep,
                 tolerance = 1e-6, controls...)
@@ -1488,9 +1513,15 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
     finally
         f.soret_enabled = soret0
     end
-    _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune, max_points,
-        max_time_steps, loglevel, domain_check, timestep, controls,
-        initial_time_step = initial_step, ts_regrid = ts_regrid)
+    # Cantera's final solve is needed only when expensive transport options
+    # (or user tolerances, which Arrhenius does not expose yet) were requested.
+    # The compatibility switch retains Arrhenius's historical unconditional
+    # final stage when false.
+    if !cantera_compatible || f.transport_model == :multicomponent || soret0
+        _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune, max_points,
+            max_time_steps, loglevel, domain_check, timestep, controls,
+            initial_time_step = initial_step, ts_regrid = ts_regrid)
+    end
     return f
 end
 
@@ -1498,7 +1529,8 @@ end
 # domain-expansion loop (onedim.py), where a too-narrow domain doubles in
 # width, is refined once, and the whole ladder restarts (up to 12 times).
 function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
-        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid)
+        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
+        cantera_compatible=true)
     f isa FreeFlame || throw(ArgumentError(
         "auto staging mirrors Cantera's FreeFlame.solve(auto=True); other flame types use the plain solve!"))
     initial_step = timestep[]
@@ -1507,7 +1539,7 @@ function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
             timestep[] = initial_step
             _auto_staged!(f; refine_grid, ratio, slope, curve, prune,
                 max_points, max_time_steps, loglevel, domain_check, timestep,
-                controls, ts_regrid = ts_regrid)
+                controls, ts_regrid = ts_regrid, cantera_compatible)
         catch err
             err isa FlameDomainTooNarrow || rethrow()
             f.grid .*= 2
@@ -1647,7 +1679,8 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         max_points=1000,max_time_steps=500,loglevel=0,
         initial_time_step=1e-5,domain_check=f isa FreeFlame,
         time_step_growth_factor=1.5,time_step_growth_strategy=:fixed_growth,
-        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false)
+        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false,
+        cantera_compatible=true)
     isfinite(ratio) && ratio > 1 && 0 < slope <= 1 && 0 < curve <= 1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(prune) && prune <= min(slope,curve) || throw(ArgumentError("prune must be finite and no greater than slope or curve"))
     isfinite(initial_time_step) && initial_time_step > 0 || throw(ArgumentError("initial time step must be finite and positive"))
@@ -1658,7 +1691,8 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         step_callback=time_step_callback,analytic)
     timestep = Ref(Float64(initial_time_step))
     auto && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
-        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid)
+        max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid,
+        cantera_compatible)
     regrids = 0
     f.converged = false
     # Grids that refinement may still change only guide refinement; they use a
