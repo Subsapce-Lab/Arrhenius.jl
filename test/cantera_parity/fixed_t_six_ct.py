@@ -32,6 +32,6 @@ np.savez_compressed(out, grid=np.asarray(f.grid), T=np.asarray(f.T), Y=np.asarra
     jacobians=np.array([sum(s.get("jacobian_evals", []))]),
     time_steps=np.array([sum(s.get("steps", []))]),
     regrids=np.array([max(0, len(s.get("grid_points", [])) - 1)]))
-print("CT case={} kind={} points={} jacobians={} newton={} steps={} regrids={}".format(
+print("CT case={} kind={} points={} jacobians={} steps={} regrids={}".format(
     spec["id"], spec["kind"], len(f.grid), sum(s.get("jacobian_evals", [])),
     sum(s.get("steps", [])), max(0, len(s.get("grid_points", [])) - 1)))
