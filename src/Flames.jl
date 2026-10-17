@@ -843,8 +843,12 @@ end
 _flame_correction_enabled(f) = _conservative_flame(f) &&
     !(f isa BurnerFlame && !isempty(f.imposed_temperature))
 
+@inline _flame_transient_converged(cantera_transient,fixed_temperature,cantera_compatible,
+        trial_merit,residual_norm) = cantera_transient && trial_merit < 1 &&
+    (!cantera_compatible || !fixed_temperature || residual_norm < 1e-8)
+
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
-        require_positive=false,minimum_iterations=0,loglevel=0,analytic=true,iterations=Ref(0))
+        require_positive=false,minimum_iterations=0,loglevel=0,analytic=true,cantera_compatible=false,iterations=Ref(0))
     _premixed_stats(f).newton_calls+=1; PREMIXED_STATS.newton_calls+=1
     u = f.state
     r,trial,rt = similar(u),similar(u),similar(u)
@@ -1024,7 +1028,8 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 accepted = true
                 # s1 < 1 converges a time step (Cantera dampStep); the steady
                 # solve continues to the residual tolerance instead.
-                cantera_transient && trial_merit < 1 && return true
+                _flame_transient_converged(cantera_transient,fixed_temperature,cantera_compatible,
+                    trial_merit,norm(rt,Inf)) && return true
                 break
             end
             alpha /= sqrt(2)
@@ -1079,7 +1084,7 @@ function _timestep_growth(residual!,r,strategy,growth,before,after,dt,iterations
 end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
-        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
+        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true,cantera_compatible=false)
     w = FlameWorkspace(f)
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
@@ -1097,7 +1102,7 @@ function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tole
     # A failed steady trial must not replace the accepted pseudo-time state.
     steady_state === nothing || copyto!(f.state,steady_state)
     policy && return _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,
-        timestep,tolerance,growth_factor,growth_strategy,step_callback,analytic)
+        timestep,tolerance,growth_factor,growth_strategy,step_callback,analytic,cantera_compatible)
     dt = timestep[]
     previous = similar(f.state)
     failures = 0
@@ -1107,7 +1112,7 @@ function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tole
     for step in 1:max_time_steps
         copyto!(previous,f.state)
         _premixed_stats(f).time_steps+=1; PREMIXED_STATS.time_steps+=1
-        if _flame_newton!(f,w; previous,dt,maxiters=20,loglevel=0,analytic,iterations)
+        if _flame_newton!(f,w; previous,dt,maxiters=20,loglevel=0,analytic,cantera_compatible,iterations)
             failures = 0
             dt = min(dt*_timestep_growth(residual_at!,growth_residual,growth_strategy,growth_factor,
                 previous,f.state,dt,iterations[]),1.0)
@@ -1146,7 +1151,7 @@ end
 # failures (resetBadValues). A failed steady attempt restarts time stepping
 # from the state before the attempt.
 function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timestep,
-        tolerance,growth_factor,growth_strategy,step_callback,analytic)
+        tolerance,growth_factor,growth_strategy,step_callback,analytic,cantera_compatible=false)
     dt = timestep[]
     previous = similar(f.state)
     iterations = Ref(0)
@@ -1162,7 +1167,7 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
         # stall is broken by the age-20 refresh, not by giving up the step.
         # 200 is a safety valve only; age refreshes every 21 iterations exit
         # via convergence or damping failure long before it.
-        if _flame_newton!(f,w; previous,dt,maxiters=200,loglevel=0,analytic,iterations)
+        if _flame_newton!(f,w; previous,dt,maxiters=200,loglevel=0,analytic,cantera_compatible,iterations)
             successive_failures = 0
             successes += 1
             batch += 1
@@ -1647,7 +1652,7 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         max_points=1000,max_time_steps=500,loglevel=0,
         initial_time_step=1e-5,domain_check=f isa FreeFlame,
         time_step_growth_factor=1.5,time_step_growth_strategy=:fixed_growth,
-        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false)
+        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false,cantera_compatible=false)
     isfinite(ratio) && ratio > 1 && 0 < slope <= 1 && 0 < curve <= 1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(prune) && prune <= min(slope,curve) || throw(ArgumentError("prune must be finite and no greater than slope or curve"))
     isfinite(initial_time_step) && initial_time_step > 0 || throw(ArgumentError("initial time step must be finite and positive"))
@@ -1655,7 +1660,7 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
     reset!(_premixed_stats(f))  # per-flame counters report this solve only
     analytic = jacobian_mode === :auto
     controls = (;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
-        step_callback=time_step_callback,analytic)
+        step_callback=time_step_callback,analytic,cantera_compatible)
     timestep = Ref(Float64(initial_time_step))
     auto && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid)

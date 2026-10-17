@@ -194,3 +194,14 @@ end
     @test maximum(abs.(sum(mass_fractions(burner);dims=1) .- 1)) < 1e-10
     @test minimum(mass_fractions(burner)) > -1e-12
 end
+
+
+@testset "fixed-temperature compatibility transient residual stop" begin
+    converged = Arrhenius._flame_transient_converged
+    @test converged(true,true,true,0.5,0.9e-8)
+    @test !converged(true,true,true,0.5,1.1e-8)
+    @test converged(true,true,false,0.5,1.1e-8)
+    @test converged(true,false,true,0.5,1.1e-8)
+    @test !converged(true,true,true,1.0,0.5e-8)
+    @test !converged(false,true,true,0.5,0.5e-8)
+end
