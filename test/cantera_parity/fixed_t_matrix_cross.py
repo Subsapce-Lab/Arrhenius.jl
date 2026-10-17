@@ -142,7 +142,7 @@ for rn,ri in groups:
         detail="none"
         if len(beyond):
             order=sorted(beyond.tolist(),key=lambda ij:delta[ij[0],ij[1]]/max(threshold[ij[0],ij[1]],1e-300),reverse=True)[:5]
-            detail=";".join(f"{coord(ri[i])} <- {coord(ci[j])} diff={delta[i,j]:.4g} noise={max(arr_noise[i,j],ct_noise[i,j]):.4g}" for i,j in order)
+            detail=";".join(f"{coord(ri[i])} <- {coord(ci[j])} diff={delta[i,j]:.4g} noise={max(arr_noise[i,j],ct_noise[i,j]):.4g} A={A[i,j]:.4g} C={C[i,j]:.4g}" for i,j in order)
         if rn == "boundary" and cn == "species_interior":
             orderabs=np.dstack(np.unravel_index(np.argsort(delta.ravel())[-10:],delta.shape))[0][::-1]
             print("boundary_species_largest=" + ";".join(f"{coord(ri[i])} <- {coord(ci[j])} A={A[i,j]:.8g} C={C[i,j]:.8g}" for i,j in orderabs))

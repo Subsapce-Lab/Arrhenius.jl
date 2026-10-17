@@ -91,6 +91,20 @@ if len(sys.argv) > 3:
                     stored = float(Jactive[row, col])
                     if fd != 0.0 or stored != 0.0:
                         print(f"{side}_fd row={rowname} col={sp} h={h:.9g} fd={fd:.12g} stored_ct={stored:.12g} rel_error={abs(fd-stored)/max(abs(fd),abs(stored),1e-300):.9g}")
+    if len(sys.argv) > 8:
+        rowpoint,rowname,colpoint,colname=sys.argv[8].split(",")
+        rowpoint=int(rowpoint)-1; colpoint=int(colpoint)-1
+        row=rowpoint*len(active_names)+active_names.index(rowname)
+        col=colpoint*len(active_names)+active_names.index(colname)
+        y=np.asarray(f.flame.values(colname),float).copy()
+        h=abs(y[colpoint])*fd_rel+fd_abs
+        yp=y.copy(); yp[colpoint]+=h
+        f.flame.set_values(colname,yp); f.eval(rdt=0.0)
+        plus=float(f.flame.residuals(rowname)[rowpoint])
+        f.flame.set_values(colname,y); f.eval(rdt=0.0)
+        base=float(f.flame.residuals(rowname)[rowpoint])
+        fd=(plus-base)/h; stored=float(Jactive[row,col])
+        print(f"pair_fd row=point{rowpoint+1}:{rowname} col=point{colpoint+1}:{colname} h={h:.12g} fd={fd:.12g} stored_ct={stored:.12g} rel_error={abs(fd-stored)/max(abs(fd),abs(stored),1e-300):.9g}")
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))
