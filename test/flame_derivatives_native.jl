@@ -196,10 +196,10 @@ end
 end
 
 
-@testset "fixed-temperature compatibility transient residual stop" begin
+@testset "fixed-temperature compatibility transient convergence" begin
     converged = Arrhenius._flame_transient_converged
-    @test converged(true,true,true,0.5,0.9e-8)
-    @test !converged(true,true,true,0.5,1.1e-8)
+    @test converged(true,true,true,0.5,1.1e-8)
+    @test converged(true,true,true,0.5,1e6)
     @test converged(true,true,false,0.5,1.1e-8)
     @test converged(true,false,true,0.5,1.1e-8)
     @test !converged(true,true,true,1.0,0.5e-8)

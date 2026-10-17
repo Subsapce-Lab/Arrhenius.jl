@@ -844,8 +844,7 @@ _flame_correction_enabled(f) = _conservative_flame(f) &&
     !(f isa BurnerFlame && !isempty(f.imposed_temperature))
 
 @inline _flame_transient_converged(cantera_transient,fixed_temperature,cantera_compatible,
-        trial_merit,residual_norm) = cantera_transient && trial_merit < 1 &&
-    (!cantera_compatible || !fixed_temperature || residual_norm < 1e-8)
+        trial_merit,residual_norm) = cantera_transient && trial_merit < 1
 
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         require_positive=false,minimum_iterations=0,loglevel=0,analytic=true,cantera_compatible=false,iterations=Ref(0))
@@ -1644,7 +1643,7 @@ domain and restarts the ladder. Cantera's time-step controls:
 `time_step_growth_factor`, `time_step_growth_strategy` (`:fixed_growth`,
 `:steady_norm`, `:transient_residual`, `:residual_ratio`, `:newton_iterations`),
 `time_step_callback(dt)`, `time_step_regrid` and `jacobian_mode` (`:auto` or
-`:finite_difference`), and `cantera_compatible=true` requires residual infinity norm below 1e-8 for fixed-temperature transient Newton convergence. `prune` is Cantera's fourth refine criterion: grid
+`:finite_difference`), and `cantera_compatible=true` uses the weighted-step criterion for fixed-temperature transient Newton convergence. `prune` is Cantera's fourth refine criterion: grid
 points whose slope/curve indicators fall below it are removed on each
 refinement pass (0 disables pruning; it must not exceed `slope` or `curve`).
 """
