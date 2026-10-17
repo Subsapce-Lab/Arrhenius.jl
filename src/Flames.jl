@@ -1142,6 +1142,11 @@ end
 
 function _flame_steady_with_workspace!(f,w; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
         clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
+    w.jacobian_valid[] = false
+    w.jacobian_age[] = 100000
+    w.jacobian_rdt[] = NaN
+    w.jacobian_evals[] = 0
+    empty!(w.jacobian_pivots[])
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
     # flames keep signed charged species.
