@@ -2,7 +2,7 @@ using Arrhenius, Test
 
 @testset "Newton policy option resolution" begin
     gas=CreateSolution(joinpath(@__DIR__,"..","mechanism","h2o2.yaml"))
-    X=mole_fractions(gas,"H2:2,O2:1,N2:3")
+    X=mole_fractions(gas,"H2:2,O2:1,AR:3")
     f=FreeFlame(gas;X,grid=collect(range(0.,1.;length=5)),discretization=:finite_difference)
     current=Arrhenius._newton_policy(nothing,false)
     compatible=Arrhenius._newton_policy(nothing,true)
@@ -23,10 +23,10 @@ using Arrhenius, Test
         compatible.counterflow_steady_maxiters,compatible.premixed_transient_maxiters,
         compatible.premixed_policy_transient_maxiters,compatible.counterflow_transient_maxiters))
 
-    @test !Arrhenius._newton_merit_accepts(current,0.8,0.9,false)
-    @test Arrhenius._newton_merit_accepts(compatible,0.8,0.9,false)
+    @test !Arrhenius._newton_merit_accepts(current,0.95,0.9,false)
+    @test Arrhenius._newton_merit_accepts(compatible,0.95,0.9,false)
     reduction=NewtonPolicyOptions(damping_acceptance=:correction_reduction)
-    @test !Arrhenius._newton_merit_accepts(reduction,0.8,0.9,true)
+    @test !Arrhenius._newton_merit_accepts(reduction,0.95,0.9,true)
     custom=Arrhenius._newton_policy(NewtonPolicyOptions(damping_trials=3,damping_factor=2.0,
         jacobian_age=9,jacobian_reevaluations=2),false)
     @test (custom.damping_trials,custom.damping_factor,custom.jacobian_age,
