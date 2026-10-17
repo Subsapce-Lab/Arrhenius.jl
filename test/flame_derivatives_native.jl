@@ -329,11 +329,18 @@ end
     end
     full_jacobian_relative_error=norm(dense_jac-expected_full)/norm(expected_full)
     @info "Cantera full auto Jacobian fixture comparison" full_jacobian_relative_error
+    Arrhenius.npzwrite("/tmp/anajac_live_jacobian.npz",Dict("jacobian"=>dense_jac))
+    jacobian_difference=dense_jac-expected_full
+    max_jacobian_difference=argmax(abs,jacobian_difference)
+    @info "Cantera full auto Jacobian largest difference" row=max_jacobian_difference[1] col=max_jacobian_difference[2] native=dense_jac[max_jacobian_difference] cantera=expected_full[max_jacobian_difference]
     for (name,cols) in (("interior species",[j*B+k for j in 1:N-2 for k in 2:B-1]),
             ("boundary species",[j*B+k for j in (0,N-1) for k in 2:B-1]),
             ("temperature",[j*B+1 for j in 0:N-1]),("mass flux",[j*B+B for j in 0:N-1]))
         rel=norm(dense_jac[:,cols]-expected_full[:,cols])/norm(expected_full[:,cols])
         @info "Cantera Jacobian block" name rel
+        blockdiff=dense_jac[:,cols]-expected_full[:,cols]
+        blockmax=argmax(abs,blockdiff)
+        @info "Cantera Jacobian block largest difference" name row=blockmax[1] col=cols[blockmax[2]] native=dense_jac[blockmax[1],cols[blockmax[2]]] cantera=expected_full[blockmax[1],cols[blockmax[2]]]
     end
     @test full_jacobian_relative_error < 2e-10
     d=Arrhenius._ConservativeFlameDerivatives(gas,N)
