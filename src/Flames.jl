@@ -572,6 +572,7 @@ const _flame_timescale = 1e-4
 # time step grows dt only when it evaluated no Jacobian
 # (SteadyStateSystem.cpp:309-311).
 _flame_persistent_jacobian(f) = false
+_flame_jacobian_count(w,f) = w isa FlameWorkspace ? w.jacobian_evals[] : _premixed_stats(f).jacobians
 _flame_persistent_jacobian(f::Union{FreeFlame,BurnerFlame}) =
     f.discretization == :finite_difference
 
@@ -1176,12 +1177,14 @@ end
 
 function _flame_steady_with_workspace!(f,w; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
         clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
-    w.stats[] = _premixed_stats(f)
-    w.jacobian_valid[] = false
-    w.jacobian_age[] = 100000
-    w.jacobian_rdt[] = NaN
-    w.jacobian_evals[] = 0
-    empty!(w.jacobian_pivots[])
+    if w isa FlameWorkspace
+        w.stats[] = _premixed_stats(f)
+        w.jacobian_valid[] = false
+        w.jacobian_age[] = 100000
+        w.jacobian_rdt[] = NaN
+        w.jacobian_evals[] = 0
+        empty!(w.jacobian_pivots[])
+    end
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
     # flames keep signed charged species.
@@ -1258,7 +1261,7 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
     batch = 0
     while successes < max_time_steps
         copyto!(previous,f.state)
-        jacobians_before = w.jacobian_evals[]
+        jacobians_before = _flame_jacobian_count(w,f)
         # Cantera MultiNewton::solve has no iteration cap: a lagged Jacobian
         # stall is broken by the age-20 refresh, not by giving up the step.
         # 200 is a safety valve only; age refreshes every 21 iterations exit
@@ -1268,7 +1271,7 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
             successes += 1
             batch += 1
             # A step that refreshed the Jacobian does not grow dt.
-            if w.jacobian_evals[] == jacobians_before
+            if _flame_jacobian_count(w,f) == jacobians_before
                 dt *= _timestep_growth(residual_at!,growth_residual,growth_strategy,growth_factor,
                     previous,f.state,dt,iterations[])
             end
