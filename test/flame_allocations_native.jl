@@ -27,3 +27,23 @@ end
     Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)
     @test (@allocated Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)) == 0
 end
+
+
+@testset "burner and fixed flame residual and Jacobian allocation" begin
+    mechanism = joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas = CreateSolution(mechanism)
+    X = "H2:1.1,O2:1,AR:5"
+    grid = [0.0,0.0025,0.005,0.0075,0.01]
+    for fixed in (false,true)
+        flame = BurnerFlame(gas;mdot=0.1,T=300.0,X,width=0.01,grid)
+        if fixed
+            set_temperature_profile!(flame,grid,fill(300.0,length(grid));relative=false)
+        end
+        workspace = Arrhenius.FlameWorkspace(flame)
+        residual = similar(flame.state)
+        Arrhenius.flame_residual!(residual,flame,flame.state,workspace)
+        @test (@allocated Arrhenius.flame_residual!(residual,flame,flame.state,workspace)) == 0
+        Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)
+        @test (@allocated Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)) == 0
+    end
+end
