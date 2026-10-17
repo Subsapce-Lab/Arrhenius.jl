@@ -1,5 +1,9 @@
 abstract type AbstractPremixedFlame end
 
+# Temporary fixed-temperature stage used by the Cantera-compatible recovery
+# ladder. The lock is removed before the energy-enabled solve is attempted.
+const FLAME_TEMPERATURE_LOCKS = WeakKeyDict{Any,Vector{Float64}}()
+
 "A freely propagating, adiabatic, planar ideal-gas premixed flame."
 mutable struct FreeFlame{G<:Solution} <: AbstractPremixedFlame
     gas::G
@@ -649,6 +653,10 @@ function _conservative_flame_residual!(residual,f,u,w;previous=nothing,dt=Inf,
         if f isa BurnerFlame && !isempty(f.imposed_temperature)
             residual[1,j] = u[1,j]-f.imposed_temperature[j]/1000
         end
+        if !(f isa BurnerFlame && !isempty(f.imposed_temperature))
+            temperature_lock = get(FLAME_TEMPERATURE_LOCKS, f, nothing)
+            temperature_lock === nothing || (residual[1,j] = u[1,j]-temperature_lock[j])
+        end
         total = 0.0
         for k in 2:n+1
             total += u[k,j]
@@ -719,6 +727,10 @@ function flame_residual!(residual, f::AbstractPremixedFlame, u=f.state, w=FlameW
         end
         if f isa BurnerFlame && !isempty(f.imposed_temperature)
             residual[1,j] = u[1,j]-f.imposed_temperature[j]/1000
+        end
+        if !(f isa BurnerFlame && !isempty(f.imposed_temperature))
+            temperature_lock = get(FLAME_TEMPERATURE_LOCKS, f, nothing)
+            temperature_lock === nothing || (residual[1,j] = u[1,j]-temperature_lock[j])
         end
         total = 0.0
         for k in 2:n+1
@@ -844,7 +856,8 @@ _flame_correction_enabled(f) = _conservative_flame(f) &&
     !(f isa BurnerFlame && !isempty(f.imposed_temperature))
 
 function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
-        require_positive=false,minimum_iterations=0,loglevel=0,analytic=true,iterations=Ref(0))
+        require_positive=false,minimum_iterations=0,loglevel=0,analytic=true,iterations=Ref(0),
+        iteration_callback=nothing)
     _premixed_stats(f).newton_calls+=1; PREMIXED_STATS.newton_calls+=1
     u = f.state
     r,trial,rt = similar(u),similar(u),similar(u)
@@ -905,6 +918,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         end
         residual_valid = false
         residual_norm = norm(r,Inf)
+        iteration_callback === nothing || iteration_callback()
         # Final-grid polishing also checks the physical species criterion.
         # Intermediate grids retain the existing equation-residual criterion.
         if !_flame_needs_correction_check(f) && iteration > minimum_iterations && residual_norm < tolerance && (!require_positive ||
@@ -1079,7 +1093,8 @@ function _timestep_growth(residual!,r,strategy,growth,before,after,dt,iterations
 end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
-        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
+        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,
+        analytic=true,steady_callback=nothing)
     w = FlameWorkspace(f)
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
@@ -1091,13 +1106,14 @@ function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tole
     # Cantera time-steps from the state before the failed steady attempt
     # (MultiNewton::solve leaves its input untouched on failure).
     steady_state = _flame_checkpoint_steady(f) || policy ? copy(f.state) : nothing
-    steady_ok = _flame_newton!(f,w; loglevel,tolerance,analytic)
+    steady_ok = _flame_newton!(f,w; loglevel,tolerance,analytic,
+        iteration_callback=steady_callback)
     steady_ok && return true
     _premixed_stats(f).steady_failures+=1; PREMIXED_STATS.steady_failures+=1
     # A failed steady trial must not replace the accepted pseudo-time state.
     steady_state === nothing || copyto!(f.state,steady_state)
     policy && return _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,
-        timestep,tolerance,growth_factor,growth_strategy,step_callback,analytic)
+        timestep,tolerance,growth_factor,growth_strategy,step_callback,analytic,steady_callback)
     dt = timestep[]
     previous = similar(f.state)
     failures = 0
@@ -1116,7 +1132,8 @@ function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tole
             if step % 10 == 0
                 loglevel > 0 && println("Transient step ",step," dt=",dt)
                 steady_state === nothing || copyto!(steady_state,f.state)
-                trial_ok = _flame_newton!(f,w; loglevel,tolerance,analytic)
+                trial_ok = _flame_newton!(f,w; loglevel,tolerance,analytic,
+                    iteration_callback=steady_callback)
                 trial_ok && return true
                 steady_state === nothing || copyto!(f.state,steady_state)
             end
@@ -1146,7 +1163,7 @@ end
 # failures (resetBadValues). A failed steady attempt restarts time stepping
 # from the state before the attempt.
 function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timestep,
-        tolerance,growth_factor,growth_strategy,step_callback,analytic)
+        tolerance,growth_factor,growth_strategy,step_callback,analytic,steady_callback=nothing)
     dt = timestep[]
     previous = similar(f.state)
     iterations = Ref(0)
@@ -1162,7 +1179,8 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
         # stall is broken by the age-20 refresh, not by giving up the step.
         # 200 is a safety valve only; age refreshes every 21 iterations exit
         # via convergence or damping failure long before it.
-        if _flame_newton!(f,w; previous,dt,maxiters=200,loglevel=0,analytic,iterations)
+        if _flame_newton!(f,w; previous,dt,maxiters=200,loglevel=0,analytic,iterations,
+                iteration_callback=steady_callback)
             successive_failures = 0
             successes += 1
             batch += 1
@@ -1178,7 +1196,8 @@ function _flame_time_stepping!(f,w,steady_state; loglevel,max_time_steps,timeste
                 batch = 0
                 loglevel > 0 && println("Transient step ",successes," dt=",dt)
                 copyto!(steady_state,f.state)
-                trial_ok = _flame_newton!(f,w; loglevel,tolerance,analytic)
+                trial_ok = _flame_newton!(f,w; loglevel,tolerance,analytic,
+                    iteration_callback=steady_callback)
                 trial_ok && return true
                 copyto!(f.state,steady_state)
             end
@@ -1362,25 +1381,23 @@ end
 # the mean gradient; solve! doubles the domain and restarts the staged ladder.
 struct FlameDomainTooNarrow <: Exception end
 
-# Cantera's FreeFlame analytic initial guess (onedim.py set_initial_guess): a
-# linear ramp from the inlet state to the constant-enthalpy equilibrium state
-# between 30% and 50% of the domain, equilibrium at the outlet. As in
-# Cantera's Sim1D.solve(auto=True) ladder, each staged grid restarts from this
-# guess instead of continuing from the previous solution; the state is rebuilt
-# for the target grid (Cantera's grid setter reallocates the solution arrays).
+# FreeFlame's staged initial guess uses the Cantera 30%-50% temperature and
+# composition ramp while retaining the inlet mass flux from the preceding
+# stage. The compatibility option applies Cantera's fixed-temperature snap or
+# Tmid insertion rule on the target grid.
 function _fresh_analytic_guess!(f::FreeFlame, z = f.grid; cantera_compatible=true)
     x = f.inlet_Y ./ f.gas.MW
     x ./= sum(x)
     eq = equilibrate(f.gas; T=f.inlet_temperature, P=f.pressure, X=x, mode=:HP)
     T0, y = f.inlet_temperature, f.inlet_Y
     L = z[end] - z[1]
-    rho = f.pressure * dot(x, f.gas.MW) / (R * T0)
+    mdot = f.state[end, 1]
     state = Matrix{Float64}(undef, size(f.state, 1), length(z))
     for j in eachindex(z)
         fraction = clamp(((z[j] - z[1]) / L - .3) / .2, 0, 1)
         state[1, j] = (T0 + fraction * (eq.T - T0)) / 1000
         state[2:size(state, 1) - 1, j] .= y .+ fraction .* (eq.Y .- y)
-        state[end, j] = rho
+        state[end, j] = mdot
     end
     grid = collect(Float64, z)
     target = (0.75 * T0 + 0.25 * eq.T) / 1000
@@ -1397,13 +1414,23 @@ function _fresh_analytic_guess!(f::FreeFlame, z = f.grid; cantera_compatible=tru
             elseif state[1, i + 1] - target < 0.2 * (eq.T / 1000 - target)
                 anchor, fixed_temperature = i + 1, 1000 * state[1, i + 1]
             else
-                fraction = (target - state[1, i]) / (state[1, i + 1] - state[1, i])
-                zfixed = grid[i] + fraction * (grid[i + 1] - grid[i])
-                grid = vcat(grid[1:i], zfixed, grid[i + 1:end])
-                state = hcat(state[:, 1:i],
-                    (1 - fraction) .* state[:, i] .+ fraction .* state[:, i + 1],
-                    state[:, i + 1:end])
-                anchor, fixed_temperature = i + 1, 1000 * target
+                # Sim1D::setFixedTemperature has its own 10%-of-local-gap
+                # snap before inserting the crossing point.
+                t1, t2 = 1000 * state[1, i], 1000 * state[1, i + 1]
+                local_threshold = min(1.0, 0.1 * (t2 - t1))
+                if abs(1000 * target - t1) <= local_threshold
+                    anchor, fixed_temperature = i, t1
+                elseif abs(t2 - 1000 * target) <= local_threshold
+                    anchor, fixed_temperature = i + 1, t2
+                else
+                    fraction = (target - state[1, i]) / (state[1, i + 1] - state[1, i])
+                    zfixed = grid[i] + fraction * (grid[i + 1] - grid[i])
+                    grid = vcat(grid[1:i], zfixed, grid[i + 1:end])
+                    state = hcat(state[:, 1:i],
+                        (1 - fraction) .* state[:, i] .+ fraction .* state[:, i + 1],
+                        state[:, i + 1:end])
+                    anchor, fixed_temperature = i + 1, 1000 * target
+                end
             end
         end
     end
@@ -1415,18 +1442,41 @@ function _fresh_analytic_guess!(f::FreeFlame, z = f.grid; cantera_compatible=tru
     return f
 end
 
+# Cantera BurnerFlame.set_initial_guess: ramp temperature and composition
+# from the burner state to the HP-equilibrium state over the first 20% of the
+# domain, while preserving the imposed inlet mass flux.
+function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=true)
+    x = f.inlet_Y ./ f.gas.MW
+    x ./= sum(x)
+    eq = equilibrate(f.gas; T=f.inlet_temperature, P=f.pressure, X=x, mode=:HP)
+    znew = collect(Float64, z)
+    L = znew[end] - znew[1]
+    state = Matrix{Float64}(undef, size(f.state, 1), length(znew))
+    for j in eachindex(znew)
+        fraction = clamp((znew[j] - znew[1]) / (0.2 * L), 0, 1)
+        state[1, j] = (f.inlet_temperature + fraction * (eq.T - f.inlet_temperature)) / 1000
+        state[2:end-1, j] .= f.inlet_Y .+ fraction .* (eq.Y .- f.inlet_Y)
+        state[end, j] = f.mass_flux
+    end
+    f.grid, f.state = znew, state
+    f.anchor = clamp(argmin(abs.(@view(state[1, :]) .- (0.75 * f.inlet_temperature + 0.25 * eq.T) / 1000)),
+        2, length(znew) - 1)
+    f.fixed_temperature = 1000 * state[1, f.anchor]
+    f.converged = false
+    return f
+end
+
 # Sim1D.cpp's solve(refine_grid=true) loop: steady solve, width check, one
 # refinement pass, repeat while refinement changes the grid (`while
 # new_points > 0`, entered with `new_points = 1`, so the entry state is always
-# solved — the staged final stage relies on this to apply the restored Soret
-# term). Grids that still guide refinement solve to the loose tolerance; the
-# accepted grid re-solves to the full tolerance (solve!'s sequencing). A
-# failed steady solve retries with clipped species, then Cantera's time-step
-# regrid: refine the failed state and retry while the grid changes, at most
-# `m_ts_regrid_max` times.
+# solved. An enabled expensive-options final stage re-solves this grid after
+# transport is restored. Grids that still guide refinement use the loose
+# tolerance. The accepted grid re-solves to the full tolerance (solve!'s sequencing). A
+# failed steady solve regrids and retries. The non-compatibility path retains
+# its clipped-species retry; the Cantera-compatible path skips that attempt.
 function _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,initial_time_step,
-        ts_regrid=3)
+        ts_regrid=3,cantera_compatible=false)
     strict = !refine_grid || !_flame_step_sequencing(f)
     regrids = 0
     for pass in 1:40
@@ -1435,26 +1485,28 @@ function _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
         # Cantera SteadyStateSystem::solve restarts time stepping from the
         # configured initial step on every grid.
         _flame_persistent_jacobian(f) && (timestep[] = initial_time_step)
-        if !_flame_steady!(f; loglevel, max_time_steps, timestep, tolerance, controls...)
-            # Retry the grid with clipped species; at a nonnegative converged
-            # state both forms share the same solution.
+        steady_ok = cantera_compatible ?
+            _flame_steady!(f; loglevel, max_time_steps, timestep, tolerance, controls...) :
+            _flame_steady!(f; loglevel, max_time_steps, timestep, tolerance)
+        if !steady_ok && !cantera_compatible
+            # The legacy Arrhenius path retries with clipped species.
             loglevel > 0 && println("Retrying ", length(f.grid), " points with clipped species")
             timestep[] = initial_time_step
-            if !_flame_steady!(f; loglevel, max_time_steps, timestep, tolerance,
-                    clip_species = true, controls...)
-                # Cantera's time_step_regrid: refine the failed state and
-                # retry; when refinement cannot change the grid, rethrow.
-                if !(refine_grid && regrids < ts_regrid &&
-                        _refine_flame!(f; ratio, slope, curve, prune, max_points))
-                    error("flame solve failed on $(length(f.grid)) points")
-                end
-                regrids += 1
-                loglevel > 0 && println("Time stepping failed; regridding to ",
-                    length(f.grid), " points")
-                timestep[] = initial_time_step
-                strict = !_flame_step_sequencing(f)
-                continue
+            steady_ok = _flame_steady!(f; loglevel, max_time_steps, timestep, tolerance,
+                clip_species = true, controls...)
+        end
+        if !steady_ok
+            # Cantera's time_step_regrid refines a failed state and retries.
+            if !(refine_grid && regrids < ts_regrid &&
+                    _refine_flame!(f; ratio, slope, curve, prune, max_points))
+                error("flame solve failed on $(length(f.grid)) points")
             end
+            regrids += 1
+            loglevel > 0 && println("Time stepping failed; regridding to ",
+                length(f.grid), " points")
+            timestep[] = initial_time_step
+            strict = !_flame_step_sequencing(f)
+            continue
         end
         domain_check && _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
         if refine_grid && _refine_flame!(f; ratio, slope, curve, prune, max_points)
@@ -1470,17 +1522,42 @@ function _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
     error("flame refinement did not converge after 40 passes")
 end
 
-# Cantera's Sim1D.solve(auto=True) staged ladder (_onedim.py): default
-# tolerances, Soret disabled, uniform grids of len(grid), 12, 24 and 48 points
-# each restarting from a fresh analytic guess, one refinement-enabled solve on
-# the first non-failed stage, then the final stage with Soret restored
-# (Cantera's "final call with expensive options enabled").
+struct FlameBlownOff <: Exception end
+
+function _burner_blown_off(f::BurnerFlame)
+    n = max(3, length(f.grid) ÷ 5) + 1
+    rise = f.state[1, end] - f.state[1, 1]
+    return abs(f.state[1, n] - f.state[1, 1]) / rise < 1e-6
+end
+
+function _burner_blowoff_check!(f::BurnerFlame)
+    _burner_blown_off(f) && throw(FlameBlownOff())
+    return nothing
+end
+
+function _burner_blowoff_solve!(f::BurnerFlame; loglevel,max_time_steps,timestep,controls)
+    f.state[1, :] .= f.inlet_temperature / 1000
+    f.state[2:end-1, :] .= f.inlet_Y
+    f.state[end, :] .= f.mass_flux
+    fallback_controls = merge(controls, (; steady_callback=nothing))
+    _flame_steady!(f; loglevel,max_time_steps,timestep,tolerance=1e-8,
+        fallback_controls...) || error("burner blowoff fallback failed")
+    f.converged = true
+    return f
+end
+
+# Cantera's Sim1D.solve(auto=True) staged ladder: default tolerances and
+# Soret disabled on uniform grids of len(grid), 12, 24 and 48 points. Each grid
+# gets a fresh kind-specific guess; the first successful fixed-grid solve then
+# enters refinement. The expensive-options solve is conditional after restore.
 function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
         cantera_compatible=true)
     initial_step = timestep[]
     soret0 = f.soret_enabled
+    transport0 = f.transport_model
     f.soret_enabled = false
+    cantera_compatible && transport0 == :multicomponent && (f.transport_model = :mixture_averaged)
     try
         zmin, zmax = f.grid[1], f.grid[end]
         solved = false
@@ -1492,26 +1569,43 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
             timestep[] = initial_step
             solved = _flame_steady!(f; loglevel, max_time_steps, timestep,
                 tolerance = 1e-6, controls...)
+            if !solved && cantera_compatible
+                # Cantera retries a failed energy-enabled fixed grid with
+                # temperature frozen, then re-enables energy.
+                FLAME_TEMPERATURE_LOCKS[f] = copy(@view f.state[1, :])
+                fixed_temperature_solved = try
+                    timestep[] = initial_step
+                    _flame_steady!(f; loglevel, max_time_steps, timestep,
+                        tolerance = 1e-6, controls...)
+                finally
+                    delete!(FLAME_TEMPERATURE_LOCKS, f)
+                end
+                if fixed_temperature_solved
+                    timestep[] = initial_step
+                    solved = _flame_steady!(f; loglevel, max_time_steps, timestep,
+                        tolerance = 1e-6, controls...)
+                end
+            end
             solved || continue
             domain_check && _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
             try
                 _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune,
                     max_points, max_time_steps, loglevel, domain_check,
                     timestep, controls, initial_time_step = initial_step,
-                    ts_regrid = ts_regrid)
+                    ts_regrid = ts_regrid, cantera_compatible)
             catch err
-                # Cantera's ladder discards the result of the refinement-enabled
-                # stage solve: a failure (time stepping or convergence) leaves
-                # the last good state and proceeds to the final stage. The
-                # width check propagates to the domain-expansion loop instead.
-                err isa FlameDomainTooNarrow && rethrow()
-                break
+                # A width failure restarts the domain loop. Other failures
+                # discard this trial state and continue with the next fresh N.
+                (err isa FlameDomainTooNarrow || err isa FlameBlownOff) && rethrow()
+                solved = false
+                continue
             end
             break
         end
         solved || error("Could not find a solution for the 1D problem")
     finally
         f.soret_enabled = soret0
+        f.transport_model = transport0
     end
     # Cantera's final solve is needed only when expensive transport options
     # (or user tolerances, which Arrhenius does not expose yet) were requested.
@@ -1520,27 +1614,39 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
     if !cantera_compatible || f.transport_model == :multicomponent || soret0
         _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune, max_points,
             max_time_steps, loglevel, domain_check, timestep, controls,
-            initial_time_step = initial_step, ts_regrid = ts_regrid)
+            initial_time_step = initial_step, ts_regrid = ts_regrid,
+            cantera_compatible)
     end
     return f
 end
 
-# Cantera's FreeFlame.solve(auto=True): the staged ladder wrapped in the
-# domain-expansion loop (onedim.py), where a too-narrow domain doubles in
-# width, is refined once, and the whole ladder restarts (up to 12 times).
+# Cantera's FreeFlame.solve(auto=True) adds a domain-width callback around
+# the shared staged ladder. BurnerFlame uses that ladder without expansion.
 function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
         cantera_compatible=true)
-    f isa FreeFlame || throw(ArgumentError(
-        "auto staging mirrors Cantera's FreeFlame.solve(auto=True); other flame types use the plain solve!"))
+    f isa Union{FreeFlame,BurnerFlame} || throw(ArgumentError(
+        "Cantera-compatible auto staging supports FreeFlame and BurnerFlame"))
+    f isa BurnerFlame && !isempty(f.imposed_temperature) && throw(ArgumentError(
+        "cantera_compatible auto staging is for energy-enabled burner flames"))
+    if f isa BurnerFlame
+        domain_check = false
+        if cantera_compatible
+            controls = merge(controls, (; steady_callback=()->_burner_blowoff_check!(f)))
+        end
+    end
     initial_step = timestep[]
-    for _ in 1:12
+    expansions = f isa FreeFlame ? 12 : 1
+    for _ in 1:expansions
         try
             timestep[] = initial_step
             _auto_staged!(f; refine_grid, ratio, slope, curve, prune,
                 max_points, max_time_steps, loglevel, domain_check, timestep,
                 controls, ts_regrid = ts_regrid, cantera_compatible)
         catch err
+            if err isa FlameBlownOff
+                return _burner_blowoff_solve!(f; loglevel,max_time_steps,timestep,controls)
+            end
             err isa FlameDomainTooNarrow || rethrow()
             f.grid .*= 2
             loglevel > 0 && println("Expanding domain to ",
@@ -1576,7 +1682,7 @@ function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         f.converged = true
         return f
     end
-    error("auto solve did not converge after 12 domain expansions")
+    error("Cantera-compatible auto solve did not converge")
 end
 
 # Cantera's Sim1D solve stats (jacobian/iteration/time-step counts), the
@@ -1663,11 +1769,12 @@ _premixed_stats(f)=Base.ismutable(f) ? get!(() -> PremixedStats(), FLAME_STATS, 
 
 Solve a native premixed flame using damped Newton iterations and implicit
 pseudo-time stepping. Failure raises an error and leaves `converged=false`.
-`auto=true` mirrors Cantera's `FreeFlame.solve(auto=True)` for `FreeFlame`: a
-staged ladder on uniform 12/24/48-point grids from fresh analytic guesses with
-Soret disabled, one refinement-enabled solve, then a final stage with Soret
-restored — all wrapped in the domain-expansion loop that doubles a too-narrow
-domain and restarts the ladder. Cantera's time-step controls:
+`cantera_compatible=true` follows Cantera's automatic staged ladder for free
+and burner flames; `auto=true` is an alias. It tries the input grid and uniform
+12/24/48-point grids, retries failed fixed-grid solves with temperature locked,
+then refines and conditionally repeats after restoring expensive transport.
+Free flames also expand a too-narrow domain; burner flames detect blowoff and
+return a nonreacting solution. Cantera's time-step controls:
 `time_step_growth_factor`, `time_step_growth_strategy` (`:fixed_growth`,
 `:steady_norm`, `:transient_residual`, `:residual_ratio`, `:newton_iterations`),
 `time_step_callback(dt)`, `time_step_regrid` and `jacobian_mode` (`:auto` or
@@ -1680,7 +1787,7 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         initial_time_step=1e-5,domain_check=f isa FreeFlame,
         time_step_growth_factor=1.5,time_step_growth_strategy=:fixed_growth,
         time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false,
-        cantera_compatible=true)
+        cantera_compatible=auto)
     isfinite(ratio) && ratio > 1 && 0 < slope <= 1 && 0 < curve <= 1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(prune) && prune <= min(slope,curve) || throw(ArgumentError("prune must be finite and no greater than slope or curve"))
     isfinite(initial_time_step) && initial_time_step > 0 || throw(ArgumentError("initial time step must be finite and positive"))
@@ -1690,7 +1797,7 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
     controls = (;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
         step_callback=time_step_callback,analytic)
     timestep = Ref(Float64(initial_time_step))
-    auto && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
+    (auto || cantera_compatible) && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid,
         cantera_compatible)
     regrids = 0

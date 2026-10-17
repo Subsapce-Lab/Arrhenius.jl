@@ -32,11 +32,12 @@ using Arrhenius, LinearAlgebra, Test
     Arrhenius._fresh_analytic_guess!(flame, uniform12; cantera_compatible=false)
     @test length(flame.grid) == 6
 
-    # auto staging mirrors Cantera's FreeFlame.solve(auto=True) and is
-    # FreeFlame-only.
+    # The Cantera-compatible initial guess supports burner flames as well.
     burner = BurnerFlame(gas; mdot=0.06, T=300.0, P=one_atm, X,
         discretization=:finite_difference)
-    @test_throws ArgumentError solve!(burner; auto=true)
+    @test Arrhenius._fresh_analytic_guess!(burner, copy(burner.grid)) === burner
+    @test burner.state[end, :] == fill(burner.mass_flux, length(burner.grid))
+    @test isapprox(burner.state[1, end] * 1000, eq.T; atol=1e-8)
 
     # H2/air at 300 K, 1 atm: thermal diffusion (Soret) shifts the flame speed
     # by >10%, so the final stage with Soret restored must re-solve. Before
