@@ -36,12 +36,24 @@ for path in spec_paths
             refine_grid=!dry_run, max_time_steps=dry_run ? 40 : 500, loglevel=0)
         flame.converged || error("$(spec["id"]) did not converge")
         value = spec["kind"] == "free" ? 100 * flame_speed(flame) : 100 * velocity(flame)[1]
+        Y = mass_fractions(flame)
+        sum_y_error = maximum(abs.(sum(Y; dims=1) .- 1))
+        atomic_weights = flame.gas.ele_matrix' \ flame.gas.MW
+        element_mass_matrix = Diagonal(atomic_weights) * flame.gas.ele_matrix *
+            Diagonal(1 ./ flame.gas.MW)
+        element_in = element_mass_matrix * flame.inlet_Y
+        element_out = element_mass_matrix * @view(Y[:, end])
+        element_balance_error = maximum(abs.(element_out .- element_in)) /
+            max(maximum(abs.(element_in)), 1e-300)
+        mass_flux_error = maximum(abs.(flame.state[end, :] .- flame.state[end, 1])) /
+            max(abs(flame.state[end, 1]), 1e-300)
         println("case=$(spec["id"]) mode=$(compatible ? "compat" : "plain") " *
             "jacobians=$(stats.jacobians) newton_calls=$(stats.newton_calls) " *
             "newton_iterations=$(stats.newton_iterations) steady_calls=$(length(stats.grids)) " *
             "grid_trace=$(join(stats.grids, ",")) steps=$(stats.time_steps) " *
             "steady_failures=$(stats.steady_failures) " *
             "time_step_failures=$(stats.time_step_failures) regrids=$(stats.regrids) " *
-            "points=$(length(flame.grid)) speed_cm_s=$(value)")
+            "points=$(length(flame.grid)) speed_cm_s=$(value) sumY_error=$(sum_y_error) " *
+            "element_balance_error=$(element_balance_error) mass_flux_error=$(mass_flux_error)")
     end
 end
