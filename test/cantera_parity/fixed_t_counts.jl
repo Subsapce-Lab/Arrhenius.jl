@@ -26,4 +26,4 @@ function run_case(path)
 end
 
 isempty(ARGS) && error("provide one or more fixed-case spec paths")
-foreach(run_case, ARGS)
+foreach(run_case, strip.(ARGS))
