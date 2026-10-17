@@ -322,6 +322,14 @@ end
     right_entry=boundary_jac[2halfband+1+right_row-right_col,right_col]
     @test left_entry ≈ 24.0162922725 rtol=2e-8
     @test right_entry ≈ -23.1400344324 rtol=2e-8
+    expected_full=Arrhenius.npzread(joinpath(root,"free_auto_stagni_jacobian_reference.npz"))["jacobian"]
+    dense_jac=zeros(N*B,N*B)
+    for col in 1:N*B, row in max(1,col-halfband):min(N*B,col+halfband)
+        dense_jac[row,col]=boundary_jac[2halfband+1+row-col,col]
+    end
+    full_jacobian_relative_error=norm(dense_jac-expected_full)/norm(expected_full)
+    @info "Cantera full auto Jacobian fixture comparison" full_jacobian_relative_error
+    @test full_jacobian_relative_error < 2e-10
     d=Arrhenius._ConservativeFlameDerivatives(gas,N)
     G=zeros(n,n+1)
     maxrel=0.0
