@@ -1588,7 +1588,10 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
                         tolerance = 1e-6, controls...)
                 end
             end
-            solved || continue
+            if !solved
+                refine_grid || break
+                continue
+            end
             domain_check && _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
             try
                 _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune,

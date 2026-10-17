@@ -21,15 +21,18 @@ function make_flame(spec)
     error("only free and burner specs are supported: $(spec["kind"])")
 end
 
-for path in ARGS
+dry_run = "--dry-run" in ARGS
+spec_paths = filter(!=("--dry-run"), ARGS)
+isempty(spec_paths) && error("provide one or more flame spec paths")
+for path in spec_paths
     spec = YAML.load_file(path)
-    for compatible in (false, true)
+    for compatible in (dry_run ? (true,) : (false, true))
         flame = make_flame(spec)
         stats = solver_stats(flame)
         solve!(flame; ratio=spec["ratio"], slope=spec["slope"],
             curve=spec["curve"], prune=min(get(spec, "prune", 0.0),
             spec["slope"], spec["curve"]), cantera_compatible=compatible,
-            loglevel=0)
+            refine_grid=!dry_run, max_time_steps=dry_run ? 40 : 500, loglevel=0)
         flame.converged || error("$(spec["id"]) did not converge")
         value = spec["kind"] == "free" ? 100 * flame_speed(flame) : 100 * velocity(flame)[1]
         println("case=$(spec["id"]) mode=$(compatible ? "compat" : "plain") " *
