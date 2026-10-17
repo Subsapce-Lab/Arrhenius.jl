@@ -55,11 +55,16 @@ for i in range(maxsteps):
         if strain/amax<.10 or errors>=3: break
         continue
     current=f.strain_rate("max")
+    left_index=int(np.argmin(np.abs(np.asarray(f.grid)-f.left_control_point_coordinate)))
+    right_index=int(np.argmin(np.abs(np.asarray(f.grid)-f.right_control_point_coordinate)))
     rows.append({"index":i,"Tmax_K":float(max(f.T)),"strain_rate_per_s":float(current),
         "control_temperature_K":target,"temperature_decrement_K":float(step),
         "retries_before_success":pending_retries,
         "left_control_point_coordinate_m":float(f.left_control_point_coordinate),
         "right_control_point_coordinate_m":float(f.right_control_point_coordinate),
+        "left_control_point_index":left_index,"right_control_point_index":right_index,
+        "left_control_point_temperature_K":float(f.T[left_index]),
+        "right_control_point_temperature_K":float(f.T[right_index]),
         "grid_m":np.asarray(f.grid).tolist(),"T_K":np.asarray(f.T).tolist(),
         "Y":np.asarray(f.Y).T.tolist(),"velocity_m_s":np.asarray(f.velocity).tolist(),
         "fuel_mdot":float(f.fuel_inlet.mdot),"oxidizer_mdot":float(f.oxidizer_inlet.mdot),
@@ -104,6 +109,10 @@ np.savez_compressed(out,grid_points=np.asarray([npoints]),pressure_Pa=np.asarray
     curve_oxidizer_mdot=np.asarray([r["oxidizer_mdot"] for r in rows]),
     curve_left_control_z_m=np.asarray([r["left_control_point_coordinate_m"] for r in rows]),
     curve_right_control_z_m=np.asarray([r["right_control_point_coordinate_m"] for r in rows]),
+    curve_left_control_index=np.asarray([r["left_control_point_index"] for r in rows]),
+    curve_right_control_index=np.asarray([r["right_control_point_index"] for r in rows]),
+    curve_left_control_T_K=np.asarray([r["left_control_point_temperature_K"] for r in rows]),
+    curve_right_control_T_K=np.asarray([r["right_control_point_temperature_K"] for r in rows]),
     curve_retry_count=np.asarray([r["retries_before_success"] for r in rows]),
     curve_T_K=np.asarray([r["T_K"] for r in rows]),
     curve_Y=np.asarray([r["Y"] for r in rows]),

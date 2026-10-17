@@ -35,6 +35,9 @@ struct TwoPointControlPoint
     oxidizer_mass_flux::Float64
     state::Matrix{Float64}
     solve_seconds::Float64
+    left_control_index::Int
+    right_control_index::Int
+    control_points::NTuple{4,Float64}
 end
 
 """Trace a counterflow diffusion flame with Cantera's two-point temperature schedule.
@@ -76,6 +79,10 @@ function two_point_control!(f::CounterflowDiffusionFlame; max_steps=1000,
         try
             set_two_point_control!(f;temperature=target,decrement=step)
             ctrl=f.control_points
+            left_index=findfirst(==(ctrl[1]),f.grid)
+            right_index=findfirst(==(ctrl[3]),f.grid)
+            (!isnothing(left_index) && !isnothing(right_index)) ||
+                error("two-point control coordinates must lie on the fixed grid")
             if ctrl[2]<f.fuel_temperature+100 || ctrl[4]<f.oxidizer_temperature+100
                 f.state=saved_state; f.control_points=saved_control
                 f.fuel_mass_flux=saved_mf; f.oxidizer_mass_flux=saved_mo; f.converged=saved_converged
@@ -86,7 +93,8 @@ function two_point_control!(f::CounterflowDiffusionFlame; max_steps=1000,
             elapsed=(time_ns()-t0)/1e9
             Tmax=maximum(temperature(f)); strain=_two_point_max_strain_rate(f,f.state)
             push!(curve,TwoPointControlPoint(target,step,Tmax,strain,
-                f.fuel_mass_flux,f.oxidizer_mass_flux,copy(f.state),elapsed))
+                f.fuel_mass_flux,f.oxidizer_mass_flux,copy(f.state),elapsed,
+                left_index,right_index,ctrl))
             errors=0
             delta=abs(Tmax-Tmax_old)
             if isnothing(schedule)
