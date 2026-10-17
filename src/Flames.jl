@@ -342,8 +342,20 @@ end
 # Steady attempts on consecutive flames from the same gas object revisit the
 # same small set of adaptive grid sizes. Pool their large workspaces by gas
 # and equation configuration so repeated solves do not rebuild band buffers.
-const FLAME_WORKSPACE_CACHE = WeakKeyDict{Any,Dict{Any,Vector{FlameWorkspace}}}()
+const FLAME_WORKSPACE_CACHE = IdDict{Any,Dict{Any,Vector{FlameWorkspace}}}()
+const FLAME_WORKSPACE_CACHE_ORDER = Any[]
 const FLAME_WORKSPACE_CACHE_LOCK = ReentrantLock()
+const FLAME_WORKSPACE_CACHE_MAX_GASES = 2
+
+function _flame_workspace_pools(gas)
+    return get!(FLAME_WORKSPACE_CACHE,gas) do
+        push!(FLAME_WORKSPACE_CACHE_ORDER,gas)
+        if length(FLAME_WORKSPACE_CACHE_ORDER) > FLAME_WORKSPACE_CACHE_MAX_GASES
+            delete!(FLAME_WORKSPACE_CACHE,popfirst!(FLAME_WORKSPACE_CACHE_ORDER))
+        end
+        Dict{Any,Vector{FlameWorkspace}}()
+    end
+end
 
 function _flame_workspace_key(f)
     data = hasproperty(f,:multicomponent_data) && f.multicomponent_data !== nothing ?
@@ -355,9 +367,7 @@ end
 function _take_flame_workspace(f)
     key = _flame_workspace_key(f)
     cached = lock(FLAME_WORKSPACE_CACHE_LOCK) do
-        by_key = get!(FLAME_WORKSPACE_CACHE,f.gas) do
-            Dict{Any,Vector{FlameWorkspace}}()
-        end
+        by_key = _flame_workspace_pools(f.gas)
         pool = get(by_key,key,nothing)
         pool === nothing || isempty(pool) ? nothing : pop!(pool)
     end
@@ -367,9 +377,7 @@ end
 function _return_flame_workspace!(f,w)
     key = _flame_workspace_key(f)
     lock(FLAME_WORKSPACE_CACHE_LOCK) do
-        by_key = get!(FLAME_WORKSPACE_CACHE,f.gas) do
-            Dict{Any,Vector{FlameWorkspace}}()
-        end
+        by_key = _flame_workspace_pools(f.gas)
         push!(get!(by_key,key,FlameWorkspace[]),w)
     end
     return nothing
