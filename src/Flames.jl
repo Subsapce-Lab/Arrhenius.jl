@@ -1798,7 +1798,7 @@ function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=t
     znew = collect(Float64, z)
     L = znew[end] - znew[1]
     state = Matrix{Float64}(undef, size(f.state, 1), length(znew))
-    velocity_ramp = cantera_compatible && !isempty(f.imposed_temperature)
+    velocity_ramp = cantera_compatible
     rho0 = velocity_ramp ? _flame_density(f, f.inlet_temperature, f.inlet_Y).density : 1.0
     rho1 = velocity_ramp ? _flame_density(f, eq.T, eq.Y).density : 1.0
     for j in eachindex(znew)
