@@ -991,7 +991,7 @@ function solve!(f::CounterflowDiffusionFlame;refine_grid=true,ratio=4.,slope=.2,
     _check_timestep_controls(time_step_growth_factor,time_step_growth_strategy,time_step_regrid,jacobian_mode)
     reset!(_counterflow_stats(f))  # per-flame counters report this solve only
     controls=(;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
-        step_callback=time_step_callback,analytic=jacobian_mode===:auto)
+        step_callback=time_step_callback,analytic=jacobian_mode!==:finite_difference)
     timestep=Ref(Float64(initial_time_step))
     steady!(flow)=_counterflow_steady!(flow;max_time_steps,timestep,loglevel,controls...,
         newton_maxiters=_COUNTERFLOW_FD_NEWTON_MAXITERS,

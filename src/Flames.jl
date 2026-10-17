@@ -1091,7 +1091,7 @@ function _check_timestep_controls(growth,strategy,regrid,jacobian_mode)
     isfinite(growth) && growth >= 1 || throw(ArgumentError("time step growth factor must be finite and at least 1"))
     strategy in _timestep_growth_strategies || throw(ArgumentError("unknown time step growth strategy $strategy"))
     regrid isa Integer && regrid >= 0 || throw(ArgumentError("time_step_regrid must be a nonnegative integer"))
-    jacobian_mode in (:auto,:finite_difference) || throw(ArgumentError("unknown jacobian_mode $jacobian_mode"))
+    jacobian_mode in (:auto,:finite_difference,:analytic) || throw(ArgumentError("unknown jacobian_mode $jacobian_mode"))
     return nothing
 end
 
@@ -1668,8 +1668,8 @@ restored — all wrapped in the domain-expansion loop that doubles a too-narrow
 domain and restarts the ladder. Cantera's time-step controls:
 `time_step_growth_factor`, `time_step_growth_strategy` (`:fixed_growth`,
 `:steady_norm`, `:transient_residual`, `:residual_ratio`, `:newton_iterations`),
-`time_step_callback(dt)`, `time_step_regrid` and `jacobian_mode` (`:auto` or
-`:finite_difference`). `prune` is Cantera's fourth refine criterion: grid
+`time_step_callback(dt)`, `time_step_regrid` and `jacobian_mode` (`:finite_difference` by default,
+`:analytic` to enable analytic species columns, or `:auto` as an alias). `prune` is Cantera's fourth refine criterion: grid
 points whose slope/curve indicators fall below it are removed on each
 refinement pass (0 disables pruning; it must not exceed `slope` or `curve`).
 """
@@ -1677,13 +1677,13 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
         max_points=1000,max_time_steps=500,loglevel=0,
         initial_time_step=1e-5,domain_check=f isa FreeFlame,
         time_step_growth_factor=1.5,time_step_growth_strategy=:fixed_growth,
-        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:auto,auto=false)
+        time_step_callback=nothing,time_step_regrid=3,jacobian_mode=:finite_difference,auto=false)
     isfinite(ratio) && ratio > 1 && 0 < slope <= 1 && 0 < curve <= 1 || throw(ArgumentError("invalid refinement criteria"))
     isfinite(prune) && prune <= min(slope,curve) || throw(ArgumentError("prune must be finite and no greater than slope or curve"))
     isfinite(initial_time_step) && initial_time_step > 0 || throw(ArgumentError("initial time step must be finite and positive"))
     _check_timestep_controls(time_step_growth_factor,time_step_growth_strategy,time_step_regrid,jacobian_mode)
     reset!(_premixed_stats(f))  # per-flame counters report this solve only
-    analytic = jacobian_mode === :auto
+    analytic = jacobian_mode !== :finite_difference
     controls = (;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
         step_callback=time_step_callback,analytic)
     timestep = Ref(Float64(initial_time_step))

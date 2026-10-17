@@ -407,7 +407,7 @@ function solve!(f::AbstractPremixedCounterflow;refine_grid=true,ratio=3.,slope=.
         throw(ArgumentError("residual-ratio growth is unsupported for $(typeof(f)) until Cantera boundary-residual parity is validated"))
     reset!(_counterflow_stats(f))  # per-flame counters report this solve only
     controls=(;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
-        step_callback=time_step_callback,analytic=jacobian_mode===:auto)
+        step_callback=time_step_callback,analytic=jacobian_mode!==:finite_difference)
     # The shared counterflow driver counts only successful time steps toward
     # Cantera's steady-retry cadence (SteadyStateSystem::timeStep).
     steady!(flow)=_premixed_counterflow_steady!(flow;max_time_steps,timestep,loglevel,controls...)
