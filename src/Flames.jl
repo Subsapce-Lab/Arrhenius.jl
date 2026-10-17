@@ -1078,17 +1078,8 @@ function _timestep_growth(residual!,r,strategy,growth,before,after,dt,iterations
 end
 
 function _flame_steady!(f; loglevel=0,max_time_steps=500,timestep=Ref(1e-6),tolerance=1e-8,
-        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,
-        analytic=true,workspace=nothing)
-    w = workspace === nothing ? FlameWorkspace(f) : workspace
-    size(w.band,2) == length(f.state) || throw(DimensionMismatch("flame workspace grid does not match state"))
-    # A workspace may be shared by repeated steady attempts on one grid. Keep
-    # the per-attempt Jacobian cache semantics of a fresh workspace.
-    w.jacobian_valid[] = false
-    w.jacobian_age[] = 100000
-    w.jacobian_rdt[] = NaN
-    w.jacobian_evals[] = 0
-    empty!(w.jacobian_pivots[])
+        clip_species=false,growth_factor=1.5,growth_strategy=:fixed_growth,step_callback=nothing,analytic=true)
+    w = FlameWorkspace(f)
     push!(_premixed_stats(f).grids,length(f.grid)); push!(PREMIXED_STATS.grids,length(f.grid))
     # Species reset and clipping apply to neutral premixed flames only; ionized
     # flames keep signed charged species.
@@ -1674,24 +1665,22 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
     # the full residual tolerance and checked again.
     strict = !refine_grid || !_flame_step_sequencing(f)
     expansions = 0
-    workspace = FlameWorkspace(f)
     for pass in 1:40
         loglevel > 0 && println("Solving on ",length(f.grid)," points")
         tolerance = strict ? 1e-8 : 1e-6
         # Cantera SteadyStateSystem::solve restarts time stepping from the
         # configured initial step on every grid.
         _flame_persistent_jacobian(f) && (timestep[] = initial_time_step)
-        if !_flame_steady!(f; loglevel,max_time_steps,timestep,tolerance,controls...,workspace)
+        if !_flame_steady!(f; loglevel,max_time_steps,timestep,tolerance,controls...)
             # Retry the grid with clipped species; at a nonnegative converged
             # state both forms share the same solution.
             loglevel > 0 && println("Retrying ",length(f.grid)," points with clipped species")
             timestep[] = initial_time_step
-            if !_flame_steady!(f; loglevel,max_time_steps,timestep,tolerance,clip_species=true,controls...,workspace)
+            if !_flame_steady!(f; loglevel,max_time_steps,timestep,tolerance,clip_species=true,controls...)
                 # Cantera's time_step_regrid: refine the failed state and retry.
                 refine_grid && regrids < time_step_regrid && _refine_flame!(f;ratio,slope,curve,prune,max_points) ||
                     error("flame solve failed on $(length(f.grid)) points")
                 regrids += 1
-                workspace = FlameWorkspace(f)
                 loglevel > 0 && println("Time stepping failed; regridding to ",length(f.grid)," points")
                 timestep[] = initial_time_step
                 strict = !_flame_step_sequencing(f)
@@ -1709,7 +1698,6 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
             continue
         end
         refined = refine_grid && _refine_flame!(f;ratio,slope,curve,prune,max_points)
-        size(workspace.band,2) == length(f.state) || (workspace = FlameWorkspace(f))
         if !refined && !strict
             strict = true
             continue
