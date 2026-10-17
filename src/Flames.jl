@@ -1627,8 +1627,8 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
     return f
 end
 
-# Cantera's FreeFlame.solve(auto=True) adds a domain-width callback around
-# the shared staged ladder. BurnerFlame uses that ladder without expansion.
+# Cantera checks free-flame domain width after each successful steady solve.
+# BurnerFlame uses the shared staged ladder without domain expansion.
 function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
         cantera_compatible=true)
@@ -1636,12 +1636,7 @@ function _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         "Cantera-compatible auto staging supports FreeFlame and BurnerFlame"))
     f isa BurnerFlame && !isempty(f.imposed_temperature) && throw(ArgumentError(
         "cantera_compatible auto staging is for energy-enabled burner flames"))
-    if f isa FreeFlame && cantera_compatible && domain_check
-        controls = merge(controls, (; steady_callback = () -> begin
-            _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
-            nothing
-        end))
-    elseif f isa BurnerFlame
+    if f isa BurnerFlame
         domain_check = false
         if cantera_compatible
             controls = merge(controls, (; steady_callback=()->_burner_blowoff_check!(f)))

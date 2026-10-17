@@ -47,6 +47,16 @@ for path in spec_paths
             max(maximum(abs.(element_in)), 1e-300)
         mass_flux_error = maximum(abs.(flame.state[end, :] .- flame.state[end, 1])) /
             max(abs(flame.state[end, 1]), 1e-300)
+        expected_ladder = get(Dict(
+            "stagni_2023__free__phi1.2_h20.3_p1__mixture-averaged" => (9, 283),
+            "alzueta_2023__free__phi1.2_h20.3_p1__mixture-averaged" => (9, 305)),
+            spec["id"], nothing)
+        if compatible && expected_ladder !== nothing
+            expected_regrids, expected_points = expected_ladder
+            @assert stats.regrids == expected_regrids
+            @assert length(flame.grid) == expected_points
+            @assert isapprox(flame.grid[end] - flame.grid[1], spec["width"]; atol=1e-14, rtol=0)
+        end
         println("case=$(spec["id"]) mode=$(compatible ? "compat" : "plain") " *
             "jacobians=$(stats.jacobians) newton_calls=$(stats.newton_calls) " *
             "newton_iterations=$(stats.newton_iterations) steady_calls=$(length(stats.grids)) " *
