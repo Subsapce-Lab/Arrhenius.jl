@@ -225,7 +225,7 @@ The mixture-averaged transport coefficients are frozen. Boundary rows stay finit
 difference, and unsupported transport configurations return false for full FD.
 """
 function _flame_auto_species_jacobian!(band,f,u,w,r;previous=nothing,dt=Inf)
-    f isa FreeFlame || return false
+    f isa Union{FreeFlame,BurnerFlame} || return false
     (f.transport_model == :mixture_averaged && !f.soret_enabled &&
         f.flux_gradient_basis == :mole) || return false
     n,N=f.gas.n_species,length(f.grid);B=n+2;MW=f.gas.MW

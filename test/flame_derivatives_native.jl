@@ -211,11 +211,48 @@ end
 
 end
 
-@testset "auto species Jacobian helper is FreeFlame-only" begin
-    gas=CreateSolution(joinpath(@__DIR__,"..","mechanism","h2o2.yaml"))
+@testset "auto finite-difference burner interior species Jacobian" begin
+    mechanism=joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas=CreateSolution(mechanism)
     grid=collect(range(0.,.01;length=5))
-    burner=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.08)
-    @test !Arrhenius._flame_auto_species_jacobian!(nothing,burner,nothing,nothing,nothing)
+    for prescribed_temperature in (false,true)
+        f=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.08,
+            discretization=:finite_difference)
+        prescribed_temperature && set_temperature_profile!(f,[grid[1],grid[end]],[700.,900.];relative=false)
+        n=gas.n_species;B=n+2
+        for j in eachindex(grid)
+            f.state[1,j]=.7+.04j
+            f.state[2:n+1,j].=.01 .+ .001 .* (1:n) .+ .0002j
+            f.state[2:n+1,j]./=sum(@view(f.state[2:n+1,j]))
+            f.state[end,j]=.08
+        end
+        w=Arrhenius.FlameWorkspace(f)
+        r=flame_residual!(similar(f.state),f,f.state,w)
+        analytic=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true))
+        finite_difference=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=false))
+        kl=2B-1
+        worst=0.0
+        for point in 2:length(grid)-1,component in 2:B-1
+            col=(point-1)*B+component
+            for row in max(1,col-kl):min(B*length(grid),col+kl)
+                a=analytic[2kl+1+row-col,col]
+                d=finite_difference[2kl+1+row-col,col]
+                worst=max(worst,abs(a-d)/max(abs(d),1e-6))
+            end
+        end
+        @info "burner analytic species Jacobian versus native finite differences" prescribed_temperature worst
+        @test worst < 2e-4
+        if prescribed_temperature
+            for point in 2:length(grid)-1,component in 2:B-1
+                col=(point-1)*B+component
+                for rowpoint in 2:length(grid)-1
+                    row=(rowpoint-1)*B+1
+                    @test analytic[2kl+1+row-col,col] == 0.0
+                end
+            end
+        end
+    end
+end
 end
 
 @testset "Cantera auto Jacobian fixture: free flame source species columns" begin

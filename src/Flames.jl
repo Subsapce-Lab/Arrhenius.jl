@@ -780,7 +780,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     for k in 1:B, color in 1:3
         perturbed_any=false
         for j in color:3:N
-            if analytic && !update_transport && f isa FreeFlame &&
+            if analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
                     f.transport_model == :mixture_averaged && !f.soret_enabled &&
                     f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
                 continue
@@ -793,7 +793,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         # Transport stays frozen for Newton; adjoint sensitivities update it.
         flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes=color:3:N)
         for j in color:3:N
-            if analytic && !update_transport && f isa FreeFlame &&
+            if analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
                     f.transport_model == :mixture_averaged && !f.soret_enabled &&
                     f.flux_gradient_basis == :mole && 2 <= k <= B-1 && 2 <= j < N
                 continue
@@ -811,7 +811,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         w.h .= base_properties[4]
         w.source .= base_properties[5]
     end
-    if analytic && !update_transport && f isa FreeFlame
+    if analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame}
         _flame_auto_species_jacobian!(band,f,u,w,r;previous,dt) || begin
             # Unsupported chemistry derivative metadata falls back to full FD.
             fill!(band,0)
