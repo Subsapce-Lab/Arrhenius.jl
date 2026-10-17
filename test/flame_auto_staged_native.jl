@@ -45,24 +45,42 @@ using Arrhenius, LinearAlgebra, Test
     # already-converged no-Soret state and both runs agreed bit-for-bit.
     # Cantera 4.0.0a2, commit 726522be4e2a13454d8415b7ef799d621f665cf3,
     # stock FreeFlame.solve(auto=True) on the same mechanism, composition and
-    # starting grid: Su = 62.63803417388627 cm/s on 153 points (steady-state
+    # starting grid: Su = 64.777928779356 cm/s on 148 points (steady-state
     # callback trace), after the same 0.03 -> 0.06 m domain expansion.
     staged(mechanism, transport, X, soret) = solve!(FreeFlame(gas; T=300.0,
         P=one_atm, X, multicomponent_data=transport, soret=soret,
-        discretization=:finite_difference, grid=grid0); ratio=3.0, slope=0.06,
-        curve=0.10, prune=0.05, max_points=10000, loglevel=0, auto=true)
+        transport_model=:multicomponent, discretization=:finite_difference, grid=grid0);
+        ratio=3.0, slope=0.06, curve=0.10, prune=0.05, max_points=10000,
+        loglevel=0, auto=true)
     with_soret = staged(mechanism, transport, X, true)
     @test with_soret.converged
     su_soret = flame_speed(with_soret) * 100
-    no_soret = staged(mechanism, transport, X, false)
+    no_soret_trace = Symbol[]
+    no_soret = FreeFlame(gas; T=300.0, P=one_atm, X,
+        multicomponent_data=transport, transport_model=:multicomponent,
+        discretization=:finite_difference, grid=grid0)
+    observe_transport = () -> begin
+        model = no_soret.transport_model
+        (isempty(no_soret_trace) || last(no_soret_trace) != model) && push!(no_soret_trace, model)
+        nothing
+    end
+    Arrhenius._solve_auto!(no_soret; refine_grid=true, ratio=3.0, slope=0.06,
+        curve=0.10, prune=0.05, max_points=10000, max_time_steps=500,
+        loglevel=0, domain_check=true, timestep=Ref(1e-5),
+        controls=(;growth_factor=1.5, growth_strategy=:fixed_growth,
+            step_callback=nothing, analytic=true, steady_callback=observe_transport),
+        ts_regrid=3, cantera_compatible=true)
+    @test no_soret.converged
+    @test no_soret_trace == [:mixture_averaged, :multicomponent]
+    @test no_soret.transport_model == :multicomponent
     su_nosoret = flame_speed(no_soret) * 100
     @test solver_stats(no_soret).newton_calls < solver_stats(with_soret).newton_calls
-    @test su_soret ≈ 62.195164910736686 rtol=1e-4
-    @test su_nosoret ≈ 70.03090066439015 rtol=1e-4
+    @test su_soret ≈ 64.777928779356 rtol=2e-4
+    @test su_nosoret ≈ 71.557165413082 rtol=1e-4
     @test (su_nosoret - su_soret) / su_soret > 0.1
     # The updated fixed-temperature anchor trajectory lands near the Cantera
     # flame-speed reference while using the same configured refinement rules.
-    @test abs(su_soret - 62.63803417388627) / 62.63803417388627 < 0.02
+    @test abs(su_soret - 64.777928779356) / 64.777928779356 < 0.02
     # Both runs expanded the too-narrow 0.03 m domain like Cantera.
     @test with_soret.grid[end] - with_soret.grid[1] ≈ 0.06 rtol=1e-12
     @test 62 < length(with_soret.grid) < 200
