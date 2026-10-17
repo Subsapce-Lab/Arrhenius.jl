@@ -211,6 +211,13 @@ end
 
 end
 
+@testset "auto species Jacobian helper is FreeFlame-only" begin
+    gas=CreateSolution(joinpath(@__DIR__,"..","mechanism","h2o2.yaml"))
+    grid=collect(range(0.,.01;length=5))
+    burner=BurnerFlame(gas;X="H2:1.1,O2:1,AR:5",grid,mdot=.08)
+    @test !Arrhenius._flame_auto_species_jacobian!(nothing,burner,nothing,nothing,nothing)
+end
+
 @testset "Cantera auto Jacobian fixture: free flame source species columns" begin
     root=joinpath(@__DIR__,"data","cantera")
     ref=Arrhenius.npzread(joinpath(root,"free_auto_stagni.npz"))
