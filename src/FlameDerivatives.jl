@@ -314,6 +314,25 @@ function _flame_auto_species_jacobian!(band,f,u,w,r;previous=nothing,dt=Inf)
             end
         end
     end
+    if f isa FreeFlame
+        # Cantera's analytic species columns omit boundary residual rows in
+        # (Y,u) coordinates. In native (Y,m) coordinates those rows retain
+        # the velocity-column chain-rule term du/dY at fixed mass flux.
+        for (j,boundary) in ((2,1),(N-1,N))
+            invmw=sum(@view(u[2:n+1,j])./MW)
+            scale_base=u[end,j]/invmw
+            for m in 1:n
+                col_y=(j-1)*B+(m+1)
+                col_m=(j-1)*B+B
+                scale=scale_base/MW[m]
+                for k in 1:B
+                    row=(boundary-1)*B+k
+                    dRdm=band[4B-1+row-col_m,col_m]
+                    band[4B-1+row-col_y,col_y]+=dRdm*scale
+                end
+            end
+        end
+    end
     return true
 end
 

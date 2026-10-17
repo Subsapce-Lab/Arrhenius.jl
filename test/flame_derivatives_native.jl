@@ -310,7 +310,15 @@ end
         f.state[end,j]=rho*ref["values/velocity"][j]
     end
     w=Arrhenius.FlameWorkspace(f)
-    flame_residual!(similar(f.state),f,f.state,w)
+    r=similar(f.state); flame_residual!(r,f,f.state,w)
+    boundary_jac=Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true)
+    B=n+2; halfband=2B-1; h_index=findfirst(==("H"),gas.species_names)
+    left_row=B; left_col=B+h_index+1
+    right_row=(N-1)*B+B; right_col=(N-2)*B+h_index+1
+    left_entry=boundary_jac[2halfband+1+left_row-left_col,left_col]
+    right_entry=boundary_jac[2halfband+1+right_row-right_col,right_col]
+    @test left_entry ≈ 24.0162922725 rtol=2e-8
+    @test right_entry ≈ -23.1400344324 rtol=2e-8
     d=Arrhenius._ConservativeFlameDerivatives(gas,N)
     G=zeros(n,n+1)
     maxrel=0.0
