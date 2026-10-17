@@ -37,7 +37,7 @@ end
             push!(root["reactions"], r)
         end
         cases["unbalanced"] = _pathomech_fixture(base, dir, "unbalanced") do root
-            _pathomech_reaction(root, "O + H2 <=> H + OH")["equation"] = "H2 + O <=> H + H"
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["equation"] = "O + H2 <=> H + H"
         end
         cases["negative_A"] = _pathomech_fixture(base, dir, "negative_A") do root
             _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] *= -1
@@ -46,22 +46,24 @@ end
             _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["Ea"] = 1e7
         end
         cases["collision_limit"] = _pathomech_fixture(base, dir, "collision_limit") do root
-            _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 1e15
+            _pathomech_reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 3.348e10
         end
 
         expected = Dict(
-            "nasa7_small" => :nasa_continuity,
-            "nasa7_large" => :nasa_continuity,
-            "plog_underflow" => :plog_underflow_risk,
-            "duplicate_unflagged" => :duplicate_unflagged_candidates,
-            "unbalanced" => :element_balance,
-            "negative_A" => :negative_A,
-            "collision_limit" => :collision_limit_screen)
+            "nasa7_small" => (:nasa_continuity, :warning),
+            "nasa7_large" => (:nasa_continuity, :warning),
+            "plog_underflow" => (:plog_underflow_risk, :warning),
+            "duplicate_unflagged" => (:duplicate_unflagged_candidates, :warning),
+            "unbalanced" => (:element_balance, :error),
+            "negative_A" => (:negative_A, :error))
         for (name, path) in cases
             report = audit_mechanism(path)
-            name == "collision_limit" && @info "collision audit magnitude" filter(x -> x.check == :collision_limit_screen, report.issues)
             if haskey(expected, name)
-                @test any(x -> x.check == expected[name], report.issues)
+                check, level = expected[name]
+                @test any(x -> x.check == check && x.level == level, report.issues)
+            end
+            if name == "collision_limit"
+                @test !any(x -> x.check == :collision_limit_screen, report.issues)
             end
             gas = CreateSolution(path)
             Y = ones(gas.n_species) ./ gas.n_species
@@ -76,5 +78,3 @@ end
         end
     end
 end
-
-

@@ -55,7 +55,7 @@ def fixtures(base, out):
     reaction(root, "O + H2 <=> H + OH")["rate-constant"]["Ea"] = 1e7
     result["extreme_Ea"] = root
     root = copy.deepcopy(clean)
-    reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 1e15
+    reaction(root, "O + H2 <=> H + OH")["rate-constant"]["A"] = 3.348e10
     result["collision_limit"] = root
     paths = {}
     for name, root in result.items():
