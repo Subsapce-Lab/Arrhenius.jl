@@ -21,6 +21,8 @@ using Arrhenius,Test
     @test fd.converged && fd.grid==reference.grid && fd.state==reference.state
     analytic=solve!(FreeFlame(gas;X);jacobian_mode=:analytic)
     @test analytic.converged && isapprox(flame_speed(analytic),speed;rtol=1e-6)
+    compatible=solve!(FreeFlame(gas;X);jacobian_mode=:finite_difference,cantera_compatible=true)
+    @test compatible.converged && compatible.state==analytic.state
     @test solve!(FreeFlame(gas;X);time_step_regrid=3).state==reference.state
     for bad in ((;time_step_growth_factor=.5),(;time_step_growth_factor=Inf),
             (;time_step_growth_strategy=:invalid),(;time_step_regrid=-1),(;jacobian_mode=:unknown))
@@ -34,6 +36,8 @@ using Arrhenius,Test
     counterflow_defaults=merge(defaults,(;jacobian_mode=:auto))
     explicit=solve!(CounterflowDiffusionFlame(gas;kwargs...);slope=.2,curve=.3,counterflow_defaults...)
     @test explicit.grid==counterflow.grid && explicit.state==counterflow.state
+    compatible_cf=solve!(CounterflowDiffusionFlame(gas;kwargs...);slope=.2,curve=.3,cantera_compatible=true)
+    @test compatible_cf.grid==counterflow.grid && compatible_cf.state==counterflow.state
     Tmax=maximum(temperature(counterflow))
     for options in ((;time_step_growth_strategy=:residual_ratio),(;time_step_growth_strategy=:newton_iterations),
             (;jacobian_mode=:finite_difference))

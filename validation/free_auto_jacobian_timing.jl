@@ -45,7 +45,7 @@ end
 w = Arrhenius.FlameWorkspace(f)
 r = flame_residual!(similar(f.state), f, f.state, w)
 
-for analytic in (false, true), local_property_updates in (false, true)
+for (mode, analytic) in ((:finite_difference, false), (:cantera_compatible, true)), local_property_updates in (false, true)
     stats = solver_stats(f)
     before = stats.property_nodes
     Arrhenius._flame_jacobian(f, f.state, w, r; analytic, local_property_updates) # compile/warm
@@ -54,5 +54,5 @@ for analytic in (false, true), local_property_updates in (false, true)
     for _ in 1:15
         push!(samples, @elapsed Arrhenius._flame_jacobian(f, f.state, w, r; analytic, local_property_updates))
     end
-    println("analytic=$analytic local_property_updates=$local_property_updates points=$N property_nodes_per_jacobian=$nodes_per_jacobian median_s=$(sort(samples)[cld(length(samples),2)]) min_s=$(minimum(samples))")
+    println("mode=$mode local_property_updates=$local_property_updates points=$N property_nodes_per_jacobian=$nodes_per_jacobian median_s=$(sort(samples)[cld(length(samples),2)]) min_s=$(minimum(samples))")
 end
