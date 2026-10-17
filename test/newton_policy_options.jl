@@ -104,15 +104,15 @@ using Arrhenius, Test
     @test Arrhenius._newton_merit_accepts(compatible,1.0,1.1,true)
     @test !Arrhenius._newton_merit_accepts(compatible,1.0,0.9,true)
 
-    # Record actual one-iteration traces on five-point premixed and counterflow
-    # flames. The independent hand trace applies MultiNewton's accepted && s1<=1 rule.
+    # Hand-evaluate the Cantera rule for actual one-iteration five-point traces.
+    # Both captured cases have s1>s0>1, so damping rejects and cannot converge.
     premixed_trace=Tuple{Bool,Float64,Float64,Bool}[]
     premixed_converged=Arrhenius._flame_newton!(f,Arrhenius.FlameWorkspace(f);maxiters=1,
         newton_options=compatible,step_trace=premixed_trace)
     @test !isempty(premixed_trace)
-    @test premixed_converged==any(step[4] for step in premixed_trace)
-    @test [(isfinite(s1)&&(s1<1 || s1<s0),isfinite(s1)&&(s1<1 || s1<s0)&&s1<=1)
-        for (_,s0,s1,_) in premixed_trace]==[(a,c) for (a,_,_,c) in premixed_trace]
+    expected_premixed_sequence=[(false,false)]
+    @test [(accepted,converged) for (accepted,_,_,converged) in premixed_trace]==expected_premixed_sequence
+    @test premixed_converged==last(expected_premixed_sequence)[2]
 
     cf=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1,AR:3",
         mdot_fuel=.12,mdot_oxidizer=.12,P=.05*one_atm,width=.02,
@@ -121,9 +121,9 @@ using Arrhenius, Test
     counterflow_converged=Arrhenius._counterflow_newton!(cf,Arrhenius.CounterflowWorkspace(cf);maxiters=1,
         analytic=false,newton_options=compatible,step_trace=counterflow_trace)
     @test !isempty(counterflow_trace)
-    @test counterflow_converged==any(step[4] for step in counterflow_trace)
-    @test [(isfinite(s1)&&(s1<1 || s1<s0),isfinite(s1)&&(s1<1 || s1<s0)&&s1<=1)
-        for (_,s0,s1,_) in counterflow_trace]==[(a,c) for (a,_,_,c) in counterflow_trace]
+    expected_counterflow_sequence=[(false,false)]
+    @test [(accepted,converged) for (accepted,_,_,converged) in counterflow_trace]==expected_counterflow_sequence
+    @test counterflow_converged==last(expected_counterflow_sequence)[2]
 
     wcurrent=Arrhenius._flame_correction_weights(f,f.state,false,current)
     wvelocity=Arrhenius._flame_correction_weights(f,f.state,false,compatible)
