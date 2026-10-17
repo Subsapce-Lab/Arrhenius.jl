@@ -54,7 +54,9 @@ function run_case(spec_path, output_path, variant="compat")
     NPZ.npzwrite(output_path, Dict("grid" => copy(flame.grid), "T" => temperature(flame),
         "Y" => mass_fractions(flame), "inlet_Y" => copy(flame.inlet_Y),
         "species_diffusive_flux" => copy(workspace.flux),
-        "species_total_flux" => copy(workspace.conservative.species_flux),
+        "species_total_flux_available" => [workspace.conservative !== nothing],
+        "species_total_flux" => workspace.conservative === nothing ? zeros(0, 0) :
+            copy(workspace.conservative.species_flux),
         "species_names_utf8" => Vector{UInt8}(names),
         "jacobians" => [stats.jacobians], "newton_iterations" => [stats.newton_iterations],
         "time_steps" => [stats.time_steps], "regrids" => [stats.regrids],
