@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Capture Cantera's first fixed-temperature burner decisions from its ramp guess."""
 import json, os, sys
-from pathlib import Path
 for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ[key] = "1"
 import cantera as ct
 import numpy as np
 spec = json.load(open(sys.argv[1], encoding="utf-8"))
-root = Path(__file__).resolve().parents[2]
-gas = ct.Solution(str(root / (spec["mechanism"] + ".yaml")))
+gas = ct.Solution(spec["mechanism"] + ".yaml")
 gas.TPX = spec["T"], spec["P_atm"] * ct.one_atm, spec["X"]
 f = ct.BurnerFlame(gas, width=spec["width"])
 f.burner.mdot = spec["mdot"]
