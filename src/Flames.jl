@@ -302,6 +302,7 @@ struct FlameWorkspace{K}
     perturbed::Matrix{Float64}
     residual_perturbed::Matrix{Float64}
     steps::Vector{Float64}
+    correction::Vector{Float64}
     multi_transport::Union{Nothing,MultiTransportWorkspace}
     multi_prefactor::Array{Float64,3}
     thermal_diffusion::Matrix{Float64}
@@ -328,7 +329,7 @@ function FlameWorkspace(f::AbstractPremixedFlame)
     return FlameWorkspace(KineticsWorkspace(f.gas.reaction),TransportWorkspace(f.gas),
         zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),zeros(n,N-1),zeros(N-1),
         zeros(n,N-1),zeros(n),zeros(n),zeros(n),zeros(n),
-        zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),
+        zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),zeros((n+2)*N),
         f.transport_model == :multicomponent ? MultiTransportWorkspace(f.multicomponent_data) : nothing,
         zeros(n,n,f.transport_model == :multicomponent ? N-1 : 0),zeros(n,N-1),
         f.transport_model == :mixture_averaged && f.soret_enabled ?
@@ -838,6 +839,15 @@ function _flame_correction_norm(step,weights)
     end
     return sqrt(total/length(step))
 end
+
+function _flame_solve_correction!(correction,band,pivots,residual,bandwidth)
+    copyto!(correction,vec(residual))
+    @inbounds for i in eachindex(correction)
+        correction[i] = -correction[i]
+    end
+    LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(residual),band,pivots,correction)
+    return reshape(correction,size(residual))
+end
 # Prescribed-temperature systems retain residual merit; correction merit helps
 # the coupled species and energy solve.
 _flame_correction_enabled(f) = _conservative_flame(f) &&
@@ -943,9 +953,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
                 age[] = 0
                 force_new_jacobian = false
             end
-            correction = -vec(copy(r))
-            LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(u),w.band,pivots,correction)
-            reshape(correction,size(u))
+            _flame_solve_correction!(w.correction,w.band,pivots,r,bandwidth)
         catch e
             _flame_recoverable_factorization_error(e) || rethrow()
             return false
