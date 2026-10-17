@@ -50,6 +50,14 @@ using Arrhenius, Test
     @test Arrhenius._newton_merit_accepts(compatible,0.95,0.9,false)
     reduction=NewtonPolicyOptions(damping_acceptance=:correction_reduction)
     @test !Arrhenius._newton_merit_accepts(Arrhenius._newton_policy(reduction,false),0.95,0.9,true)
+    # Construct the reported edge: all seven damping trials reject, although
+    # the last trial merit is <= 1. Neither solver may infer success from it.
+    rejected_trial_sequence=[(false,1.4),(false,1.3),(false,1.2),(false,1.1),(false,1.0),(false,0.9),(false,0.75)]
+    @test all(!accepted for (accepted,_) in rejected_trial_sequence)
+    @test last(rejected_trial_sequence)[2] <= 1
+    @test !Arrhenius._damping_failure_fallback(last(rejected_trial_sequence)...,true)
+    @test !Arrhenius._damping_failure_fallback(false,0.75,true)
+    @test Arrhenius._damping_failure_fallback(false,1.01,true)
     @test Arrhenius._cantera_damped_step_converged(true,1.0)
     @test Arrhenius._cantera_damped_step_converged(true,0.9)
     @test !Arrhenius._cantera_damped_step_converged(false,0.9)

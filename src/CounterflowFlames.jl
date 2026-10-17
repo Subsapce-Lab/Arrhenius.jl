@@ -809,7 +809,7 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
                         " weight=",weights[k]," u=",u[k,j]," ratio=",ci)
                 end
             end
-            newton_options.steady_convergence !== :weighted_step && weighted_converged && _counterflow_constraints_converged(f,r,tolerance,w) && return true
+            newton_options.steady_convergence !== :weighted_step && _damping_failure_fallback(accepted,trial_merit,weighted_converged && _counterflow_constraints_converged(f,r,tolerance,w)) && return true
             # Cantera retries a failed damped step with a fresh Jacobian when
             # the current one is stale (age>1), at most four times per solve; a
             # failure with a fresh Jacobian fails the solve (MultiNewton.cpp:271-283).

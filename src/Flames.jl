@@ -971,6 +971,8 @@ function _newton_policy(options, cantera_compatible)
 end
 
 @inline _cantera_damped_step_converged(accepted, s1) = accepted && s1 <= 1
+@inline _rejected_small_step(accepted, s1) = !accepted && s1 <= 1
+@inline _damping_failure_fallback(accepted, s1, fallback) = fallback && !_rejected_small_step(accepted, s1)
 
 @inline function _newton_merit_accepts(options,s1,s0,allow_converged)
     options.damping_acceptance === :step_or_reduction && return s1<1 || s1<s0
@@ -1208,7 +1210,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
         # dampStep rejects a bound factor no greater than 1e-10.
         if alpha <= 1e-10
             step_trace === nothing || push!(step_trace,(false,step_merit,Inf,false))
-            at_floor && return true
+            _damping_failure_fallback(false,step_merit,at_floor) && return true
             if policy
                 # MultiNewton::solve: a damping failure re-evaluates an old
                 # Jacobian (at most four times) and fails with a fresh one.
@@ -1265,7 +1267,7 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             return true
         end
         if !accepted || alpha <= 1e-10
-            at_floor && return true
+            _damping_failure_fallback(false,step_merit,at_floor) && return true
             if policy
                 if age[] > 1 && jacobian_reevals < newton_options.jacobian_reevaluations
                     jacobian_reevals += 1
