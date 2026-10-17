@@ -841,9 +841,8 @@ function _flame_correction_norm(step,weights)
 end
 
 function _flame_solve_correction!(correction,band,pivots,residual,bandwidth)
-    copyto!(correction,vec(residual))
-    @inbounds for i in eachindex(correction)
-        correction[i] = -correction[i]
+    @inbounds for i in eachindex(correction,residual)
+        correction[i] = -residual[i]
     end
     LinearAlgebra.LAPACK.gbtrs!('N',bandwidth,bandwidth,length(residual),band,pivots,correction)
     return correction
