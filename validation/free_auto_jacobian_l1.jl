@@ -1,5 +1,6 @@
 using Arrhenius, LinearAlgebra
 
+let
 length(ARGS)==1 || error("usage: julia validation/free_auto_jacobian_l1.jl output.npz")
 ref=Arrhenius.npzread(joinpath(@__DIR__,"..","test","data","cantera","free_auto_stagni.npz"))
 mechanism=joinpath(@__DIR__,"..","mechanism","stagni_2023.yaml")
@@ -31,3 +32,4 @@ for j in 1:N,k in 1:B
 end
 println("alpha=",alpha," limiter=",limiter," norm_step=",norm(step))
 Arrhenius.npzwrite(ARGS[1],Dict("state"=>f.state,"grid"=>grid,"residual"=>r,"jacobian_band"=>band,"newton_step"=>step))
+end
