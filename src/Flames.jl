@@ -1593,17 +1593,19 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
                 continue
             end
             domain_check && _flame_domain_too_narrow(f) && throw(FlameDomainTooNarrow())
-            try
-                _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune,
-                    max_points, max_time_steps, loglevel, domain_check,
-                    timestep, controls, initial_time_step = initial_step,
-                    ts_regrid = ts_regrid, cantera_compatible)
-            catch err
-                # A width failure restarts the domain loop. Other failures
-                # discard this trial state and continue with the next fresh N.
-                (err isa FlameDomainTooNarrow || err isa FlameBlownOff) && rethrow()
-                solved = false
-                continue
+            if refine_grid
+                try
+                    _auto_refine_loop!(f; refine_grid, ratio, slope, curve, prune,
+                        max_points, max_time_steps, loglevel, domain_check,
+                        timestep, controls, initial_time_step = initial_step,
+                        ts_regrid = ts_regrid, cantera_compatible)
+                catch err
+                    # A width failure restarts the domain loop. Other failures
+                    # discard this trial state and continue with the next fresh N.
+                    (err isa FlameDomainTooNarrow || err isa FlameBlownOff) && rethrow()
+                    solved = false
+                    continue
+                end
             end
             break
         end
