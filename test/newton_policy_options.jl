@@ -81,7 +81,7 @@ using Arrhenius, Test
     @test Arrhenius._cantera_flame_velocity_bounds()==cantera_velocity
     velocity_scale=Arrhenius._flame_state_density(f,f.state,1)
     preset_flow_bounds=Arrhenius._cantera_flame_velocity_bounds().*velocity_scale
-    @test preset_flow_bounds./velocity_scale ≈ cantera_velocity rtol=eps(Float64)
+    @test collect(preset_flow_bounds./velocity_scale) ≈ collect(cantera_velocity) rtol=eps(Float64)
     @test (cantera_velocity[1]/Arrhenius._counterflow_Vscale,
         cantera_velocity[2]/Arrhenius._counterflow_Vscale)==(-1e18,1e18)
     @test (cantera_lambda[1]/Arrhenius._counterflow_Lscale,
