@@ -54,7 +54,10 @@ if len(sys.argv) > 3:
     Jactive = J[active, :][:, active].tocsc()
     np.savez_compressed(sys.argv[3], r_ct=r[active], weights=w[active],
                         dofs_full=np.asarray([r.size]), shape=np.asarray(Jactive.shape),
-                        J_data=Jactive.data, J_indices=Jactive.indices, J_indptr=Jactive.indptr)
+                        J_data=Jactive.data, J_indices=Jactive.indices, J_indptr=Jactive.indptr,
+                        grid=can["grid"], T=can["T"], Y=can["Y"], velocity=can["velocity"],
+                        molecular_weights=np.asarray(f.gas.molecular_weights),
+                        species_names=np.asarray(species, dtype="U"))
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))

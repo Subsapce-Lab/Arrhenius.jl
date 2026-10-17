@@ -15,6 +15,9 @@ f.set_refine_criteria(ratio=spec["ratio"], slope=spec["slope"], curve=spec["curv
 f.set_initial_guess()
 z, T = np.asarray(spec["profile_z"], float), np.asarray(spec["profile_T"], float)
 f.flame.set_fixed_temp_profile(z / z[-1], T)
+if len(sys.argv) > 2:
+    np.savez_compressed(sys.argv[2], grid=np.asarray(f.grid), T=np.asarray(f.T),
+                        Y=np.asarray(f.Y).T, velocity=np.asarray(f.velocity))
 f.energy_enabled = False
 f.max_time_step_count = 10
 print("INITIAL_GUESS", "grid=", np.asarray(f.grid), "T=", np.asarray(f.T), "u=", np.asarray(f.velocity), flush=True)
