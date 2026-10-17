@@ -31,7 +31,7 @@ for col in 1:m
     end
 end
 # Convert native variables (T/1000,Y,mdot) to Cantera variables (T,Y,U).
-scales=repeat(vcat(0.001,ones(n),rho),N)
+scales=reduce(vcat,(vcat(0.001,ones(n),rho[j]) for j in 1:N))
 bands .*= reshape(scales,1,:)
 npzwrite(out,Dict("r_arr"=>vec(r),"bands_arr"=>bands,"bw"=>[bw],"rho"=>rho))
 println("case=$(spec["id"]) exported points=$N dofs=$m band=$bw residual_inf=$(norm(r,Inf)) file=$out")
