@@ -835,8 +835,8 @@ end
 _counterflow_growth_residual!(r,f,x,w;previous=nothing,dt=Inf) =
     counterflow_residual!(r,f,x,w;previous,dt)
 
-function _counterflow_growth_residual!(r,f::CounterflowDiffusionFlame,x,w;previous=nothing,dt=Inf)
-    counterflow_residual!(r,f,x,w;previous,dt)
+function _counterflow_growth_residual!(r,f::CounterflowDiffusionFlame,x,w;previous=nothing,dt=Inf,update_excess=true)
+    counterflow_residual!(r,f,x,w;previous,dt,update_excess)
     # Two-point control has different auxiliary/boundary equations.
     isnothing(f.control_points) || return r
     n,N=f.gas.n_species,length(f.grid)

@@ -253,7 +253,7 @@ _counterflow_growth_residual!(r,f::ImpingingJet,x,w;previous=nothing,dt=Inf) =
     throw(ArgumentError("residual-ratio growth is not supported for ImpingingJet until its Surf1D wall residual is reconstructed"))
 
 function _counterflow_growth_residual!(r,f::CounterflowTwinPremixedFlame,x,w;previous=nothing,dt=Inf)
-    _counterflow_growth_residual!(r,f.flow,x,w;previous,dt)
+    _counterflow_growth_residual!(r,f.flow,x,w;previous,dt,update_excess=false)
     # Symm1D::eval replaces the storage-inlet Dirichlet rows at the symmetry
     # plane with zero-gradient rows, except the current excess-species closure.
     n=f.gas.n_species; excess=w.excess_right
