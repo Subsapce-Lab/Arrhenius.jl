@@ -1,5 +1,7 @@
 # Counterflow flame continuation
 
+Counterflow flames support two fixed-grid continuation drivers. For diffusion flames, `two_point_control!` follows Cantera's flame-control method by lowering the temperatures at two interior flame locations while solving for both inlet mass fluxes. It returns each control temperature, decrement, peak temperature, peak strain rate, inlet flux pair, state, and solve time. The default control spacing and temperature-decrement adaptation follow Cantera's `diffusion_flame_continuation.py` example. Pass `temperature_decrement_schedule` to replay a recorded schedule, or set `initial_time_step` to tune Arrhenius' transient startup for difficult correction steps. Grid refinement is disabled during the trace. This API is specific to `CounterflowDiffusionFlame`; pseudo-arclength remains available for diffusion and premixed counterflow flames. See `example/flames/counterflow_two_point_control.jl` for a runnable example.
+
 Counterflow flames support opt-in pseudo-arclength continuation on a fixed grid:
 
 - `pseudo_arclength!(flame; parameter=:inlet_flux_scale, steps=40, ds=0.05, parameter_scale=nothing, state_scale=1.0)` scales both inlet mass fluxes while preserving their ratio. `:fuel_mass_flux`, `:oxidizer_mass_flux`, and `:pressure` are also supported.

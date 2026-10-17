@@ -25,6 +25,119 @@ struct CounterflowContinuationPoint
     inlet_flux_base::Tuple{Float64,Float64}
 end
 
+"""One fixed-grid solution produced by Cantera-style two-point control."""
+struct TwoPointControlPoint
+    control_temperature::Float64
+    temperature_decrement::Float64
+    max_temperature::Float64
+    max_strain_rate::Float64
+    fuel_mass_flux::Float64
+    oxidizer_mass_flux::Float64
+    state::Matrix{Float64}
+    solve_seconds::Float64
+end
+
+"""Trace a counterflow diffusion flame with Cantera's two-point temperature schedule.
+
+At every step, choose control locations from the first/last crossing of the
+current relative temperature, lower the selected temperatures by the current
+decrement, and solve without grid refinement. The initial schedule and
+decrement adaptation follow Cantera's diffusion_flame_continuation example.
+"""
+function two_point_control!(f::CounterflowDiffusionFlame; max_steps=1000,
+        initial_temperature_decrement=20., max_temperature_decrement=100.,
+        target_delta_Tmax=20., initial_control_spacing=.6,
+        unstable_control_spacing=.95, strain_rate_tol=.1,
+        temperature_decrement_schedule=nothing,
+        max_consecutive_errors=3, max_time_steps=100, initial_time_step=1.0e-5, loglevel=0)
+    (f.converged && isnothing(f.control_points)) ||
+        throw(ArgumentError("two-point continuation requires a converged flame with control disabled"))
+    max_steps>=1 && max_consecutive_errors>=1 ||
+        throw(ArgumentError("max_steps and max_consecutive_errors must be positive"))
+    all(x->isfinite(x)&&x>0,(initial_temperature_decrement,max_temperature_decrement,
+        target_delta_Tmax,strain_rate_tol)) || throw(ArgumentError("continuation schedule values must be positive and finite"))
+    0<initial_control_spacing<unstable_control_spacing<1 ||
+        throw(ArgumentError("require 0 < initial_control_spacing < unstable_control_spacing < 1"))
+
+    schedule=isnothing(temperature_decrement_schedule) ? nothing : Float64.(temperature_decrement_schedule)
+    isnothing(schedule) || all(x->isfinite(x)&&x>0,schedule) ||
+        throw(ArgumentError("temperature_decrement_schedule must contain positive finite values"))
+    curve=TwoPointControlPoint[]
+    step=min(Float64(initial_temperature_decrement),Float64(max_temperature_decrement))
+    Tmax_old=maximum(temperature(f)); amax=_two_point_max_strain_rate(f,f.state)
+    strain=amax; errors=0
+    for i in 1:max_steps
+        !isnothing(schedule) && i>length(schedule) && break
+        !isnothing(schedule) && (step=schedule[i])
+        spacing=strain>.98amax ? initial_control_spacing : unstable_control_spacing
+        target=minimum(temperature(f))+spacing*(maximum(temperature(f))-minimum(temperature(f)))
+        saved_state=copy(f.state); saved_control=f.control_points
+        saved_mf=f.fuel_mass_flux; saved_mo=f.oxidizer_mass_flux; saved_converged=f.converged
+        try
+            set_two_point_control!(f;temperature=target,decrement=step)
+            ctrl=f.control_points
+            if ctrl[2]<f.fuel_temperature+100 || ctrl[4]<f.oxidizer_temperature+100
+                f.state=saved_state; f.control_points=saved_control
+                f.fuel_mass_flux=saved_mf; f.oxidizer_mass_flux=saved_mo; f.converged=saved_converged
+                break
+            end
+            t0=time_ns()
+            solve!(f;refine_grid=false,auto=false,max_time_steps,initial_time_step,loglevel)
+            elapsed=(time_ns()-t0)/1e9
+            Tmax=maximum(temperature(f)); strain=_two_point_max_strain_rate(f,f.state)
+            push!(curve,TwoPointControlPoint(target,step,Tmax,strain,
+                f.fuel_mass_flux,f.oxidizer_mass_flux,copy(f.state),elapsed))
+            errors=0
+            delta=abs(Tmax-Tmax_old)
+            if isnothing(schedule)
+                if delta<.8target_delta_Tmax
+                    step=min(step+3.,max_temperature_decrement)
+                elseif delta>target_delta_Tmax
+                    step*=.9target_delta_Tmax/delta
+                end
+            end
+            amax=max(strain,amax); Tmax_old=Tmax
+            loglevel>0 && println("two-point step $i: Tmax=$Tmax K strain=$strain 1/s dT=$step K")
+        catch err
+            f.state=saved_state; f.control_points=saved_control
+            f.fuel_mass_flux=saved_mf; f.oxidizer_mass_flux=saved_mo; f.converged=saved_converged
+            strain/amax<strain_rate_tol && break
+            if !isnothing(schedule)
+                loglevel>0 && println("two-point scheduled step $i failed at target=$target K dT=$step K: ",sprint(showerror,err))
+                rethrow(err)
+            end
+            step*=.7; errors+=1
+            loglevel>0 && println("two-point step $i failed: ",sprint(showerror,err),"; retry dT=$step K")
+            errors>=max_consecutive_errors && break
+        end
+    end
+    return curve
+end
+
+function _two_point_max_strain_rate(f::CounterflowDiffusionFlame,u)
+    n=f.gas.n_species; N=length(f.grid)
+    velocity=Vector{Float64}(undef,N)
+    @inbounds for j in 1:N
+        sumY_over_MW=0.
+        for k in 1:n
+            sumY_over_MW+=u[k+1,j]/f.gas.MW[k]
+        end
+        velocity[j]=u[end,j]*R*(1000u[1,j])*sumY_over_MW/f.pressure
+    end
+    amax=0.
+    @inbounds for j in 1:N
+        if j==1
+            rate=(velocity[2]-velocity[1])/(f.grid[2]-f.grid[1])
+        elseif j==N
+            rate=(velocity[N]-velocity[N-1])/(f.grid[N]-f.grid[N-1])
+        else
+            rate=(velocity[j+1]-velocity[j-1])/(f.grid[j+1]-f.grid[j-1])
+        end
+        amax=max(amax,abs(rate))
+    end
+    return amax
+end
+
 function _continuation_strain_rate(f,u)
     n=f.gas.n_species
     v=[u[end,j]*R*(1000u[1,j])*sum(u[k+1,j]/f.gas.MW[k] for k in 1:n)/f.pressure
@@ -254,4 +367,4 @@ function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothi
     end
     pts
 end
-export CounterflowContinuationPoint, pseudo_arclength!, save_continuation_checkpoint, restore_continuation_checkpoint!
+export CounterflowContinuationPoint, TwoPointControlPoint, pseudo_arclength!, two_point_control!, save_continuation_checkpoint, restore_continuation_checkpoint!

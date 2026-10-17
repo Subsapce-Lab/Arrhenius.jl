@@ -1,4 +1,4 @@
-using Test, Arrhenius
+using Test, Arrhenius, NPZ
 
 @testset "counterflow pseudo-arclength continuation" begin
     mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml")
@@ -29,5 +29,83 @@ using Test, Arrhenius
         @test resumed[1].arclength==curve[2].arclength
         @test resumed[2].parameter≈curve[3].parameter rtol=1e-12
         @test resumed[2].state≈curve[3].state rtol=1e-9 atol=1e-10
+
+        controlled=two_point_control!(f;max_steps=1)
+        @test length(controlled)==1
+        @test controlled[1].max_temperature≈maximum(temperature(f))
+        @test controlled[1].max_strain_rate>0
+        @test controlled[1].solve_seconds>=0
+        @test !isnothing(f.control_points)
+        @test length(f.grid)==12
+        @test controlled[1].state==f.state
+    end
+end
+
+
+@testset "Cantera two-point control first fixed-grid step" begin
+    mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml")
+    fixture=joinpath(dirname(pathof(Arrhenius)),"..","test","data","cantera_h2o2_two_point_12pt.npz")
+    if isfile(mechanism*".npz") && isfile(fixture)
+        ref=NPZ.npzread(fixture)
+        gas=CreateSolution(mechanism)
+        z=vec(Float64.(ref["initial_grid_m"])); Y=Matrix{Float64}(ref["initial_Y"])
+        T=vec(Float64.(ref["initial_T_K"])); P=Float64(only(ref["pressure_Pa"]))
+        mf=Float64(only(ref["initial_fuel_mdot"])); mo=Float64(only(ref["initial_oxidizer_mdot"]))
+        f=CounterflowDiffusionFlame(gas;fuel="H2:1",oxidizer="O2:1",mdot_fuel=mf,
+            mdot_oxidizer=mo,T_fuel=300.,T_oxidizer=500.,P,width=z[end]-z[1],grid=z)
+        rho=P .* (1 ./ (Y*(1 ./ gas.MW))) ./ (Arrhenius.R .* T)
+        f.state[1,:] .= T ./ 1000
+        f.state[2:gas.n_species+1,:] .= permutedims(Y)
+        f.state[gas.n_species+2,:] .= vec(Float64.(ref["initial_spreadRate"])) ./ Arrhenius._counterflow_Vscale
+        f.state[gas.n_species+3,:] .= vec(Float64.(ref["initial_Lambda"])) ./ Arrhenius._counterflow_Lscale
+        f.state[end,:] .= rho .* vec(Float64.(ref["initial_velocity_m_s"]))
+        f.converged=true
+        points=two_point_control!(f;max_steps=1,
+            temperature_decrement_schedule=vec(Float64.(ref["curve_temperature_decrement_K"][1:1])))
+        @test length(points)==1
+        @test length(f.grid)==length(z) && f.grid==z
+        @test points[1].max_temperature≈Float64(ref["Tmax_curve_K"][1]) rtol=1e-3
+        @test points[1].max_strain_rate≈Float64(ref["strain_rate_curve_per_s"][1]) rtol=1e-3
+    end
+end
+
+
+@testset "Cantera two-point S-curves on fixed grids" begin
+    cases = (
+        ("h2o2.yaml", "cantera_h2o2_two_point_12pt.npz", "H2:1", "O2:1"),
+        ("gri30.yaml", "cantera_gri30_nh3h2_two_point_24pt.npz", "NH3:0.85,H2:0.15", "O2:0.21,N2:0.79"),
+    )
+    for (mechanism_name, fixture_name, fuel, oxidizer) in cases
+        mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism",mechanism_name)
+        fixture=joinpath(dirname(pathof(Arrhenius)),"..","test","data",fixture_name)
+        if isfile(mechanism*".npz") && isfile(fixture)
+            ref=NPZ.npzread(fixture)
+            gas=CreateSolution(mechanism)
+            z=vec(Float64.(ref["initial_grid_m"])); Y=Matrix{Float64}(ref["initial_Y"])
+            T=vec(Float64.(ref["initial_T_K"])); P=Float64(only(ref["pressure_Pa"]))
+            mf=Float64(only(ref["initial_fuel_mdot"])); mo=Float64(only(ref["initial_oxidizer_mdot"]))
+            f=CounterflowDiffusionFlame(gas;fuel,oxidizer,mdot_fuel=mf,mdot_oxidizer=mo,
+                T_fuel=Float64(only(get(ref,"T_fuel_K",[300.]))),T_oxidizer=Float64(only(get(ref,"T_oxidizer_K",[500.]))),
+                P,width=z[end]-z[1],grid=z)
+            rho=P .* (1 ./ (Y*(1 ./ gas.MW))) ./ (Arrhenius.R .* T)
+            f.state[1,:] .= T ./ 1000
+            f.state[2:gas.n_species+1,:] .= permutedims(Y)
+            f.state[gas.n_species+2,:] .= vec(Float64.(ref["initial_spreadRate"])) ./ Arrhenius._counterflow_Vscale
+            f.state[gas.n_species+3,:] .= vec(Float64.(ref["initial_Lambda"])) ./ Arrhenius._counterflow_Lscale
+            f.state[end,:] .= rho .* vec(Float64.(ref["initial_velocity_m_s"]))
+            f.converged=true
+            schedule=vec(Float64.(ref["curve_temperature_decrement_K"]))
+            curve=two_point_control!(f;max_steps=length(schedule),temperature_decrement_schedule=schedule)
+            refT=vec(Float64.(ref["Tmax_curve_K"]))
+            refA=vec(Float64.(ref["strain_rate_curve_per_s"]))
+            @test length(curve)==length(refT)==length(refA)
+            @test f.grid==z
+            @test maximum(abs(curve[i].max_temperature-refT[i])/refT[i] for i in eachindex(refT))<1e-3
+            @test maximum(abs(curve[i].max_strain_rate-refA[i])/refA[i] for i in eachindex(refA))<1e-3
+            native_peak=argmax(p.max_strain_rate for p in curve)
+            cantera_peak=argmax(refA)
+            @test abs(curve[native_peak].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
+            @test abs(curve[native_peak].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
+        end
     end
 end
