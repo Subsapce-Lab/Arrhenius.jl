@@ -182,10 +182,10 @@ end
     @test maximum(abs.(sum(mass_fractions(burner);dims=1) .- 1)) < 1e-12
     equilibrium=equilibrate(gas;T=burner.inlet_temperature,P=burner.pressure,
         X=burner.inlet_Y ./ gas.MW,mode=:HP)
-    rhoeq=Arrhenius._flame_density(burner,equilibrium.T,equilibrium.Y).density
+    rhoout=Arrhenius._flame_density(burner,prescribed[end],equilibrium.Y).density
     @test velocity(burner)[1] ≈ .07/Arrhenius._flame_density(burner,
         burner.inlet_temperature,burner.inlet_Y).density rtol=1e-10
-    @test velocity(burner)[end] ≈ .07/rhoeq rtol=1e-10
+    @test velocity(burner)[end] ≈ .07/rhoout rtol=1e-10
 end
 
 @testset "fixed-temperature finite-difference Newton merit" begin
