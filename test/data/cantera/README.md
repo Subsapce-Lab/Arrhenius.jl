@@ -5,7 +5,7 @@ The tracked `free_auto_stagni.npz` contains Cantera's 9-point FreeFlame initial 
 To regenerate from the committed spec using the existing dump harness and Cantera environment:
 
 ```sh
-source ~/work/nh3-parity/env.sh
+# activate a Python environment with Cantera at the pinned version
 python test/cantera_parity/ct_dump.py test/data/cantera/free_auto_stagni.json test/data/cantera/generated state
 mv test/data/cantera/generated/ct_state.npz test/data/cantera/free_auto_stagni.npz
 mv test/data/cantera/generated/ct_state_meta.json test/data/cantera/free_auto_stagni_meta.json
