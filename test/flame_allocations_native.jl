@@ -47,3 +47,34 @@ end
         @test (@allocated Arrhenius._flame_jacobian(flame,flame.state,workspace,residual;analytic=false)) == 0
     end
 end
+
+@testset "flame-owned workspace isolates transport configurations" begin
+    mechanism = joinpath(@__DIR__,"..","mechanism","h2o2.yaml")
+    gas = CreateSolution(mechanism)
+    data = MultiTransportData(mechanism*".multicomponent.npz",gas;mechanism)
+    X = "H2:1.1,O2:1,AR:5"
+    makeflame(model,basis) = FreeFlame(gas;X,transport_model=model,
+        multicomponent_data=model==:multicomponent ? data : nothing,
+        flux_gradient_basis=basis,discretization=:finite_difference)
+    mixed_mole = makeflame(:mixture_averaged,:mole)
+    mixed_mass = makeflame(:mixture_averaged,:mass)
+    multi_mole = makeflame(:multicomponent,:mole)
+    fresh_mole = solve!(makeflame(:mixture_averaged,:mole))
+    fresh_mass = solve!(makeflame(:mixture_averaged,:mass))
+    fresh_multi = solve!(makeflame(:multicomponent,:mole))
+    solve!(mixed_mole)
+    first_workspace = Arrhenius._take_flame_workspace(mixed_mole)
+    solve!(mixed_mass)
+    solve!(multi_mole)
+    solve!(mixed_mole)
+    @test any(w -> w === first_workspace,mixed_mole.workspace)
+    @test mixed_mole.state == fresh_mole.state
+    @test mixed_mass.state == fresh_mass.state
+    @test multi_mole.state == fresh_multi.state
+    @test mixed_mole.workspace !== mixed_mass.workspace
+    @test mixed_mass.workspace !== multi_mole.workspace
+    old_workspace = Arrhenius._take_flame_workspace(mixed_mass)
+    set_transport!(mixed_mass,:mixture_averaged;flux_gradient_basis=:mole)
+    @test Arrhenius._take_flame_workspace(mixed_mass) !== old_workspace
+    @test !any(w -> w === old_workspace,mixed_mass.workspace)
+end

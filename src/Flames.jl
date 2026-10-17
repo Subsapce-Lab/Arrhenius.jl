@@ -17,6 +17,7 @@ mutable struct FreeFlame{G<:Solution} <: AbstractPremixedFlame
     multicomponent_data::Union{Nothing,MultiTransportData}
     flux_gradient_basis::Symbol
     discretization::Symbol
+    workspace::Any
 end
 
 "A planar premixed flame with prescribed inlet mass flux."
@@ -41,6 +42,7 @@ mutable struct BurnerFlame{G<:Solution} <: AbstractPremixedFlame
     multicomponent_data::Union{Nothing,MultiTransportData}
     flux_gradient_basis::Symbol
     discretization::Symbol
+    workspace::Any
 end
 
 """
@@ -87,7 +89,7 @@ function FreeFlame(gas::Solution; T=300.0, P=one_atm, X, width=0.03, grid=nothin
     end
     anchor = clamp(argmin(abs.(state[1,:] .- (.75*T+.25*eq.T)/1000)),2,length(z)-1)
     flame = FreeFlame(gas,z,Float64(P),Float64(T),y,state,anchor,
-        1000*state[1,anchor],argmax(y),false,:mixture_averaged,false,nothing,:mole,discretization)
+        1000*state[1,anchor],argmax(y),false,:mixture_averaged,false,nothing,:mole,discretization,nothing)
     return set_transport!(flame,transport_model; data=multicomponent_data,soret,flux_gradient_basis)
 end
 
@@ -125,7 +127,7 @@ function BurnerFlame(gas::Solution; mdot,T=300.0,P=one_atm,X,width=.03,grid=noth
     return BurnerFlame(base.gas,base.grid,base.pressure,base.inlet_temperature,
         base.inlet_Y,base.state,base.anchor,base.fixed_temperature,
         base.dependent_species,false,Float64(mdot),Float64[],Float64[],Float64[],:full_knots,
-        base.transport_model,base.soret_enabled,base.multicomponent_data,base.flux_gradient_basis,base.discretization)
+        base.transport_model,base.soret_enabled,base.multicomponent_data,base.flux_gradient_basis,base.discretization,nothing)
 end
 
 """
@@ -343,6 +345,7 @@ struct FlameWorkspace{K}
     jacobian_valid::Base.RefValue{Bool}
     jacobian_rdt::Base.RefValue{Float64}
     jacobian_evals::Base.RefValue{Int}
+    configuration::Tuple
 end
 function FlameWorkspace(f::AbstractPremixedFlame)
     n, N = f.gas.n_species, length(f.grid)
@@ -357,56 +360,42 @@ function FlameWorkspace(f::AbstractPremixedFlame)
             MixtureThermalDiffusionWorkspace(f.multicomponent_data) : nothing,
         [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],
         _conservative_flame(f) ? ConservativeFlameWorkspace(n,N,f.gas) : nothing,Ref(false),
-        zeros(6*(n+2)-2,(n+2)*N),Ref(LinearAlgebra.BlasInt[]),Ref(100000),Ref(false),Ref(NaN),Ref(0))
+        zeros(6*(n+2)-2,(n+2)*N),Ref(LinearAlgebra.BlasInt[]),Ref(100000),Ref(false),Ref(NaN),Ref(0),_flame_workspace_configuration(f))
 end
 
-# Steady attempts on consecutive flames from the same gas object revisit the
-# same small set of adaptive grid sizes. Pool their large workspaces by gas
-# and equation configuration so repeated solves do not rebuild band buffers.
-const FLAME_WORKSPACE_CACHE = IdDict{Any,Dict{Any,Vector{FlameWorkspace}}}()
-const FLAME_WORKSPACE_CACHE_ORDER = Any[]
-const FLAME_WORKSPACE_CACHE_LOCK = ReentrantLock()
-const FLAME_WORKSPACE_CACHE_MAX_GASES = 2
+# A workspace contains mutable buffers and belongs to exactly one flame.
+# Keep its full structural configuration beside it; compare references directly.
+_flame_workspace_configuration(f) = (typeof(f), f.gas, f.gas.n_species, f.transport_model,
+    f.soret_enabled, f.multicomponent_data, f.flux_gradient_basis,
+    _conservative_flame(f), f.gas.species_names, f.gas.MW)
 
-function _flame_workspace_pools(gas)
-    return get!(FLAME_WORKSPACE_CACHE,gas) do
-        push!(FLAME_WORKSPACE_CACHE_ORDER,gas)
-        if length(FLAME_WORKSPACE_CACHE_ORDER) > FLAME_WORKSPACE_CACHE_MAX_GASES
-            delete!(FLAME_WORKSPACE_CACHE,popfirst!(FLAME_WORKSPACE_CACHE_ORDER))
-        end
-        Dict{Any,Vector{FlameWorkspace}}()
-    end
-end
-
-function _flame_workspace_key(f)
-    data = hasproperty(f,:multicomponent_data) && f.multicomponent_data !== nothing ?
-        Base.objectid(f.multicomponent_data) : UInt(0)
-    return (typeof(f),length(f.grid),f.transport_model,f.soret_enabled,
-        _conservative_flame(f),data)
+function _flame_workspace_matches(w::FlameWorkspace, f)
+    c = w.configuration
+    return c[1] === typeof(f) && c[2] === f.gas && c[3] == f.gas.n_species &&
+        c[4] === f.transport_model && c[5] == f.soret_enabled &&
+        c[6] === f.multicomponent_data && c[7] === f.flux_gradient_basis &&
+        c[8] == _conservative_flame(f) && c[9] === f.gas.species_names && c[10] === f.gas.MW
 end
 
 function _take_flame_workspace(f)
-    # Ionized flames have a distinct workspace and do not share the gas-only
-    # transport buffers pooled for neutral free/burner flames.
     hasproperty(f,:transport_model) || return FlameWorkspace(f)
-    key = _flame_workspace_key(f)
-    cached = lock(FLAME_WORKSPACE_CACHE_LOCK) do
-        by_key = _flame_workspace_pools(f.gas)
-        pool = get(by_key,key,nothing)
-        pool === nothing || isempty(pool) ? nothing : pop!(pool)
+    pools = f.workspace
+    if !(pools isa Vector{FlameWorkspace})
+        pools = FlameWorkspace[]
+        f.workspace = pools
     end
-    return cached === nothing ? FlameWorkspace(f) : cached
+    n, N = f.gas.n_species,length(f.grid)
+    idx = findfirst(w -> _flame_workspace_matches(w,f) && size(w.X)==(n,N),pools)
+    idx === nothing || return pools[idx]
+    # Keep a small flame-local set of grid sizes for retries and ladder stages.
+    filter!(w -> _flame_workspace_matches(w,f),pools)
+    w = FlameWorkspace(f)
+    push!(pools,w)
+    length(pools) > 4 && deleteat!(pools,1)
+    return w
 end
 
-function _return_flame_workspace!(f,w)
-    w isa FlameWorkspace || return nothing
-    key = _flame_workspace_key(f)
-    lock(FLAME_WORKSPACE_CACHE_LOCK) do
-        by_key = _flame_workspace_pools(f.gas)
-        push!(get!(by_key,key,FlameWorkspace[]),w)
-    end
-    return nothing
-end
+_return_flame_workspace!(f,w) = nothing
 _flame_clipped(w) = w isa FlameWorkspace && w.clip_species[]
 # Node species value and derivative weight under the active species form.
 @inline _flame_node_species(w,y) = _flame_clipped(w) ? max(y,0.0) : y
