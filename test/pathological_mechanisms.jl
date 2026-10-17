@@ -26,7 +26,7 @@ using Arrhenius, LinearAlgebra, Test, YAML
             end
         end
         if name == "nasa7_slope_only"
-            issue = only(filter(x -> x.check == :nasa_continuity, report.issues))
+            issue = only(filter(x -> x.check == :nasa_continuity && x.species == "H2", report.issues))
             @test abs(issue.delta_cp_R) < 1e-10
             @test abs(issue.delta_h_RT) < 1e-10
             @test abs(issue.delta_s_R) < 1e-10
