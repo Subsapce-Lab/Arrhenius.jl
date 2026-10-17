@@ -365,6 +365,9 @@ function _flame_workspace_key(f)
 end
 
 function _take_flame_workspace(f)
+    # Ionized flames have a distinct workspace and do not share the gas-only
+    # transport buffers pooled for neutral free/burner flames.
+    hasproperty(f,:transport_model) || return FlameWorkspace(f)
     key = _flame_workspace_key(f)
     cached = lock(FLAME_WORKSPACE_CACHE_LOCK) do
         by_key = _flame_workspace_pools(f.gas)
@@ -375,6 +378,7 @@ function _take_flame_workspace(f)
 end
 
 function _return_flame_workspace!(f,w)
+    w isa FlameWorkspace || return nothing
     key = _flame_workspace_key(f)
     lock(FLAME_WORKSPACE_CACHE_LOCK) do
         by_key = _flame_workspace_pools(f.gas)
