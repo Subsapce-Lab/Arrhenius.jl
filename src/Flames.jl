@@ -382,7 +382,10 @@ function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid)
         viscosity=nothing)
     gas, n, N = f.gas, f.gas.n_species, length(f.grid)
     conservative = _conservative_flame(f)
+    stats = _premixed_stats(f)
     @inbounds for j in nodes
+        stats.property_nodes += 1
+        PREMIXED_STATS.property_nodes += 1
         T = 1000*u[1,j]
         # Node thermochemistry uses signed mass fractions, as Cantera's flow
         # residual does; only transport inputs at faces are clipped below.
@@ -761,7 +764,7 @@ end
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
 function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=nothing,analytic=true,
-        update_transport=false)
+        update_transport=false,local_property_updates=true)
     if analytic && !update_transport && _conservative_flame(f) && _conservative_flame_jacobian!(f,u,w,r;previous,dt,previous_enthalpy)
         return w.band
     end
@@ -796,7 +799,14 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         end
         perturbed_any || continue
         # Transport stays frozen for Newton; adjoint sensitivities update it.
-        flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes=color:3:N)
+        nodes = if !local_property_updates || !(f isa Union{FreeFlame,BurnerFlame})
+            color:3:N
+        elseif !update_transport && k == B
+            ()
+        else
+            Iterators.filter(j -> perturbed[k,j] != u[k,j],color:3:N)
+        end
+        flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes)
         for j in color:3:N
             auto_species_column = analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
                 f.transport_model == :mixture_averaged && !f.soret_enabled &&
@@ -1586,13 +1596,14 @@ mutable struct PremixedStats
     newton_iterations::Int
     jacobians::Int
     residual_evals::Int
+    property_nodes::Int
     time_steps::Int
     time_step_failures::Int
     steady_failures::Int
     regrids::Int
     grids::Vector{Int}
 end
-PremixedStats()=PremixedStats(0,0,0,0,0,0,0,0,Int[])
+PremixedStats()=PremixedStats(0,0,0,0,0,0,0,0,0,Int[])
 const PREMIXED_STATS=PremixedStats()
 # Per-flame stats storage; entries die with their flame (weak keys).
 const FLAME_STATS=WeakKeyDict{Any,Any}()
@@ -1615,8 +1626,10 @@ they never influence solver decisions.
 
 Counted fields per kind (a field a kind never increments stays zero):
 - premixed kinds (`FreeFlame`, `BurnerFlame`, `IonizedFlame`): `newton_calls`,
-  `newton_iterations`, `jacobians`, `residual_evals`, `time_steps`,
-  `time_step_failures`, `steady_failures`, `regrids`, `grids`;
+  `newton_iterations`, `jacobians`, `residual_evals`, `property_nodes`, `time_steps`,
+  `time_step_failures`, `steady_failures`, `regrids`, `grids`; `property_nodes`
+  counts node-property refreshes for `FreeFlame` and `BurnerFlame` and stays zero
+  for `IonizedFlame`;
 - counterflow kinds (`CounterflowDiffusionFlame`, the premixed-counterflow
   wrappers, impinging and catalytic jets): all of the above plus
   `fd_jacobians`, `chem_jac_failures`, `recoveries` and per-attempt `calls`

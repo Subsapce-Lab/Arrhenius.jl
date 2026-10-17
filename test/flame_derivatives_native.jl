@@ -186,7 +186,30 @@ end
     dt=.004
     w=Arrhenius.FlameWorkspace(f)
     r=flame_residual!(similar(f.state),f,f.state,w;previous,dt)
-    band=Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=true)
+    stats=solver_stats(f)
+    node_start=stats.property_nodes; residual_start=stats.residual_evals
+    band=copy(Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=true))
+    optimized_nodes=stats.property_nodes-node_start
+    optimized_calls=stats.residual_evals-residual_start
+    node_start=stats.property_nodes; residual_start=stats.residual_evals
+    legacy=copy(Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=true,local_property_updates=false))
+    legacy_nodes=stats.property_nodes-node_start
+    legacy_calls=stats.residual_evals-residual_start
+    @test band==legacy
+    @test optimized_nodes==length(grid)+2n
+    @test legacy_nodes>optimized_nodes
+    @test optimized_calls==legacy_calls
+    node_start=stats.property_nodes; residual_start=stats.residual_evals
+    fd=copy(Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=false))
+    fd_nodes=stats.property_nodes-node_start
+    fd_calls=stats.residual_evals-residual_start
+    node_start=stats.property_nodes; residual_start=stats.residual_evals
+    fd_legacy=copy(Arrhenius._flame_jacobian(f,f.state,w,r;previous,dt,analytic=false,local_property_updates=false))
+    fd_legacy_nodes=stats.property_nodes-node_start
+    @test fd==fd_legacy
+    @test fd_nodes==(B-1)*length(grid)
+    @test fd_legacy_nodes==B*length(grid)
+    @test fd_calls==stats.residual_evals-residual_start
     J=zeros(B*length(grid),B*length(grid))
     for col in 1:B*length(grid),row in max(1,col-2B+1):min(B*length(grid),col+2B-1)
         J[row,col]=band[4B-1+row-col,col]
@@ -228,7 +251,14 @@ end
         end
         w=Arrhenius.FlameWorkspace(f)
         r=flame_residual!(similar(f.state),f,f.state,w)
+        stats=solver_stats(f); node_start=stats.property_nodes
         analytic=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true))
+        optimized_nodes=stats.property_nodes-node_start
+        legacy=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true,local_property_updates=false))
+        legacy_nodes=stats.property_nodes-node_start-optimized_nodes
+        @test analytic==legacy
+        @test optimized_nodes==length(grid)+4n
+        @test legacy_nodes>optimized_nodes
         automatic=flame_test_automatic_jacobian(f,w)
         kl=2B-1
         worst=0.0;worst_entry=(0,0,0.0,0.0)
