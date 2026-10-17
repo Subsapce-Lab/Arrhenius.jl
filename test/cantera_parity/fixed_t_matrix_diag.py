@@ -38,6 +38,11 @@ x = np.concatenate([b.ravel() for b in blocks_x])
 r = np.concatenate([b.ravel() for b in blocks_r])
 w = np.concatenate([b.ravel() for b in blocks_w])
 f.linear_solver = ct.EigenSparseDirectJacobian()
+fd_rel = float(sys.argv[4]) if len(sys.argv) > 4 else 1e-5
+fd_abs = float(sys.argv[5]) if len(sys.argv) > 5 else 1e-10
+fd_threshold = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
+if len(sys.argv) > 4:
+    f.set_jacobian_perturbation(fd_rel, fd_abs, fd_threshold)
 f.eval_jacobian()
 J = f.linear_solver.jacobian
 if not sparse.issparse(J):
@@ -57,7 +62,35 @@ if len(sys.argv) > 3:
                         J_data=Jactive.data, J_indices=Jactive.indices, J_indptr=Jactive.indptr,
                         grid=can["grid"], T=can["T"], Y=can["Y"], velocity=can["velocity"],
                         molecular_weights=np.asarray(f.gas.molecular_weights),
-                        species_names=np.asarray(species, dtype="U"))
+                        species_names=np.asarray(species, dtype="U"), inlet_Y=np.asarray(f.burner.Y),
+                        jacobian_rel=np.asarray([fd_rel]), jacobian_abs=np.asarray([fd_abs]),
+                        jacobian_threshold=np.asarray([fd_threshold]))
+    if len(sys.argv) > 7 and sys.argv[7] == "probe":
+        # Probe outlet residual derivatives against the stored matrix.
+        base = {key: np.asarray(f.flame.values(key), float).copy()
+                for key in ["velocity", *species]}
+        last = len(can["grid"]) - 1
+        selected = [s for s in ("H", "AR", "O2") if s in species]
+        for side, rowpoint, colpoint in (("inlet", 0, 1), ("outlet", last, last - 1)):
+            for sp in selected:
+                col = colpoint * len(active_names) + 1 + species.index(sp)
+                y = base[sp]
+                h = abs(y[colpoint]) * fd_rel + fd_abs
+                yp = y.copy(); yp[colpoint] += h
+                f.flame.set_values(sp, yp)
+                f.eval(rdt=0.0)
+                plus = {rowname: float(f.flame.residuals(rowname)[rowpoint])
+                        for rowname in ["velocity", *species]}
+                f.flame.set_values(sp, y)
+                f.eval(rdt=0.0)
+                for rowname in ["velocity", *species]:
+                    row_component = active_names.index(rowname)
+                    row = rowpoint * len(active_names) + row_component
+                    rbase = float(f.flame.residuals(rowname)[rowpoint])
+                    fd = (plus[rowname] - rbase) / h
+                    stored = float(Jactive[row, col])
+                    if fd != 0.0 or stored != 0.0:
+                        print(f"{side}_fd row={rowname} col={sp} h={h:.9g} fd={fd:.12g} stored_ct={stored:.12g} rel_error={abs(fd-stored)/max(abs(fd),abs(stored),1e-300):.9g}")
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))
@@ -66,4 +99,5 @@ iop = LinearOperator(J.shape, matvec=lambda v: lu.solve(v), rmatvec=lambda v: lu
 cond1 = float(onenormest(op) * onenormest(iop))
 print(f"case={spec['id']} points={len(can['grid'])} dofs={len(r)} sparse_nnz={J.nnz}")
 print(f"residual_inf={np.linalg.norm(r, np.inf):.9g} weighted_step_rms={step:.9g} cond1_est={cond1:.9g}")
+print(f"jacobian_fd relative={fd_rel} absolute={fd_abs} threshold={fd_threshold}")
 print("component_order=" + ",".join(f"{d}:{c}" for d,c in components))
