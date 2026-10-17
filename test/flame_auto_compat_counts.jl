@@ -2,8 +2,9 @@ using Arrhenius, YAML, LinearAlgebra
 
 BLAS.set_num_threads(1)
 
-function make_flame(spec)
-    mechanism = spec["mechanism"] * ".yaml"
+function make_flame(spec, spec_path)
+    spec_root = dirname(dirname(abspath(spec_path)))
+    mechanism = joinpath(spec_root, spec["mechanism"] * ".yaml")
     gas = CreateSolution(mechanism)
     transport = spec["transport"] == "multicomponent" ? :multicomponent : :mixture_averaged
     data = transport == :multicomponent ?
@@ -27,7 +28,7 @@ isempty(spec_paths) && error("provide one or more flame spec paths")
 for path in spec_paths
     spec = YAML.load_file(path)
     for compatible in (dry_run ? (true,) : (false, true))
-        flame = make_flame(spec)
+        flame = make_flame(spec, path)
         stats = solver_stats(flame)
         solve!(flame; ratio=spec["ratio"], slope=spec["slope"],
             curve=spec["curve"], prune=min(get(spec, "prune", 0.0),
