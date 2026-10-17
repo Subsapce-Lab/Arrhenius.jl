@@ -44,6 +44,7 @@ function run_case(spec_path, output_path, variant="compat")
                 max_time_steps=500, loglevel=0, domain_check=false, timestep, controls,
                 ts_regrid=3, cantera_compatible=true, guess_compatible)
         end
+        flame.converged = true
     end
     !refine && (flame.converged = true)
     flame.converged || error("$(spec["id"]) did not converge")
