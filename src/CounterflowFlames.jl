@@ -970,11 +970,11 @@ automatic reinitialization; call `set_two_point_control!` to choose new targets.
 Time-step controls (`time_step_growth_factor`, `time_step_growth_strategy`,
 `time_step_callback`, `time_step_regrid`, `jacobian_mode`) are as for premixed flames.
 
-Diffusion solves use the same success-counted steady retries and dependent-row
-transient skip as the other counterflow kinds, matching Cantera's algebraic-row
-handling. The Nakamura diffusion case is substantially more expensive with this
-correct handling; performance work is tracked separately. See `audit.md` and
-`verify.md` for source references and measured validation.
+Diffusion solves evolve every species equation at interior nodes and enforce
+species closure only at the boundary excess species, matching Cantera's
+algebraic-row handling. The Nakamura diffusion case is substantially more
+expensive with this correct handling; performance work is tracked separately.
+See `audit.md` and `verify.md` for source references and measured validation.
 `:residual_ratio` growth is supported for this diffusion kind only among the
 counterflow kinds; premixed, twin-premixed, and stagnation require Cantera
 boundary-residual parity before using it.
