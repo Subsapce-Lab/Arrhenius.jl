@@ -1395,6 +1395,36 @@ function _fresh_analytic_guess!(f::FreeFlame, z = f.grid)
     return f
 end
 
+# Cantera BurnerFlame.set_initial_guess followed by
+# UnstrainedFlow.set_fixed_temp_profile. Build the burner T/Y/velocity ramp,
+# then apply the prescribed T profile while retaining the ramp's velocity.
+function _fresh_fixed_temperature_burner_guess!(f::BurnerFlame)
+    isempty(f.imposed_temperature) && return f
+    x = f.inlet_Y ./ f.gas.MW
+    x ./= sum(x)
+    eq = equilibrate(f.gas; T=f.inlet_temperature, P=f.pressure, X=x, mode=:HP)
+    T0, Y0, Ye = f.inlet_temperature, f.inlet_Y, eq.Y
+    rho0 = _flame_density(f,T0,Y0).density
+    rho1 = _flame_density(f,eq.T,Ye).density
+    u0, u1 = f.mass_flux/rho0, f.mass_flux/rho1
+    N = length(f.grid)
+    state = Matrix{Float64}(undef,size(f.state,1),N)
+    for j in eachindex(f.grid)
+        frac = clamp((f.grid[j]-f.grid[1])/(0.2*(f.grid[end]-f.grid[1])),0,1)
+        T = T0 + frac*(eq.T-T0)
+        Y = Y0 .+ frac .* (Ye .- Y0)
+        rho = _flame_density(f,T,Y).density
+        u = u0 + frac*(u1-u0)
+        state[1,j] = f.imposed_temperature[j]/1000
+        state[2:end-1,j] .= Y
+        state[end,j] = rho*u
+    end
+    f.state = state
+    f.anchor = clamp(argmin(abs.(f.grid .- (f.grid[1]+0.2*(f.grid[end]-f.grid[1])))),2,N-1)
+    f.converged = false
+    return f
+end
+
 # Sim1D.cpp's solve(refine_grid=true) loop: steady solve, width check, one
 # refinement pass, repeat while refinement changes the grid (`while
 # new_points > 0`, entered with `new_points = 1`, so the entry state is always
@@ -1657,6 +1687,9 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
     isfinite(initial_time_step) && initial_time_step > 0 || throw(ArgumentError("initial time step must be finite and positive"))
     _check_timestep_controls(time_step_growth_factor,time_step_growth_strategy,time_step_regrid,jacobian_mode)
     reset!(_premixed_stats(f))  # per-flame counters report this solve only
+    if cantera_compatible && f isa BurnerFlame && !isempty(f.imposed_temperature)
+        _fresh_fixed_temperature_burner_guess!(f)
+    end
     analytic = jacobian_mode === :auto
     controls = (;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
         step_callback=time_step_callback,analytic,cantera_compatible)
