@@ -32,5 +32,5 @@ for j in 1:N,k in 1:B
     if a<alpha; alpha=a; limiter=(j,k); end
 end
 println("alpha=",alpha," limiter=",limiter," norm_step=",norm(step))
-Arrhenius.npzwrite(ARGS[1],Dict("state"=>f.state,"grid"=>grid,"residual"=>r,"previous"=>previous,"dt"=>[dt],"jacobian_band"=>band,"newton_step"=>step))
+Arrhenius.npzwrite(ARGS[1],Dict("state"=>f.state,"grid"=>grid,"anchor"=>[f.anchor],"residual"=>r,"previous"=>previous,"dt"=>[dt],"jacobian_band"=>band,"newton_step"=>step))
 end
