@@ -17,6 +17,7 @@ struct IonizedFlameWorkspace{K,C}
     perturbed::Matrix{Float64}
     residual_perturbed::Matrix{Float64}
     steps::Vector{Float64}
+    correction::Vector{Float64}
     base_X::Matrix{Float64}
     base_rho::Vector{Float64}
     base_cp::Matrix{Float64}
@@ -49,6 +50,7 @@ function FlameWorkspace(f::IonizedFlame)
         zeros(B, N),
         zeros(B, N),
         zeros(N),
+        zeros(B*N),
         zeros(n,N), zeros(N), zeros(n,N), zeros(n,N), zeros(n,N),
         [_KineticsTemperatureCache(f.gas.reaction) for _ in 1:N],zeros(Int,2),
         f.discretization==:conservative ? IonizedConservativeWorkspace(f.ion_data,N) : nothing)
