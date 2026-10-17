@@ -742,6 +742,12 @@ end
 _flame_previous_enthalpy(f,w,previous) = _conservative_flame(f) ?
     _flame_previous_enthalpy!(w.conservative,f,previous) : nothing
 _flame_perturbation(f,u,k,j)=1e-7*max(abs(u[k,j]),k==1 ? .1 : 1e-5)
+@inline function _flame_cantera_perturbation(u,k,j)
+    x=u[k,j]
+    scale=k==1 ? 1e-13 : 1e-10 # temperature is stored in kK; Cantera perturbs K.
+    h=1e-5*abs(x)+scale
+    return x<0 ? -h : h
+end
 # Fraction of the forward derivative that a positive finite-difference step of
 # `_flame_perturbation` samples on a clipped face-midpoint species value: one
 # at nonnegative values, the chord fraction within one step below zero.
@@ -795,7 +801,12 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             if auto_species_column && !(f isa BurnerFlame && (j == 2 || j == N-1))
                 continue
             end
-            steps[j] = _flame_perturbation(f,u,k,j)
+            cantera_fd = analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
+                f.transport_model == :mixture_averaged && !f.soret_enabled &&
+                f.flux_gradient_basis == :mole &&
+                (k == 1 || 2 <= k <= B-1 && (j == 1 || j == N ||
+                    f isa BurnerFlame && (j == 2 || j == N-1)))
+            steps[j] = cantera_fd ? _flame_cantera_perturbation(u,k,j) : _flame_perturbation(f,u,k,j)
             perturbed[k,j] = u[k,j]+steps[j]
             perturbed_any=true
         end

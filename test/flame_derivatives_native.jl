@@ -313,6 +313,8 @@ end
     w=Arrhenius.FlameWorkspace(f)
     r=similar(f.state); flame_residual!(r,f,f.state,w)
     boundary_jac=Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true)
+    @test Arrhenius._flame_cantera_perturbation(f.state,1,4) == 1e-5*abs(f.state[1,4])+1e-13
+    @test Arrhenius._flame_cantera_perturbation(f.state,2,1) == 1e-5*abs(f.state[2,1])+1e-10
     B=n+2; halfband=2B-1; h_index=findfirst(==("H"),gas.species_names)
     left_row=B; left_col=B+h_index+1
     right_row=(N-1)*B+B; right_col=(N-2)*B+h_index+1
