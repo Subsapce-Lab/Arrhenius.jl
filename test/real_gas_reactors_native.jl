@@ -25,6 +25,20 @@ end
     rhs = reactor_rhs(reactor)
     du = similar(u)
     rhs(du,u,nothing,0.)
+    radical = findfirst(==("H"),gas.species_names)
+    carrier = findfirst(==("AR"),gas.species_names)
+    if !isnothing(radical) && !isnothing(carrier)
+        for y in (0.0,1e-25,-1e-25,-1e-7)
+            probe = copy(u)
+            delta = reactor.mass_fractions[radical]-y
+            probe[radical] = y
+            probe[carrier] += delta
+            rhs(du,probe,nothing,0.)
+            @test rhs.workspace.C[radical] == y*reactor.density/gas.MW[radical]
+            @test signbit(rhs.workspace.C[radical]) == signbit(y)
+        end
+        rhs(du,u,nothing,0.)
+    end
     props = reactor_properties(reactor)
     state = redlich_kwong_state(model;T=u[end],rho=reactor.density,X)
     @test abs(sum(du[1:end-1])) <= 1e-12*norm(du[1:end-1],1)

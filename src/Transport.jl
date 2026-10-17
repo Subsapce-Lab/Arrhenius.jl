@@ -162,7 +162,6 @@ function _mixture_transport!(w::TransportWorkspace, gas::Solution, P, T, X, basi
     arithmetic = 0.0
     harmonic = 0.0
     mean_MW = dot(X, gas.MW)
-    total_mass = sum(mass_fraction_weight)
     @inbounds for k in 1:n
         denominator = 0.0
         invdiff = 0.0
@@ -171,13 +170,12 @@ function _mixture_transport!(w::TransportWorkspace, gas::Solution, P, T, X, basi
         for j in 1:n
             phi = muladd(rk*inverse_root[j], w.weight_quarter_ratio[j,k], 1)^2 * w.inverse_phi_denominator[j,k]
             denominator = muladd(X_floor[j], phi, denominator)
-            invdiff = muladd(X_floor[j], w.inverse_binary[j,k], invdiff)
-            mass_invdiff = muladd(mass_fraction_weight[j], w.inverse_binary[j,k], mass_invdiff)
+            if j != k
+                invdiff = muladd(X_floor[j], w.inverse_binary[j,k], invdiff)
+                mass_invdiff = muladd(mass_fraction_weight[j], w.inverse_binary[j,k], mass_invdiff)
+            end
         end
-        # Remove the diagonal pair term accumulated above.
-        invdiff -= X_floor[k]*w.inverse_binary[k,k]
-        mass_invdiff -= mass_fraction_weight[k]*w.inverse_binary[k,k]
-        othermass = total_mass - mass_fraction_weight[k]
+        othermass = mean_MW - mass_fraction_weight[k]
         viscosity += X_floor[k] * w.viscosity[k] / denominator
         arithmetic += X_floor[k] * w.conductivity[k]
         harmonic += X_floor[k] / w.conductivity[k]
@@ -186,7 +184,9 @@ function _mixture_transport!(w::TransportWorkspace, gas::Solution, P, T, X, basi
         elseif basis == :mass
             othermass > 0 ? inv(invdiff+X_floor[k]*mass_invdiff/othermass) : 0.0
         else
-            invdiff > 0 ? othermass / (mean_MW * invdiff) : 0.0
+            # Cantera molar-gradient flames call getMixDiffCoeffs,
+            # whose numerator is the non-k mixture molecular weight ratio.
+            invdiff > 0 ? othermass / (mean_MW*invdiff) : w.binary[k,k]
         end
     end
     return viscosity, (arithmetic + 1/harmonic)/2

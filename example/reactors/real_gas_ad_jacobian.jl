@@ -47,15 +47,18 @@ function _shocktube_ad_jacobian(reactor,::Val{N},trial_policy::P) where {N,P<:Sh
         composition_rhs = function (du,Y)
             T=current_temperature[]
             total=zero(eltype(Y))
+            kinetic_total=zero(eltype(Y))
             @inbounds for k in 1:n
-                work.X[k]=_trial_concentration(trial_policy,Y[k])/gas.MW[k]
+                work.X[k]=max(Y[k],zero(Y[k]))/gas.MW[k]
                 total+=work.X[k]
+                kinetic_total+=Y[k]/gas.MW[k]
             end
             work.X ./= total
             properties=_trial_caloric!(trial_policy,work.thermo,reactor.model,T,reactor.density,work.X)
             @inbounds for k in 1:n
-                work.C[k]=work.X[k]/properties.v
-                work.activity[k]=work.X[k]*properties.P/(R*T)*exp(properties.lnphi[k])
+                work.C[k]=Y[k]*reactor.density/gas.MW[k]
+                kinetic_X=(Y[k]/gas.MW[k])/kinetic_total
+                work.activity[k]=kinetic_X*properties.P/(R*T)*exp(properties.lnphi[k])
             end
             _trial_wdot!(trial_policy,work.wdot,gas.reaction,T,work.C,floats.s0,floats.h0,work.kinetics;
                 temperature_cache=cache,pressure=properties.P,activity_concentrations=work.activity,
