@@ -256,6 +256,7 @@ end
         optimized_nodes=stats.property_nodes-node_start
         legacy=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true,local_property_updates=false))
         legacy_nodes=stats.property_nodes-node_start-optimized_nodes
+        auto_jacobian=copy(Arrhenius._flame_jacobian(f,f.state,w,r;analytic=true,cantera_omission=true))
         @test analytic==legacy
         @test optimized_nodes==length(grid)+4n
         @test legacy_nodes>optimized_nodes
@@ -274,14 +275,15 @@ end
         end
         @info "burner analytic species Jacobian versus ForwardDiff" prescribed_temperature worst worst_entry
         @test worst < 2e-4
-        # Cantera's analytic fill omits inlet boundary rows for interior
-        # species columns. The compatible Jacobian mirrors that omission;
-        # the default all-FD path retains the residual-faithful derivative.
+        # :auto mirrors Cantera's zero endpoint blocks; :analytic retains the
+        # residual derivative, and finite differences remain unchanged.
         col=B+2; inlet_row=2
-        @test analytic[2kl+1+inlet_row-col,col] == 0.0
         residual=flame_residual!(similar(f.state),f,f.state,w)
         finite_difference=Arrhenius._flame_jacobian(f,f.state,w,residual;analytic=false)
+        @test auto_jacobian[2kl+1+inlet_row-col,col] == 0.0
+        @test analytic[2kl+1+inlet_row-col,col] ≈ finite_difference[2kl+1+inlet_row-col,col] rtol=2e-4
         @test finite_difference[2kl+1+inlet_row-col,col] ≈ automatic[inlet_row,col] rtol=2e-4
+        @test finite_difference == Arrhenius._flame_jacobian(f,f.state,w,residual;analytic=false,cantera_omission=true)
         @test automatic[inlet_row,col] ≈ 0.02936003949483076 rtol=1e-8
         for component in 2:B-1
             inlet_col=B+component
@@ -289,8 +291,12 @@ end
             for rowcomponent in 1:B
                 inlet_boundary_row=rowcomponent
                 outlet_boundary_row=(length(grid)-1)*B+rowcomponent
-                @test analytic[2kl+1+inlet_boundary_row-inlet_col,inlet_col] == 0.0
-                @test analytic[2kl+1+outlet_boundary_row-outlet_col,outlet_col] == 0.0
+                @test auto_jacobian[2kl+1+inlet_boundary_row-inlet_col,inlet_col] == 0.0
+                @test auto_jacobian[2kl+1+outlet_boundary_row-outlet_col,outlet_col] == 0.0
+                @test analytic[2kl+1+inlet_boundary_row-inlet_col,inlet_col] ≈
+                    finite_difference[2kl+1+inlet_boundary_row-inlet_col,inlet_col] rtol=2e-4 atol=1e-8
+                @test analytic[2kl+1+outlet_boundary_row-outlet_col,outlet_col] ≈
+                    finite_difference[2kl+1+outlet_boundary_row-outlet_col,outlet_col] rtol=2e-4 atol=1e-8
                 @test finite_difference[2kl+1+inlet_boundary_row-inlet_col,inlet_col] ≈
                     automatic[inlet_boundary_row,inlet_col] rtol=2e-4 atol=1e-8
                 @test finite_difference[2kl+1+outlet_boundary_row-outlet_col,outlet_col] ≈
