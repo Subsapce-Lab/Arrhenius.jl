@@ -30,6 +30,7 @@ auto = overrides.get("auto", "false").lower() == "true"
 loglevel = int(overrides.get("loglevel", "0"))
 criteria = (spec["ratio"], spec["slope"], spec["curve"], prune)
 flame.set_refine_criteria(ratio=criteria[0], slope=criteria[1], curve=criteria[2], prune=criteria[3])
+initial_grid = np.asarray(flame.grid).copy()
 with tempfile.TemporaryFile() as logfile:
     saved_stdout = os.dup(1)
     os.dup2(logfile.fileno(), 1)
@@ -49,7 +50,8 @@ print("CTFIXED", json.dumps({
     "prune_source": "production=min(spec.prune or 0, slope, curve)",
     "initial_guess": "fresh BurnerFlame constructor; fixed profile applied; no restart",
     "transport": spec["transport"], "energy_enabled": flame.energy_enabled,
-    "profile_z_normalized_by": spec["width"], "max_grid_points": "Cantera default",
+    "profile_z_normalized_by": spec["width"], "initial_grid_points": len(initial_grid),
+    "max_grid_points": "Cantera default",
     "jacobians": int(sum(stats.get("jacobian_evals", []))),
     "linear_solves": int(sum(stats.get("linear_solves", []))),
     "accepted_steps": int(sum(stats.get("steps", []))),
