@@ -1,4 +1,4 @@
-using Test, Arrhenius, NPZ
+using Test, Arrhenius, NPZ, Printf
 
 @testset "counterflow pseudo-arclength continuation" begin
     mechanism=joinpath(dirname(pathof(Arrhenius)),"..","mechanism","h2o2.yaml")
@@ -106,6 +106,34 @@ end
             cantera_peak=argmax(refA)
             @test abs(curve[native_peak].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
             @test abs(curve[native_peak].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
+            if mechanism_name=="h2o2.yaml"
+                fold_state=copy(f.state); fold_control=f.control_points
+                fold_mf=f.fuel_mass_flux; fold_mo=f.oxidizer_mass_flux
+                arc_t0=time_ns()
+                arc=pseudo_arclength!(f;parameter=:control_temperature,steps=40,ds=.003,
+                    min_ds=1e-6,max_ds=.003,tolerance=1e-7,max_corrector_iters=36,state_scale=1000.)
+                arc_seconds=(time_ns()-arc_t0)/1e9
+                @test length(arc)==41
+                @test abs(arc[1].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
+                @test abs(arc[1].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
+                @test all(p->p.residual_inf<1e-7,arc)
+                @test isapprox(maximum(p.max_strain_rate for p in arc),refA[cantera_peak];rtol=1e-3)
+                @printf("CONTROLLED_ARC_N12 steps=%d points=%d elapsed_s=%.6g peak_strain=%.12g peak_Tmax=%.12g\n",length(arc)-1,length(arc),arc_seconds,maximum(p.max_strain_rate for p in arc),arc[argmax(p.max_strain_rate for p in arc)].max_temperature)
+                plus=arc; plus_seconds=arc_seconds
+                f.state .= fold_state; f.control_points=fold_control
+                f.fuel_mass_flux=fold_mf; f.oxidizer_mass_flux=fold_mo; f.converged=true
+                minus_t0=time_ns()
+                minus=pseudo_arclength!(f;parameter=:control_temperature,steps=1,ds=.0001,
+                    min_ds=1e-6,max_ds=.0001,tolerance=1e-7,max_corrector_iters=36,state_scale=1000.,direction=-1)
+                minus_seconds=(time_ns()-minus_t0)/1e9
+                @test length(plus)==41 && length(minus)==2
+                @test all(p->p.residual_inf<1e-7,plus) && all(p->p.residual_inf<1e-7,minus)
+                @test isapprox(maximum(p.max_strain_rate for p in plus),refA[cantera_peak];rtol=1e-3)
+                @test abs(minus[1].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
+                @test abs(minus[1].max_temperature-refT[cantera_peak])/refT[cantera_peak]<1e-3
+                @printf("CONTROLLED_ARC_N12 direction=+1 steps=%d seconds=%.6g end_control_T=%.9g peak_strain=%.12g\n",length(plus)-1,plus_seconds,plus[end].parameter,maximum(p.max_strain_rate for p in plus))
+                @printf("CONTROLLED_ARC_N12 direction=-1 steps=%d seconds=%.6g end_control_T=%.9g peak_strain=%.12g\n",length(minus)-1,minus_seconds,minus[end].parameter,maximum(p.max_strain_rate for p in minus))
+            end
         end
     end
 end

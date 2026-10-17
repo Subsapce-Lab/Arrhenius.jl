@@ -1,5 +1,5 @@
 """Fixed-grid pseudo-arclength predictor-corrector for counterflow flames.
-Supported parameters: fuel_mass_flux, oxidizer_mass_flux, pressure, or inlet_flux_scale (proportional scaling of both inlet mass fluxes).
+Supported parameters: fuel_mass_flux, oxidizer_mass_flux, pressure, inlet_flux_scale (proportional scaling of both inlet mass fluxes), or control_temperature for a controlled diffusion flame.
 The bordered correction retains the banded flame Jacobian and uses a scalar
 Schur complement. The initial flame must be converged; no grid refinement is
 performed during tracing.
@@ -146,9 +146,14 @@ function _continuation_strain_rate(f,u)
 end
 
 function _continuation_parameter(f,name::Symbol,fluxbase=nothing)
-    name in (:fuel_mass_flux,:oxidizer_mass_flux,:pressure,:inlet_flux_scale) ||
-        throw(ArgumentError("parameter must be :fuel_mass_flux, :oxidizer_mass_flux, :pressure, or :inlet_flux_scale"))
-    isnothing(f.control_points) || throw(ArgumentError("disable two-point control before pseudo-arclength continuation"))
+    name in (:fuel_mass_flux,:oxidizer_mass_flux,:pressure,:inlet_flux_scale,:control_temperature) ||
+        throw(ArgumentError("parameter must be :fuel_mass_flux, :oxidizer_mass_flux, :pressure, :inlet_flux_scale, or :control_temperature"))
+    if name===:control_temperature
+        f isa CounterflowDiffusionFlame && !isnothing(f.control_points) ||
+            throw(ArgumentError(":control_temperature requires enabled diffusion two-point control"))
+        return Float64((f.control_points[2]+f.control_points[4])/2)
+    end
+    isnothing(f.control_points) || throw(ArgumentError("disable two-point control before flux or pressure pseudo-arclength continuation"))
     if name===:inlet_flux_scale
         isnothing(fluxbase) && throw(ArgumentError("internal inlet flux baseline is missing"))
         scale=f.fuel_mass_flux/fluxbase[1]
@@ -163,6 +168,11 @@ function _continuation_set_parameter!(f,name::Symbol,value,fluxbase=nothing)
     if name===:inlet_flux_scale
         isnothing(fluxbase) && throw(ArgumentError("internal inlet flux baseline is missing"))
         f.fuel_mass_flux=fluxbase[1]*value; f.oxidizer_mass_flux=fluxbase[2]*value
+    elseif name===:control_temperature
+        isnothing(f.control_points) && throw(ArgumentError("two-point control is not enabled"))
+        isnothing(fluxbase) && throw(ArgumentError("control-temperature offsets are missing"))
+        c=f.control_points
+        f.control_points=(c[1],Float64(value)+fluxbase[1],c[3],Float64(value)+fluxbase[2])
     else
         setproperty!(f,name,Float64(value))
     end
@@ -218,10 +228,10 @@ function _continuation_correct!(f,w,u0,p0,tu,tp,parameter,weights,qscale,ds;
     return nothing
 end
 
-function _continuation_tangent!(f,w,u,p,parameter,weights,qscale;analytic=true,fluxbase=nothing)
+function _continuation_tangent!(f,w,u,p,parameter,weights,qscale;analytic=true,fluxbase=nothing,direction=1)
     r=similar(u); fp=similar(u); rhs=Vector{Float64}(undef,length(u)); z=similar(rhs)
     _continuation_border_solve!(f,w,u,p,parameter,r,fp,rhs,z,analytic,fluxbase)
-    du=reshape(-z,size(u)); tp=1.
+    du=direction.*reshape(-z,size(u)); tp=Float64(direction)
     nt=sqrt(sum((du./weights).^2)+(tp/qscale)^2); du./=nt; tp/=nt
     return du,tp
 end
@@ -299,14 +309,16 @@ end
 
 function _continuation_point(f,p,u,rn,arc,turn,tu,tp,step,mind,maxd,qs,ss,fb)
     b=_continuation_base(f)
-    CounterflowContinuationPoint(Float64(p),maximum(temperature(f)),_continuation_strain_rate(f,u),copy(u),
+    strain=(f isa CounterflowDiffusionFlame && !isnothing(f.control_points)) ?
+        _two_point_max_strain_rate(f,u) : _continuation_strain_rate(f,u)
+    CounterflowContinuationPoint(Float64(p),maximum(temperature(f)),strain,copy(u),
         Float64(rn),Float64(arc),Bool(turn),copy(tu),Float64(tp),Float64(step),Float64(mind),Float64(maxd),Float64(qs),Float64(ss),
         b.pressure,b.fuel_mass_flux,b.oxidizer_mass_flux,fb)
 end
 
 """Trace or restart a fixed-grid branch with a bordered pseudo-arclength Newton corrector."""
 function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothing,min_ds=nothing,max_ds=nothing,
-        tolerance=1e-8,max_corrector_iters=18,parameter_scale=nothing,state_scale=nothing,analytic=true)
+        tolerance=1e-8,max_corrector_iters=18,parameter_scale=nothing,state_scale=nothing,analytic=true,direction=1)
     (f isa CounterflowDiffusionFlame || f isa CounterflowPremixedFlame || f isa CounterflowTwinPremixedFlame) ||
         throw(ArgumentError("pseudo-arclength is implemented for diffusion, opposed premixed, and twin premixed flames"))
     b=_continuation_base(f); saved=isnothing(restart) ? nothing : restore_continuation_checkpoint!(f,restart)
@@ -316,10 +328,14 @@ function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothi
     if !isnothing(saved)
         _continuation_set_parameter!(f,parameter,saved.parameter_value,parameter===:inlet_flux_scale ? fb : nothing)
     end
+    direction in (-1,1) || throw(ArgumentError("direction must be -1 or 1"))
     steps>=1 || throw(ArgumentError("steps must be positive"))
     tolerance>0 && isfinite(tolerance) || throw(ArgumentError("positive finite tolerance required"))
     (f.converged || !isnothing(saved)) || throw(ArgumentError("initial flame must be converged"))
     p0=isnothing(saved) ? _continuation_parameter(f,parameter,parameter===:inlet_flux_scale ? fb : nothing) : saved.parameter_value
+    controlbase=parameter===:control_temperature && isnothing(saved) ?
+        (f.control_points[2]-p0,f.control_points[4]-p0) : nothing
+    baseparam=parameter===:inlet_flux_scale ? fb : controlbase
     u0=copy(f.state)
     qs=isnothing(parameter_scale) ? (isnothing(saved) ? max(abs(p0),1.) : saved.parameter_scale) : Float64(parameter_scale)
     ss=isnothing(state_scale) ? (isnothing(saved) ? 1. : saved.state_scale) : Float64(state_scale)
@@ -333,23 +349,23 @@ function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothi
     w=CounterflowWorkspace(f); r=similar(u0); counterflow_residual!(r,f,u0,w); rn0=norm(r,Inf)
     rn0<=tolerance || throw(ArgumentError("initial/restart residual $rn0 exceeds tolerance $tolerance"))
     if isnothing(saved)
-        tu,tp=_continuation_tangent!(f,w,u0,p0,parameter,weights,qs;analytic,fluxbase=parameter===:inlet_flux_scale ? fb : nothing)
+        tu,tp=_continuation_tangent!(f,w,u0,p0,parameter,weights,qs;analytic,fluxbase=parameter in (:inlet_flux_scale,:control_temperature) ? baseparam : nothing,direction)
         arc=0.
     else
         tu,tp,arc=saved.tangent_state,saved.tangent_parameter,saved.arclength
     end
-    f.state .= u0; _continuation_set_parameter!(f,parameter,p0,parameter===:inlet_flux_scale ? fb : nothing); f.converged=true
+    f.state .= u0; _continuation_set_parameter!(f,parameter,p0,parameter in (:inlet_flux_scale,:control_temperature) ? baseparam : nothing); f.converged=true
     pts=CounterflowContinuationPoint[]; lastsign=sign(tp)
     push!(pts,_continuation_point(f,p0,u0,rn0,arc,false,tu,tp,step,mind,maxd,qs,ss,fb))
     for _ in 1:steps
         corrected=nothing
         while corrected===nothing
             corrected=_continuation_correct!(f,w,u0,p0,tu,tp,parameter,weights,qs,step;
-                tolerance,maxiters=max_corrector_iters,analytic,fluxbase=parameter===:inlet_flux_scale ? fb : nothing)
+                tolerance,maxiters=max_corrector_iters,analytic,fluxbase=parameter in (:inlet_flux_scale,:control_temperature) ? baseparam : nothing)
             if corrected===nothing
                 step*=.5
                 if step<mind
-                    _continuation_set_parameter!(f,parameter,p0,parameter===:inlet_flux_scale ? fb : nothing)
+                    _continuation_set_parameter!(f,parameter,p0,parameter in (:inlet_flux_scale,:control_temperature) ? baseparam : nothing)
                     f.state .= u0; f.converged=true; error("pseudo-arclength corrector failed at min_ds=$mind")
                 end
             end
@@ -360,7 +376,7 @@ function pseudo_arclength!(f;parameter=nothing,restart=nothing,steps=40,ds=nothi
         orient=sum(du.*tu./reshape(weights.^2,size(u0,1),1))+dp*tp/qs^2
         orient<0 && (du .*= -1; dp *= -1)
         nt=sqrt(sum((du./weights).^2)+(dp/qs)^2); tu=du./nt; tp=dp/nt
-        _continuation_set_parameter!(f,parameter,p1,parameter===:inlet_flux_scale ? fb : nothing); f.state .= u1; f.converged=true
+        _continuation_set_parameter!(f,parameter,p1,parameter in (:inlet_flux_scale,:control_temperature) ? baseparam : nothing); f.state .= u1; f.converged=true
         step=min(maxd,step*(nit<=5 ? 1.25 : nit>=12 ? .7 : 1.0))
         push!(pts,_continuation_point(f,p1,u1,rn,arc,turn,tu,tp,step,mind,maxd,qs,ss,fb))
         u0=copy(u1); p0=p1; lastsign=sign(tp)
