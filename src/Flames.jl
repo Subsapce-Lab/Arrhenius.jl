@@ -1798,11 +1798,28 @@ function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=t
     znew = collect(Float64, z)
     L = znew[end] - znew[1]
     state = Matrix{Float64}(undef, size(f.state, 1), length(znew))
+    velocity_ramp = cantera_compatible
+    rho0 = velocity_ramp ? _flame_density(f, f.inlet_temperature, f.inlet_Y).density : 1.0
+    rho1 = velocity_ramp ? _flame_density(f, eq.T, eq.Y).density : 1.0
     for j in eachindex(znew)
         fraction = clamp((znew[j] - znew[1]) / (0.2 * L), 0, 1)
         state[1, j] = (f.inlet_temperature + fraction * (eq.T - f.inlet_temperature)) / 1000
         state[2:end-1, j] .= f.inlet_Y .+ fraction .* (eq.Y .- f.inlet_Y)
-        state[end, j] = f.mass_flux
+        if velocity_ramp
+            # Cantera builds velocity before the fixed-T profile is applied.
+            Y = @view state[2:end-1, j]
+            rho_ramp = _flame_density(f, 1000state[1, j], Y).density
+            velocity = f.mass_flux / rho0 + fraction * (f.mass_flux / rho1 - f.mass_flux / rho0)
+            if isempty(f.imposed_temperature)
+                state[end, j] = rho_ramp * velocity
+            else
+                state[1, j] = f.imposed_temperature[j] / 1000
+                rho_fixed = _flame_density(f, f.imposed_temperature[j], Y).density
+                state[end, j] = rho_fixed * velocity
+            end
+        else
+            state[end, j] = f.mass_flux
+        end
     end
     f.grid, f.state = znew, state
     f.anchor = clamp(argmin(abs.(@view(state[1, :]) .- (0.75 * f.inlet_temperature + 0.25 * eq.T) / 1000)),
@@ -2157,16 +2174,29 @@ function solve!(f::AbstractPremixedFlame; refine_grid=true,ratio=3.,slope=.06,cu
     reset!(_premixed_stats(f))  # per-flame counters report this solve only
     analytic = jacobian_mode !== :finite_difference
     cantera_compatible = cantera_compatible || auto
+    fixed_temperature_compat = f isa BurnerFlame && !isempty(f.imposed_temperature)
     newton_options = _newton_policy(newton_options,cantera_compatible)
     cantera_compatible && (jacobian_mode = :auto)
     analytic = jacobian_mode !== :finite_difference
     controls = (;growth_factor=time_step_growth_factor,growth_strategy=time_step_growth_strategy,
         step_callback=time_step_callback,analytic,cantera_omission=(jacobian_mode === :auto),newton_options)
     _premixed_stats(f).last_solve_options=(;jacobian_mode,newton_options,
-        staged_ladder=cantera_compatible,auto,refine_grid,ratio,slope,curve,prune,
+        staged_ladder=cantera_compatible && !fixed_temperature_compat,auto,refine_grid,ratio,slope,curve,prune,
         max_points,max_time_steps,loglevel,initial_time_step,domain_check,
         time_step_growth_factor,time_step_growth_strategy,time_step_callback,time_step_regrid)
     timestep = Ref(Float64(initial_time_step))
+    if (auto || cantera_compatible) && fixed_temperature_compat
+        # Cantera's fixed-T BurnerFlame path uses auto=False: refine the current
+        # profile directly while retaining its compatible Newton/Jacobian rules.
+        _fresh_analytic_guess!(f, f.grid; cantera_compatible=true)
+        f.converged = false
+        _auto_refine_loop!(f; refine_grid,ratio,slope,curve,prune,max_points,
+            max_time_steps,loglevel,domain_check=false,timestep,controls,
+            initial_time_step=Float64(initial_time_step),ts_regrid=time_step_regrid,
+            cantera_compatible=true)
+        f.converged = true
+        return f
+    end
     (auto || cantera_compatible) && return _solve_auto!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid=time_step_regrid,
         cantera_compatible)
