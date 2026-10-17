@@ -299,6 +299,16 @@ mutable struct PremixedStats
 end
 PremixedStats()=PremixedStats(0,0,0,0,0,0,0,0,0,Int[])
 
+mutable struct _FlamePropertyNodes
+    indices::Vector{Int}
+    count::Int
+end
+Base.IteratorSize(::Type{_FlamePropertyNodes}) = Base.HasLength()
+Base.eltype(::Type{_FlamePropertyNodes}) = Int
+Base.length(nodes::_FlamePropertyNodes) = nodes.count
+@inline Base.iterate(nodes::_FlamePropertyNodes,state=1) =
+    state > nodes.count ? nothing : (nodes.indices[state],state+1)
+
 struct FlameWorkspace{K}
     kinetics::K
     transport::TransportWorkspace
@@ -320,6 +330,7 @@ struct FlameWorkspace{K}
     perturbed::Matrix{Float64}
     residual_perturbed::Matrix{Float64}
     steps::Vector{Float64}
+    property_nodes::_FlamePropertyNodes
     correction::Vector{Float64}
     base_X::Matrix{Float64}
     base_rho::Vector{Float64}
@@ -353,7 +364,7 @@ function FlameWorkspace(f::AbstractPremixedFlame)
     return FlameWorkspace(KineticsWorkspace(f.gas.reaction),TransportWorkspace(f.gas),Ref(_premixed_stats(f)),
         zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),zeros(n),zeros(n,N-1),zeros(N-1),
         zeros(n,N-1),zeros(n),zeros(n),zeros(n),zeros(n),
-        zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),zeros((n+2)*N),
+        zeros(6*(n+2)-2,(n+2)*N),zeros(n+2,N),zeros(n+2,N),zeros(N),_FlamePropertyNodes(Vector{Int}(undef,N),0),zeros((n+2)*N),
         zeros(n,N),zeros(N),zeros(n,N),zeros(n,N),zeros(n,N),
         f.transport_model == :multicomponent ? MultiTransportWorkspace(f.multicomponent_data) : nothing,
         zeros(n,n,f.transport_model == :multicomponent ? N-1 : 0),zeros(n,N-1),
@@ -438,11 +449,14 @@ end
     return meanMW
 end
 
+@inline _flame_property_stats(w::FlameWorkspace,f::Union{FreeFlame,BurnerFlame}) = w.stats[]
+@inline _flame_property_stats(w,f) = nothing
+
 function _flame_properties!(w,f,u; update_transport=true,nodes=eachindex(f.grid),freeze_source=false,
         viscosity=nothing)
     gas, n, N = f.gas, f.gas.n_species, length(f.grid)
     conservative = _conservative_flame(f)
-    stats = (f isa FreeFlame || f isa BurnerFlame) ? _premixed_stats(f) : nothing
+    stats = _flame_property_stats(w,f)
     @inbounds for j in nodes
         if stats !== nothing
             stats.property_nodes += 1
@@ -863,6 +877,7 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
     # auto mode and omits the corresponding endpoint entries.
     for k in 1:B, color in 1:3
         perturbed_any=false
+        node_count=0
         for j in color:3:N
             auto_species_column = analytic && !update_transport && f isa Union{FreeFlame,BurnerFlame} &&
                 f.transport_model == :mixture_averaged && !f.soret_enabled &&
@@ -878,6 +893,11 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             steps[j] = cantera_fd ? _flame_cantera_species_perturbation(u,k,j) : _flame_perturbation(f,u,k,j)
             perturbed[k,j] = u[k,j]+steps[j]
             perturbed_any=true
+            if local_property_updates && f isa Union{FreeFlame,BurnerFlame} &&
+                    (update_transport || k != B) && perturbed[k,j] != u[k,j]
+                node_count += 1
+                w.property_nodes.indices[node_count] = j
+            end
         end
         perturbed_any || continue
         # Transport stays frozen for Newton; adjoint sensitivities update it.
@@ -886,7 +906,8 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
         elseif !update_transport && k == B
             ()
         else
-            Iterators.filter(j -> perturbed[k,j] != u[k,j],color:3:N)
+            w.property_nodes.count = node_count
+            w.property_nodes
         end
         flame_residual!(rp,f,perturbed,w; previous,dt,previous_enthalpy,update_transport,nodes)
         for j in color:3:N
