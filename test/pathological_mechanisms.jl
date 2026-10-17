@@ -59,6 +59,7 @@ end
             "collision_limit" => :collision_limit_screen)
         for (name, path) in cases
             report = audit_mechanism(path)
+            name == "collision_limit" && @info "collision audit magnitude" filter(x -> x.check == :collision_limit_screen, report.issues)
             if haskey(expected, name)
                 @test any(x -> x.check == expected[name], report.issues)
             end
@@ -75,3 +76,5 @@ end
         end
     end
 end
+
+
