@@ -965,11 +965,9 @@ function _flame_jacobian(f,u,w,r; previous=nothing,dt=Inf,previous_enthalpy=noth
             fill!(band,0)
             fallback=_flame_jacobian(f,u,w,r;previous,dt,previous_enthalpy,
                 analytic=false,update_transport)
-            cantera_omission && !update_transport && _flame_omit_cantera_boundary_species_block!(fallback,f,u)
             return fallback
         end
     end
-    cantera_omission && analytic && !update_transport && _flame_omit_cantera_boundary_species_block!(band,f,u)
     return band
 end
 
