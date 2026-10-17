@@ -62,9 +62,10 @@ using Arrhenius, Test
     # Record actual one-iteration traces on five-point premixed and counterflow
     # flames. The independent hand trace applies MultiNewton's accepted && s1<=1 rule.
     premixed_trace=Tuple{Bool,Float64,Float64,Bool}[]
-    Arrhenius._flame_newton!(f,Arrhenius.FlameWorkspace(f);maxiters=1,
+    premixed_converged=Arrhenius._flame_newton!(f,Arrhenius.FlameWorkspace(f);maxiters=1,
         newton_options=compatible,step_trace=premixed_trace)
     @test !isempty(premixed_trace)
+    @test premixed_converged==any(step[4] for step in premixed_trace)
     @test [(isfinite(s1)&&(s1<1 || s1<s0),isfinite(s1)&&(s1<1 || s1<s0)&&s1<=1)
         for (_,s0,s1,_) in premixed_trace]==[(a,c) for (a,_,_,c) in premixed_trace]
 
@@ -72,9 +73,10 @@ using Arrhenius, Test
         mdot_fuel=.12,mdot_oxidizer=.12,P=.05*one_atm,width=.02,
         grid=collect(range(0.,.02;length=5)))
     counterflow_trace=Tuple{Bool,Float64,Float64,Bool}[]
-    Arrhenius._counterflow_newton!(cf,Arrhenius.CounterflowWorkspace(cf);maxiters=1,
+    counterflow_converged=Arrhenius._counterflow_newton!(cf,Arrhenius.CounterflowWorkspace(cf);maxiters=1,
         analytic=false,newton_options=compatible,step_trace=counterflow_trace)
     @test !isempty(counterflow_trace)
+    @test counterflow_converged==any(step[4] for step in counterflow_trace)
     @test [(isfinite(s1)&&(s1<1 || s1<s0),isfinite(s1)&&(s1<1 || s1<s0)&&s1<=1)
         for (_,s0,s1,_) in counterflow_trace]==[(a,c) for (a,_,_,c) in counterflow_trace]
 
