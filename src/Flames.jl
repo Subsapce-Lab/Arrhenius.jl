@@ -824,6 +824,8 @@ end
 # IdealGasThermo stores each species maximum temperature in the third Trange column.
 # Cantera bounds T by twice the minimum species maximum.
 _cantera_flame_temperature_bounds(f) = (0.2,2*minimum(@view(f.gas.thermo.Trange[:,end]))/1000)
+_cantera_flame_species_bounds() = (-1e-7,1e5)
+_cantera_flame_velocity_bounds() = (-1e20,1e20)
 
 # Three grid colors exploit the nearest-neighbor block stencil. Each residual
 # evaluation perturbs one component at every third point without overlap.
@@ -987,15 +989,15 @@ function _flame_correction_weights(f,u,transient,options=NewtonPolicyOptions())
     return weights
 end
 
-@inline function _flame_state_velocity(f,u,j)
+@inline function _flame_state_density(f,u,j)
     n=f.gas.n_species
     inv_molecular_weight=0.0
     @inbounds for k in 1:n
         inv_molecular_weight+=u[k+1,j]/f.gas.MW[k]
     end
-    density=f.pressure/(R*(1000*u[1,j])*inv_molecular_weight)
-    return u[end,j]/density
+    return f.pressure/(R*(1000*u[1,j])*inv_molecular_weight)
 end
+@inline _flame_state_velocity(f,u,j) = u[end,j]/_flame_state_density(f,u,j)
 @inline function _flame_step_velocity(f,u,step,j)
     n=f.gas.n_species
     inv_molecular_weight=0.0
@@ -1189,7 +1191,8 @@ function _flame_newton!(f,w; previous=nothing,dt=Inf,maxiters=35,tolerance=1e-8,
             low,high = _flame_bounds(f,k,size(u,1))
             if newton_options.step_bounds === :cantera
                 low,high = k==1 ? _cantera_flame_temperature_bounds(f) :
-                    k==size(u,1) ? (-Inf,Inf) : (-1e-7,1e5)
+                    k==size(u,1) ? _cantera_flame_velocity_bounds() .* _flame_state_density(f,u,j) :
+                    _cantera_flame_species_bounds()
             end
             a = Inf
             if step[k,j] < 0

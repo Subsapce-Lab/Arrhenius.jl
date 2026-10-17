@@ -75,14 +75,17 @@ using Arrhenius, Test
     end
     @test Arrhenius._cantera_flame_temperature_bounds(f)==(0.2,7.0)
     cantera_Y=(-1e-7,1e5)
-    preset_Y=(-1e-7,1e5)
     cantera_velocity=(-1e20,1e20)
-    preset_velocity=(-Inf,Inf)
     cantera_lambda=(-1e20,1e20)
-    preset_lambda=(-Inf,Inf)
-    @test preset_Y==cantera_Y
-    @test preset_velocity[1]<=cantera_velocity[1] && preset_velocity[2]>=cantera_velocity[2]
-    @test preset_lambda[1]<=cantera_lambda[1] && preset_lambda[2]>=cantera_lambda[2]
+    @test Arrhenius._cantera_flame_species_bounds()==cantera_Y
+    @test Arrhenius._cantera_flame_velocity_bounds()==cantera_velocity
+    velocity_scale=Arrhenius._flame_state_density(f,f.state,1)
+    preset_flow_bounds=Arrhenius._cantera_flame_velocity_bounds().*velocity_scale
+    @test preset_flow_bounds./velocity_scale ≈ cantera_velocity rtol=eps(Float64)
+    @test (cantera_velocity[1]/Arrhenius._counterflow_Vscale,
+        cantera_velocity[2]/Arrhenius._counterflow_Vscale)==(-1e18,1e18)
+    @test (cantera_lambda[1]/Arrhenius._counterflow_Lscale,
+        cantera_lambda[2]/Arrhenius._counterflow_Lscale)==(-1e16,1e16)
     # At s1 == 1, Cantera accepts only when the correction also decreases;
     # convergence then follows from the accepted damping outcome.
     @test Arrhenius._newton_merit_accepts(compatible,1.0,1.1,true)

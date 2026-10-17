@@ -716,8 +716,22 @@ function _counterflow_newton!(f,w;previous=nothing,dt=Inf,maxiters=0,tolerance=1
             low=k==1 ? .2 : k<=n+1 ? -1e-7 : -1e5
             high=k==1 ? 6. : k<=n+1 ? 1.00001 : 1e5
             if newton_options.step_bounds === :cantera
-                low,high = k==1 ? _cantera_flame_temperature_bounds(f) :
-                    k<=n+1 ? (-1e-7,1e5) : (-Inf,Inf)
+                if k==1
+                    low,high=_cantera_flame_temperature_bounds(f)
+                elseif k<=n+1
+                    low,high=_cantera_flame_species_bounds()
+                elseif k==n+2
+                    low,high=(-1e20/_counterflow_Vscale,1e20/_counterflow_Vscale)
+                elseif k==n+3
+                    low,high=(-1e20/_counterflow_Lscale,1e20/_counterflow_Lscale)
+                else
+                    inv_molecular_weight=0.0
+                    @inbounds for m in 1:n
+                        inv_molecular_weight+=u[m+1,j]/f.gas.MW[m]
+                    end
+                    velocity_scale=R*(1000*u[1,j])*inv_molecular_weight/f.pressure
+                    low,high=_cantera_flame_velocity_bounds()./velocity_scale
+                end
             end
             if k==size(u,1)-1 && newton_options.step_bounds !== :cantera
                 # Cantera's physical Lambda bounds, converted to stored Lambda/Lscale.
