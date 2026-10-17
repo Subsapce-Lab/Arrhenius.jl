@@ -37,8 +37,10 @@ for path in spec_paths
         flame.converged || error("$(spec["id"]) did not converge")
         value = spec["kind"] == "free" ? 100 * flame_speed(flame) : 100 * velocity(flame)[1]
         println("case=$(spec["id"]) mode=$(compatible ? "compat" : "plain") " *
-            "jacobians=$(stats.jacobians) newton=$(stats.newton_iterations) " *
-            "steps=$(stats.time_steps) steady_failures=$(stats.steady_failures) " *
+            "jacobians=$(stats.jacobians) newton_calls=$(stats.newton_calls) " *
+            "newton_iterations=$(stats.newton_iterations) steady_calls=$(length(stats.grids)) " *
+            "grid_trace=$(join(stats.grids, ",")) steps=$(stats.time_steps) " *
+            "steady_failures=$(stats.steady_failures) " *
             "time_step_failures=$(stats.time_step_failures) regrids=$(stats.regrids) " *
             "points=$(length(flame.grid)) speed_cm_s=$(value)")
     end
