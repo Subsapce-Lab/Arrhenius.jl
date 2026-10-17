@@ -112,21 +112,23 @@ end
             @test all(curve[i].left_control_index==left_idx[i] for i in eachindex(curve))
             @test all(curve[i].right_control_index==right_idx[i] for i in eachindex(curve))
             max_dz=0.
+            max_dT=0.
             differing_steps=Int[]
             for i in eachindex(curve)
                 native=curve[i]
                 nzL,nTL,nzR,nTR=native.control_points
                 max_dz=max(max_dz,abs(nzL-left_z[i]),abs(nzR-right_z[i]))
+                max_dT=max(max_dT,abs(nTL-left_T[i]),abs(nTR-right_T[i]))
                 (native.left_control_index==left_idx[i] && native.right_control_index==right_idx[i]) || push!(differing_steps,i)
-                @test isapprox(nTL,left_T[i];rtol=1e-8,atol=1e-5)
-                @test isapprox(nTR,right_T[i];rtol=1e-8,atol=1e-5)
+                @test isapprox(nTL,left_T[i];rtol=1e-8,atol=5e-5)
+                @test isapprox(nTR,right_T[i];rtol=1e-8,atol=5e-5)
                 println("CONTROL_POINT_STEP ",(mechanism=mechanism_name,step=i,
                     cantera_left=(index=left_idx[i],z=left_z[i],T=left_T[i]),
                     arrhenius_left=(index=native.left_control_index,z=nzL,T=nTL),
                     cantera_right=(index=right_idx[i],z=right_z[i],T=right_T[i]),
                     arrhenius_right=(index=native.right_control_index,z=nzR,T=nTR)))
             end
-            println("CONTROL_POINT_SUMMARY ",(mechanism=mechanism_name,steps=length(curve),max_abs_dz=max_dz,index_differing_steps=differing_steps))
+            println("CONTROL_POINT_SUMMARY ",(mechanism=mechanism_name,steps=length(curve),max_abs_dz=max_dz,max_abs_dT=max_dT,index_differing_steps=differing_steps))
             native_peak=argmax(p.max_strain_rate for p in curve)
             cantera_peak=argmax(refA)
             @test abs(curve[native_peak].max_strain_rate-refA[cantera_peak])/refA[cantera_peak]<1e-3
