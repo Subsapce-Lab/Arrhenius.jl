@@ -23,11 +23,15 @@ def errors(d):
 
 native_error, ct_error = errors(arr), errors(ref)
 allowed = {name: max(1.02 * ct_error[name], 1e-5) for name in names}
+inlet_temperature = max(float(spec.get("T", 300.0)), float(spec.get("T_surface", 0.0) or 0.0))
+burning_rise = float(np.max(ref["T"])) - inlet_temperature
+reference_burning = burning_rise >= 500.0
 counts = {}
 for key in ("jacobians", "time_steps", "regrids", "failures"):
     if key in arr.files and key in ref.files:
         counts[key] = {"arrhenius": int(arr[key][0]), "cantera": int(ref[key][0])}
-result = {"case": spec["id"], "native_element_error": native_error,
+result = {"case": spec["id"], "reference_burning_rise_K": burning_rise,
+          "reference_burning": reference_burning, "native_element_error": native_error,
           "cantera_element_error": ct_error, "gate_allowance": allowed,
           "element_pass": {name: native_error[name] <= allowed[name] for name in names},
           "counts": counts}
