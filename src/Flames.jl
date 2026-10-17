@@ -1798,13 +1798,15 @@ function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=t
     znew = collect(Float64, z)
     L = znew[end] - znew[1]
     state = Matrix{Float64}(undef, size(f.state, 1), length(znew))
-    rho0 = _flame_density(f, f.inlet_temperature, f.inlet_Y).density
-    rho1 = _flame_density(f, eq.T, eq.Y).density
+    velocity_ramp = cantera_compatible && !isempty(f.imposed_temperature)
+    rho0 = velocity_ramp ? _flame_density(f, f.inlet_temperature, f.inlet_Y).density : 1.0
+    rho1 = velocity_ramp ? _flame_density(f, eq.T, eq.Y).density : 1.0
     for j in eachindex(znew)
         fraction = clamp((znew[j] - znew[1]) / (0.2 * L), 0, 1)
         state[1, j] = (f.inlet_temperature + fraction * (eq.T - f.inlet_temperature)) / 1000
         state[2:end-1, j] .= f.inlet_Y .+ fraction .* (eq.Y .- f.inlet_Y)
-        if cantera_compatible && !isempty(f.imposed_temperature)
+        if velocity_ramp
+            # Store the Cantera velocity ramp in Arrhenius's mass-flux variable.
             rho = _flame_density(f, 1000state[1, j], @view(state[2:end-1, j])).density
             velocity = f.mass_flux / rho0 + fraction * (f.mass_flux / rho1 - f.mass_flux / rho0)
             state[end, j] = rho * velocity
