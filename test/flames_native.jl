@@ -19,6 +19,12 @@ using Arrhenius, LinearAlgebra, Test
     @test_throws ArgumentError solve!(f;prune=.1)
     solve!(f)
     @test f.converged
+    # A same-grid retry reuses the workspace built for this solve rather than
+    # allocating another pair of full band buffers.
+    steady_workspace = Arrhenius.FlameWorkspace(f)
+    Arrhenius._flame_steady!(f; workspace=steady_workspace)
+    steady_retry_bytes = @allocated Arrhenius._flame_steady!(f; workspace=steady_workspace)
+    @test steady_retry_bytes < 100_000
     # Cantera 4.0.0a2, commit 726522be4e2a13454d8415b7ef799d621f665cf3,
     # exact bundled 9-species mechanism, independent native initialization.
     @test flame_speed(f) ≈ .7055995685698858 rtol=.01
