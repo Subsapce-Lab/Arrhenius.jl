@@ -77,7 +77,7 @@ def evaluate(path, solves):
     for T in temps:
         gas.TPX = T, ct.one_atm, "H2:2, O2:1, AR:4"
         finite &= all(np.all(np.isfinite(x)) for x in (
-            gas.net_production_rates, gas.cp_R, gas.enthalpy_RT, gas.entropy_R))
+            gas.net_production_rates, gas.standard_cp_R, gas.standard_enthalpies_RT, gas.standard_entropies_R))
     row.update(evaluation="finite" if finite else "nonfinite", temperatures_K=temps)
     if not solves:
         return row
