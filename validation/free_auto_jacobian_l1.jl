@@ -8,6 +8,7 @@ gas=CreateSolution(mechanism); grid=vec(ref["grid"])
 f=FreeFlame(gas;T=300.0,P=one_atm,X="NH3:0.7,H2:0.3,O2:0.5625,N2:2.115",
     grid,width=grid[end]-grid[1],transport_model=:mixture_averaged,discretization=:finite_difference)
 n,N=gas.n_species,length(grid)
+f.anchor=4
 f.state[1,:].=vec(ref["values/T"])./1000
 for (k,name) in enumerate(gas.species_names)
     f.state[k+1,:].=vec(ref["values/"*name])

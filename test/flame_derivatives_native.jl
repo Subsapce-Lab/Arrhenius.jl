@@ -301,6 +301,7 @@ end
         grid,width=grid[end]-grid[1],transport_model=:mixture_averaged,
         discretization=:finite_difference)
     n,N=gas.n_species,length(grid)
+    f.anchor=4
     f.state[1,:].=vec(ref["values/T"])./1000
     for (k,name) in enumerate(gas.species_names)
         f.state[k+1,:].=vec(ref["values/"*name])
