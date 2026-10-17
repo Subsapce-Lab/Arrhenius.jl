@@ -40,8 +40,8 @@ function case_flame(spec, root)
     return f
 end
 
-function element_error(f)
-    gas=f.gas; Y=mass_fractions(f); base=zeros(length(gas.elements))
+function element_error(gas,Y)
+    base=zeros(length(gas.elements))
     maxerr=0.0
     for e in eachindex(gas.elements)
         for k in eachindex(gas.species_names)
@@ -54,6 +54,7 @@ function element_error(f)
     end
     return maxerr
 end
+element_error(f)=element_error(f.gas,mass_fractions(f))
 
 function interpolate_profile(x,y,xnew)
     out=similar(xnew,Float64)
@@ -104,10 +105,17 @@ function snapshot_result(specfile,capture_dir,policy,label)
     main(specfile,capture_dir,csv,1,1,policy)
     lines=readlines(csv); row=split(lines[2],',')
     header=split(lines[1],','); values=Dict(strip(k,'"')=>strip(v,'"') for (k,v) in zip(header,row))
+    native=NPZ.npzread(values["native_state"])
+    Y=permutedims(native["Y"])
+    spec=YAML.load_file(specfile)
+    mechanism=normpath(get(spec,"mechanism_path",joinpath(@__DIR__,"..",spec["mechanism"]*".yaml")))
+    gas=CreateSolution(mechanism)
     return Dict("level"=>"snapshot_replay","case"=>label,
         "policy"=>policy.cantera_compatible ? "cantera" : "default",
         "converged"=>values["error"]=="" && values["within_tolerance"]=="true",
-        "grid_size"=>nothing,"seconds"=>parse(Float64,values["native_seconds"]),
+        "grid_size"=>length(native["grid"]),"seconds"=>parse(Float64,values["native_seconds"]),
+        "max_sumY_error"=>maximum(abs.(sum(Y;dims=1).-1)),
+        "max_element_error"=>element_error(gas,Y),
         "snapshot_relative_state_error"=>parse(Float64,values["relative_state_error"]),
         "solver_stats"=>Dict("newton_iterations"=>parse(Int,values["native_iterations"]),
             "jacobians"=>parse(Int,values["native_jacobians"])),"error"=>values["error"])
