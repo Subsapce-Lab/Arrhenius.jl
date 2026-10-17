@@ -128,7 +128,8 @@ function adaptive_result(specfile, capture_dir, policy, label, root)
         "max_element_source_balance_absolute"=>element_balance.absolute,
         "solver_stats"=>Dict("newton_calls"=>stats.newton_calls,
             "newton_iterations"=>stats.newton_iterations,"jacobians"=>stats.jacobians,
-            "time_steps"=>stats.time_steps,"time_step_failures"=>stats.time_step_failures),
+            "time_steps"=>stats.time_steps,"time_step_failures"=>stats.time_step_failures,
+            "steady_failures"=>stats.steady_failures),
         "reference_accuracy"=>isempty(err) ? reference_accuracy(f,capture_dir) : nothing)
 end
 
