@@ -1919,7 +1919,8 @@ end
 # enters refinement. The expensive-options solve is conditional after restore.
 function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
         max_time_steps,loglevel,domain_check,timestep,controls,ts_regrid,
-        cantera_compatible=true,steady_solve=_flame_steady!)
+        cantera_compatible=true,guess_compatible=cantera_compatible,
+        steady_solve=_flame_steady!)
     initial_step = timestep[]
     soret0 = f.soret_enabled
     transport0 = f.transport_model
@@ -1938,7 +1939,7 @@ function _auto_staged!(f; refine_grid,ratio,slope,curve,prune,max_points,
             anchor_before, fixed_temperature_before = f.anchor, f.fixed_temperature
             converged_before = f.converged
             z = N == length(f.grid) ? f.grid : range(zmin, zmax, length = N)
-            _fresh_analytic_guess!(f, z; cantera_compatible)
+            _fresh_analytic_guess!(f, z; cantera_compatible=guess_compatible)
             timestep[] = initial_step
             solved = steady_solve(f; loglevel, max_time_steps, timestep,
                 tolerance = 1e-6, controls...)
