@@ -44,6 +44,9 @@ if not sparse.issparse(J):
     J = sparse.csc_matrix(J)
 else:
     J = J.tocsc()
+if len(sys.argv) > 3:
+    np.savez_compressed(sys.argv[3], r_ct=r, weights=w, x_ct=x, shape=np.asarray(J.shape),
+                        J_data=J.data, J_indices=J.indices, J_indptr=J.indptr)
 lu = splu(J)
 dx = lu.solve(-r)
 step = float(np.linalg.norm(dx / w) / np.sqrt(len(dx)))
