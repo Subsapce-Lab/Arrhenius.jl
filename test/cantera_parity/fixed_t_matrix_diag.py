@@ -9,8 +9,7 @@ from scipy import sparse
 from scipy.sparse.linalg import LinearOperator, onenormest, splu
 sys.path.insert(0, os.path.dirname(__file__))
 import xresid
-spec = xresid.load_spec(sys.argv[1])
-species = ct.Solution(xresid.mechanism_path(spec)).species_names
+spec = xresid.load_spec(sys.argv[1])`nif os.environ.get("MECHANISM_DIR") and not os.path.isabs(spec["mechanism"]):`n    spec["mechanism"] = os.path.join(os.environ["MECHANISM_DIR"], spec["mechanism"])`nspecies = ct.Solution(xresid.mechanism_path(spec)).species_names
 can = xresid.canonical(sys.argv[2], species)
 f = xresid.build(spec, can["grid"])
 xresid.install(f, can)
