@@ -5,7 +5,9 @@ using Arrhenius, Test
     gas = CreateSolution(mechanism)
     X = mole_fractions(gas, "H2:1.1,O2:1,AR:5")
     flame = FreeFlame(gas; X, discretization=:finite_difference)
-    solve!(flame)
+    accepted_steps = Ref(0)
+    solve!(flame; time_step_callback = _ -> (accepted_steps[] += 1))
     @test flame.converged
-    @test solver_stats(flame).time_steps > 0
+    @test accepted_steps[] > 0
+    @test solver_stats(flame).time_steps == accepted_steps[]
 end
