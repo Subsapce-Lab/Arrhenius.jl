@@ -63,6 +63,7 @@ function run_case(spec_path, output_path, variant="compat")
     Arrhenius.flame_residual!(residual, flame, flame.state, workspace)
     NPZ.npzwrite(output_path, Dict("grid" => copy(flame.grid), "T" => temperature(flame),
         "Y" => mass_fractions(flame), "inlet_Y" => copy(flame.inlet_Y),
+        "velocity" => velocity(flame), "mass_flux" => copy(flame.state[end, :]),
         "species_diffusive_flux" => copy(workspace.flux),
         "species_total_flux_available" => [workspace.conservative !== nothing],
         "species_total_flux" => workspace.conservative === nothing ? zeros(0, 0) :
