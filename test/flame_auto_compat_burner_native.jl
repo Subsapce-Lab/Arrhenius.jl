@@ -27,6 +27,7 @@ end
             [0.0, 0.2, 1.0], [300.0, 1500.0, 700.0])
         Arrhenius._fresh_analytic_guess!(burner, grid; cantera_compatible=true)
         u = velocity(burner)
+        initial_T = temperature(burner)
         x = burner.inlet_Y ./ gas.MW
         x ./= sum(x)
         eq = equilibrate(gas; T=burner.inlet_temperature, P=burner.pressure, X=x, mode=:HP)
@@ -35,7 +36,11 @@ end
         u1 = burner.mass_flux / Arrhenius._flame_density(burner, eq.T, eq.Y).density
         for j in eachindex(grid)
             fraction = clamp((grid[j] - grid[1]) / (0.2 * (grid[end] - grid[1])), 0.0, 1.0)
+            @test initial_T[j] ≈ burner.inlet_temperature + fraction * (eq.T - burner.inlet_temperature) rtol=1e-12
             @test u[j] ≈ u0 + fraction * (u1 - u0) rtol=1e-10
+        end
+        if fixed_temperature
+            @test maximum(abs.(initial_T .- burner.imposed_temperature)) > 100
         end
         compatible_state = copy(burner.state)
         Arrhenius._fresh_analytic_guess!(burner, grid; cantera_compatible=false)
@@ -52,6 +57,22 @@ end
         X="H2:1.1,O2:1,AR:5", grid, discretization=:finite_difference)
     set_temperature_profile!(burner, [0.0, 0.25, 1.0], [300.0, 1600.0, 300.0])
     prescribed = copy(burner.imposed_temperature)
+    Arrhenius._fresh_analytic_guess!(burner, burner.grid; cantera_compatible=true)
+    initial_T = copy(temperature(burner))
+    initial_velocity = copy(velocity(burner))
+    x = burner.inlet_Y ./ gas.MW
+    x ./= sum(x)
+    eq = equilibrate(gas; T=burner.inlet_temperature, P=burner.pressure, X=x, mode=:HP)
+    u0 = burner.mass_flux / Arrhenius._flame_density(burner,
+        burner.inlet_temperature, burner.inlet_Y).density
+    u1 = burner.mass_flux / Arrhenius._flame_density(burner, eq.T, eq.Y).density
+    for j in eachindex(burner.grid)
+        fraction = clamp((burner.grid[j] - burner.grid[1]) /
+            (0.2 * (burner.grid[end] - burner.grid[1])), 0.0, 1.0)
+        @test initial_T[j] ≈ burner.inlet_temperature + fraction * (eq.T - burner.inlet_temperature) rtol=1e-12
+        @test initial_velocity[j] ≈ u0 + fraction * (u1 - u0) rtol=1e-10
+    end
+    @test maximum(abs.(initial_T .- prescribed)) > 100
     solve!(burner; cantera_compatible=true, refine_grid=false)
     @test burner.converged
     @test temperature(burner) ≈ prescribed

@@ -20,6 +20,15 @@ function run_case(spec_path, output_path, variant="compat")
     stats = Arrhenius.reset!(Arrhenius.solver_stats(flame))
     prune = min(get(spec, "prune", 0.0), spec["slope"], spec["curve"])
     refine = get(ENV, "ONE_STAGE", "0") != "1"
+    if variant == "initial"
+        Arrhenius._fresh_analytic_guess!(flame, flame.grid; cantera_compatible=true)
+        names = join(gas.species_names, Char(10))
+        NPZ.npzwrite(output_path, Dict("grid" => copy(flame.grid),
+            "T" => temperature(flame), "Y" => mass_fractions(flame),
+            "velocity" => velocity(flame), "species_names_utf8" => Vector{UInt8}(names)))
+        println("ARR_INITIAL case=$(spec["id"]) points=$(length(flame.grid))")
+        return
+    end
     if variant == "default"
         solve!(flame; ratio=spec["ratio"], slope=spec["slope"], curve=spec["curve"], prune, refine_grid=refine, loglevel=0)
     else

@@ -1788,9 +1788,10 @@ function _fresh_analytic_guess!(f::FreeFlame, z = f.grid; cantera_compatible=tru
     return f
 end
 
-# Cantera BurnerFlame.set_initial_guess: ramp temperature and composition
-# from the burner state to the HP-equilibrium state over the first 20% of the
-# domain, while preserving the imposed inlet mass flux.
+# Cantera BurnerFlame.set_initial_guess: ramp temperature, composition, and
+# velocity from the burner state to the HP-equilibrium state over the first
+# 20% of the domain. The fixed-temperature residual pins T during the solve;
+# the initial state still uses the ramped temperature and its density.
 function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=true)
     x = f.inlet_Y ./ f.gas.MW
     x ./= sum(x)
@@ -1806,17 +1807,10 @@ function _fresh_analytic_guess!(f::BurnerFlame, z = f.grid; cantera_compatible=t
         state[1, j] = (f.inlet_temperature + fraction * (eq.T - f.inlet_temperature)) / 1000
         state[2:end-1, j] .= f.inlet_Y .+ fraction .* (eq.Y .- f.inlet_Y)
         if velocity_ramp
-            # Cantera builds velocity before the fixed-T profile is applied.
             Y = @view state[2:end-1, j]
             rho_ramp = _flame_density(f, 1000state[1, j], Y).density
             velocity = f.mass_flux / rho0 + fraction * (f.mass_flux / rho1 - f.mass_flux / rho0)
-            if isempty(f.imposed_temperature)
-                state[end, j] = rho_ramp * velocity
-            else
-                state[1, j] = f.imposed_temperature[j] / 1000
-                rho_fixed = _flame_density(f, f.imposed_temperature[j], Y).density
-                state[end, j] = rho_fixed * velocity
-            end
+            state[end, j] = rho_ramp * velocity
         else
             state[end, j] = f.mass_flux
         end

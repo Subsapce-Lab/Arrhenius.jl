@@ -36,9 +36,12 @@ def compare_case(spec_path, native_path, cantera_path):
     burning_rise = float(np.max(ref["T"])) - inlet_temperature
     reference_burning = burning_rise >= 500.0
     counts = {}
-    for key in ("jacobians", "time_steps", "regrids", "failures"):
-        if key in arr.files and key in ref.files:
-            counts[key] = {"arrhenius": int(arr[key][0]), "cantera": int(ref[key][0])}
+    ct_count_keys = {"jacobians": "stats_jacobians", "time_steps": "stats_time_steps",
+                     "regrids": "stats_regrids", "failures": "failures"}
+    for key, ct_key in ct_count_keys.items():
+        if key in arr.files and ct_key in ref.files:
+            counts[key] = {"arrhenius": int(np.asarray(arr[key]).reshape(-1)[0]),
+                           "cantera": int(np.asarray(ref[ct_key]).reshape(-1)[0])}
     def flux_profiles(data, is_native):
         data_names = unpack_names(data)
         order = [data_names.index(name) for name in gas.species_names]
