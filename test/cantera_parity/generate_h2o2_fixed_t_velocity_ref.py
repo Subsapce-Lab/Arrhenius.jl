@@ -18,7 +18,20 @@ flame.burner.mdot = 0.07
 flame.flame.set_fixed_temp_profile([0.0, 0.25, 1.0], [300.0, 1600.0, 300.0])
 flame.energy_enabled = False
 flame.set_initial_guess()
+initial_grid = np.asarray(flame.grid).copy()
+initial_temperature = np.asarray(flame.T).copy()
+initial_velocity = np.asarray(flame.velocity).copy()
+captured = []
+def capture_first_steady(_):
+    if not captured:
+        captured.append((np.asarray(flame.grid).copy(), np.asarray(flame.T).copy(),
+            np.asarray(flame.velocity).copy()))
+    return 0.0
+flame.set_steady_callback(capture_first_steady)
 flame.solve(loglevel=0, refine_grid=False, auto=False)
-np.savez_compressed(sys.argv[1], grid=flame.grid, T=flame.T,
-    velocity=flame.velocity, Y=flame.Y)
-print("CT_FIXED_VELOCITY points={} path={}".format(len(flame.grid), sys.argv[1]))
+if not captured:
+    raise RuntimeError("Cantera did not invoke the first-steady callback")
+grid, temperature, velocity = captured[0]
+np.savez_compressed(sys.argv[1], grid=grid, T=temperature, velocity=velocity,
+    initial_grid=initial_grid, initial_T=initial_temperature, initial_velocity=initial_velocity)
+print("CT_FIRST_STEADY_FIXED_VELOCITY points={} path={}".format(len(grid), sys.argv[1]))
