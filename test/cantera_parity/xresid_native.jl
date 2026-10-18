@@ -83,8 +83,8 @@ function build(spec, gas, grid; discretization=:finite_difference)
     elseif kind == "diffusion"
         return CounterflowDiffusionFlame(gas; fuel=spec["fuel"],
             oxidizer=spec["oxidizer"], mdot_fuel=spec["mdot_fuel"],
-            mdot_oxidizer=spec["mdot_oxidizer"], T_fuel=T_in, T_oxidizer=T_in,
-            P, width, grid)
+            mdot_oxidizer=spec["mdot_oxidizer"], T_fuel=T_in,
+            T_oxidizer=Float64(get(spec,"T_oxidizer",T_in)), P, width, grid)
     elseif kind == "premixed"
         return CounterflowPremixedFlame(gas; reactants=spec["X"],
             mdot_reactants=spec["mdot"], mdot_products=spec["mdot_products"],
@@ -194,7 +194,7 @@ function row_eqtypes(f, spec)
         else
             types[1, j] = boundary || spec["kind"] == "fixed" ? code("T_bc") : code("energy")
             for k in 1:n
-                k == f.dependent_species && continue   # sum(Y)-1 everywhere (dep: 1-based)
+                boundary && k == f.dependent_species && continue
                 types[k+1, j] = j == 1 ? code("flux_bc") : j == N ? code("zero_grad") : code("species")
             end
             if spec["kind"] in ("burner", "fixed")
