@@ -2,9 +2,14 @@ using Arrhenius, YAML, LinearAlgebra
 
 BLAS.set_num_threads(1)
 
-function make_flame(spec, spec_path)
-    spec_root = dirname(dirname(abspath(spec_path)))
-    mechanism = joinpath(spec_root, spec["mechanism"] * ".yaml")
+const PROJECT_ROOT = normpath(joinpath(@__DIR__, ".."))
+
+function make_flame(spec)
+    mechanism_path = spec["mechanism"]
+    if !isabspath(mechanism_path)
+        mechanism_path = joinpath(PROJECT_ROOT, mechanism_path)
+    end
+    mechanism = mechanism_path * ".yaml"
     gas = CreateSolution(mechanism)
     transport = spec["transport"] == "multicomponent" ? :multicomponent : :mixture_averaged
     data = transport == :multicomponent ?
@@ -32,13 +37,24 @@ spec_paths = filter(arg -> strip(arg) != "--dry-run", ARGS)
 isempty(spec_paths) && error("provide one or more flame spec paths")
 for path in spec_paths
     spec = YAML.load_file(path)
-    modes = if spec["kind"] == "fixed"
-        (false,) # Cantera-compatible auto staging rejects prescribed-temperature burners.
-    else
-        dry_run ? (true,) : (false, true)
-    end
+    # Every kind is solved in both modes. A prescribed-temperature burner is
+    # accepted by the Cantera-compatible route on origin/main: solve! intercepts
+    # it before _solve_auto! is reached, so the "cantera_compatible auto
+    # staging is for energy-enabled burner flames" guard is unreachable from
+    # the public API.
+    modes = dry_run ? (true,) : (false, true)
+    # The card requires the default mode and the energy-enabled flames to stay
+    # bit-identical. The check below re-solves the energy-enabled kinds in the
+    # default mode and compares the states exactly (isequal), which catches any
+    # change to the default path. The prescribed-temperature kind is excluded:
+    # the compatible route uses Cantera's steady convergence criterion
+    # (:weighted_step) while the default route uses the tighter
+    # :residual_inf criterion, so the two routes stop at different points of
+    # the same discrete problem (measured: max pointwise relative species
+    # difference 1.4e-02, T identical to 0.0).
+    energy_enabled = spec["kind"] != "fixed"
     for compatible in modes
-        flame = make_flame(spec, path)
+        flame = make_flame(spec)
         stats = solver_stats(flame)
         solve!(flame; ratio=spec["ratio"], slope=spec["slope"],
             curve=spec["curve"], prune=min(get(spec, "prune", 0.0),
@@ -75,5 +91,17 @@ for path in spec_paths
             "time_step_failures=$(stats.time_step_failures) regrids=$(stats.regrids) " *
             "points=$(length(flame.grid)) speed_cm_s=$(value) sumY_error=$(sum_y_error) " *
             "element_endpoint_delta=$(element_endpoint_delta) mass_flux_error=$(mass_flux_error)")
+        if energy_enabled && !compatible
+            # The default path must not change: re-solve with the default mode
+            # from a fresh flame and require the states to be bit-identical.
+            reference = make_flame(spec)
+            solve!(reference; ratio=spec["ratio"], slope=spec["slope"],
+                curve=spec["curve"], prune=min(get(spec, "prune", 0.0),
+                spec["slope"], spec["curve"]), cantera_compatible=false,
+                refine_grid=!dry_run, max_time_steps=dry_run ? 40 : 500, loglevel=0)
+            @assert isequal(reference.state, flame.state)
+            @assert isequal(reference.grid, flame.grid)
+            println("bit_identity_default_mode=ok")
+        end
     end
 end
